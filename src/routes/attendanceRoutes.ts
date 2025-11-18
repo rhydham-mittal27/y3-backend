@@ -35,7 +35,11 @@ router.post(
   createAttendanceRecord
 );
 
-router.get('/', authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN, USER_ROLES.COORDINATOR), getAttendances);
+router.get(
+  '/',
+  authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN, USER_ROLES.COORDINATOR, USER_ROLES.TUTOR),
+  getAttendances
+);
 
 router.get('/coordinator/pending', authorize(USER_ROLES.COORDINATOR), getCoordinatorPendingApprovals);
 

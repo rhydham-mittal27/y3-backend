@@ -97,6 +97,78 @@ export const getAllAnnouncements = async (
   return { announcements, total, page, limit };
 };
 
+export const getTutorAvailableAnnouncements = async (params: {
+  tutorUserId: string;
+  page: number;
+  limit: number;
+  isActive?: boolean;
+  sortBy?: string;
+  sortOrder?: 'asc' | 'desc';
+}) => {
+  const { tutorUserId, page, limit, isActive, sortBy, sortOrder } = params;
+
+  const query: any = {
+    'interestedTutors.tutor': { $ne: new mongoose.Types.ObjectId(tutorUserId) },
+  };
+  if (typeof isActive === 'boolean') {
+    query.isActive = isActive;
+  }
+
+  // Load tutor profile to apply OFFLINE area filtering and ONLINE subject filtering
+  const tutorDoc = await Tutor.findOne({ user: tutorUserId }).select('subjects preferredLocations');
+
+  const leadOrFilters: any[] = [];
+
+  // OFFLINE (or non-ONLINE) classes: match tutor preferred areas/locations
+  if (tutorDoc && Array.isArray(tutorDoc.preferredLocations) && tutorDoc.preferredLocations.length > 0) {
+    const areas = tutorDoc.preferredLocations.filter(Boolean);
+    if (areas.length > 0) {
+      leadOrFilters.push({
+        mode: { $ne: 'ONLINE' },
+        $or: [
+          { area: { $in: areas } },
+          { location: { $in: areas } },
+        ],
+      });
+    }
+  }
+
+  // ONLINE classes: match tutor subjects
+  if (tutorDoc && Array.isArray(tutorDoc.subjects) && tutorDoc.subjects.length > 0) {
+    leadOrFilters.push({
+      mode: 'ONLINE',
+      subject: { $in: tutorDoc.subjects },
+    });
+  }
+
+  if (leadOrFilters.length > 0) {
+    const matchingLeads = await ClassLead.find({ $or: leadOrFilters }).select('_id');
+    const classLeadIds = matchingLeads.map((l) => l._id);
+
+    if (classLeadIds.length === 0) {
+      return { announcements: [], total: 0, page, limit };
+    }
+
+    query.classLead = { $in: classLeadIds };
+  }
+
+  const skip = (page - 1) * limit;
+  const sort: any = {};
+  const sortField = sortBy || 'postedAt';
+  sort[sortField] = sortOrder === 'asc' ? 1 : -1;
+
+  const [announcements, total] = await Promise.all([
+    Announcement.find(query)
+      .skip(skip)
+      .limit(limit)
+      .sort(sort)
+      .populate('classLead postedBy'),
+    Announcement.countDocuments(query),
+  ]);
+
+  return { announcements, total, page, limit };
+};
+
 export const getAnnouncementById = async (announcementId: string) => {
   const announcement = await Announcement.findById(announcementId).populate('classLead postedBy');
   if (!announcement) throw new ErrorResponse('Announcement not found', 404);
@@ -343,6 +415,7 @@ export const getCoordinatorAnnouncementStats = async (coordinatorUserId: string)
 export default {
   createAnnouncement,
   getAllAnnouncements,
+  getTutorAvailableAnnouncements,
   getAnnouncementById,
   getAnnouncementByLeadId,
   expressInterest,

@@ -9,6 +9,7 @@ import ErrorResponse from '../utils/errorResponse';
 import { CLASS_LEAD_STATUS, DEMO_STATUS, MANAGER_ACTION_TYPE } from '../config/constants';
 import { logManagerActivity } from './managerService';
 import Manager from '../models/Manager';
+import { convertLeadToFinalClass } from './finalClassService';
 
 export const assignDemo = async (
   classLeadId: string,
@@ -25,7 +26,9 @@ export const assignDemo = async (
 
   const announcement = await Announcement.findOne({ classLead: classLeadId });
   if (!announcement) throw new ErrorResponse('Announcement not found for this lead', 404);
-  const interestedIds = (announcement.interestedTutors || []).map((t: any) => t.user?.toString?.() || t.toString());
+  const interestedIds = (announcement.interestedTutors || []).map(
+    (t: any) => t.tutor?.toString?.() || t.toString()
+  );
   if (!interestedIds.includes(tutorUserId))
     throw new ErrorResponse('Tutor has not expressed interest', 400);
 
@@ -101,6 +104,8 @@ export const updateDemoStatus = async (
   lead.demoDetails.demoStatus = newStatus as any;
   if (newStatus === DEMO_STATUS.COMPLETED) {
     if (feedback) (lead.demoDetails as any).feedback = feedback;
+    // Reflect demo completion in class lead status so timelines and summaries stay in sync
+    lead.status = CLASS_LEAD_STATUS.DEMO_COMPLETED as any;
   }
   if (newStatus === DEMO_STATUS.APPROVED) {
     const tutorProfile = await Tutor.findOne({ user: lead.assignedTutor });
@@ -125,6 +130,16 @@ export const updateDemoStatus = async (
       if (newStatus === DEMO_STATUS.REJECTED) latestHistory.rejectionReason = rejectionReason;
     }
     await latestHistory.save();
+  }
+  // Auto-convert to final class when demo is approved and lead moved to CONVERTED
+  if (newStatus === DEMO_STATUS.APPROVED) {
+    const demoDate = (lead.demoDetails as any)?.demoDate as Date | undefined;
+    const startDate = demoDate ? new Date(demoDate) : new Date();
+    await convertLeadToFinalClass({
+      classLeadId: String(lead._id),
+      startDate,
+      convertedBy: updatedBy,
+    });
   }
   try {
     await logManagerActivity(
@@ -183,7 +198,9 @@ export const reassignDemo = async (
 
   const announcement = await Announcement.findOne({ classLead: classLeadId });
   if (!announcement) throw new ErrorResponse('Announcement not found for this lead', 404);
-  const interestedIds = (announcement.interestedTutors || []).map((t: any) => t.user?.toString?.() || t.toString());
+  const interestedIds = (announcement.interestedTutors || []).map(
+    (t: any) => t.tutor?.toString?.() || t.toString()
+  );
   if (!interestedIds.includes(newTutorUserId))
     throw new ErrorResponse('Tutor has not expressed interest', 400);
 

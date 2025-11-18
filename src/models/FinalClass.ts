@@ -3,6 +3,7 @@ import { FINAL_CLASS_STATUS } from '../config/constants';
 
 export interface IFinalClassDocument extends Document {
   _id: mongoose.Types.ObjectId;
+  className: string;
   classLead: mongoose.Types.ObjectId;
   tutor: mongoose.Types.ObjectId;
   coordinator: mongoose.Types.ObjectId;
@@ -34,6 +35,7 @@ export interface IFinalClassDocument extends Document {
 
 const FinalClassSchema: Schema<IFinalClassDocument> = new Schema<IFinalClassDocument>(
   {
+    className: { type: String, required: true, unique: true },
     classLead: { type: Schema.Types.ObjectId, ref: 'ClassLead', required: true, unique: true },
     tutor: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     coordinator: { type: Schema.Types.ObjectId, ref: 'User', required: true },

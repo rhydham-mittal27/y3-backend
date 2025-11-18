@@ -3,6 +3,7 @@ import asyncHandler from '../utils/asyncHandler';
 import { successResponse, paginatedResponse } from '../utils/responseFormatter';
 import ErrorResponse from '../utils/errorResponse';
 import { AuthRequest } from '../types';
+import { USER_ROLES } from '../config/constants';
 import {
   createAttendance,
   getAllAttendance,
@@ -23,9 +24,16 @@ export const createAttendanceRecord = asyncHandler(async (req: AuthRequest, res)
   if (!errors.isEmpty()) {
     throw new ErrorResponse(errors.array()[0].msg, 400);
   }
-  const { finalClassId, sessionDate, sessionNumber, notes } = req.body as any;
+  const { finalClassId, sessionDate, sessionNumber, notes, studentAttendanceStatus } = req.body as any;
   const submittedBy = req.user!.id;
-  const attendance = await createAttendance({ finalClassId, sessionDate, sessionNumber, notes, submittedBy });
+  const attendance = await createAttendance({
+    finalClassId,
+    sessionDate,
+    sessionNumber,
+    notes,
+    studentAttendanceStatus,
+    submittedBy,
+  });
   return res.status(201).json(successResponse(attendance, 'Attendance record created successfully'));
 });
 
@@ -50,12 +58,19 @@ export const getAttendances = asyncHandler(async (req, res) => {
   const from = fromDate ? new Date(fromDate) : undefined;
   const to = toDate ? new Date(toDate) : undefined;
 
+  const authReq = req as AuthRequest;
+  let effectiveTutorId = tutorId as string;
+
+  if (authReq.user && authReq.user.role === USER_ROLES.TUTOR) {
+    effectiveTutorId = authReq.user.id;
+  }
+
   const { attendances, total } = await getAllAttendance({
     page: pageNum,
     limit: limitNum,
     finalClassId: finalClassId as string,
     status: status as any,
-    tutorId: tutorId as string,
+    tutorId: effectiveTutorId,
     coordinatorId: coordinatorId as string,
     parentId: parentId as string,
     fromDate: from,

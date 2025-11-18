@@ -1,5 +1,12 @@
 import mongoose, { Schema, Document, Model } from 'mongoose';
-import { BOARD_TYPE, CLASS_LEAD_STATUS, DEMO_STATUS, TEACHING_MODE } from '../config/constants';
+import {
+  BOARD_TYPE,
+  CLASS_LEAD_STATUS,
+  DEMO_STATUS,
+  TEACHING_MODE,
+  LEAD_SOURCE,
+  PREFERRED_TUTOR_GENDER,
+} from '../config/constants';
 
 export interface IDemoDetailsEmbedded {
   demoDate?: Date;
@@ -12,14 +19,26 @@ export interface IDemoDetailsEmbedded {
 export interface IClassLeadDocument extends Document {
   _id: mongoose.Types.ObjectId;
   studentName: string;
+  parentName?: string;
+  parentPhone?: string;
   grade: string;
   subject: string[];
   board: BOARD_TYPE | string;
   mode: TEACHING_MODE | string;
   location?: string;
+  city?: string;
+  area?: string;
+  address?: string;
   timing: string;
   status: CLASS_LEAD_STATUS | string;
+  classesPerMonth?: number;
+  classDurationHours?: number;
+  preferredTutorGender?: PREFERRED_TUTOR_GENDER | string;
+  leadSource?: LEAD_SOURCE | string;
+  paymentReceived?: boolean;
+  paymentAmount?: number;
   assignedTutor?: mongoose.Types.ObjectId | null;
+  demoTutor?: mongoose.Types.ObjectId | null;
   demoDetails?: IDemoDetailsEmbedded;
   createdBy: mongoose.Types.ObjectId;
   notes?: string;
@@ -41,14 +60,26 @@ const DemoDetailsSchema = new Schema<IDemoDetailsEmbedded>(
 const ClassLeadSchema: Schema<IClassLeadDocument> = new Schema<IClassLeadDocument>(
   {
     studentName: { type: String, required: true, trim: true },
+    parentName: { type: String, trim: true },
+    parentPhone: { type: String, trim: true },
     grade: { type: String, required: true },
     subject: { type: [String], required: true },
     board: { type: String, enum: Object.values(BOARD_TYPE), required: true },
     mode: { type: String, enum: Object.values(TEACHING_MODE), required: true },
     location: { type: String },
+    city: { type: String },
+    area: { type: String },
+    address: { type: String },
     timing: { type: String, required: true },
     status: { type: String, enum: Object.values(CLASS_LEAD_STATUS), default: CLASS_LEAD_STATUS.NEW },
+    classesPerMonth: { type: Number },
+    classDurationHours: { type: Number },
+    preferredTutorGender: { type: String, enum: Object.values(PREFERRED_TUTOR_GENDER) },
+    leadSource: { type: String, enum: Object.values(LEAD_SOURCE) },
+    paymentReceived: { type: Boolean, default: false },
+    paymentAmount: { type: Number },
     assignedTutor: { type: Schema.Types.ObjectId, ref: 'User' },
+    demoTutor: { type: Schema.Types.ObjectId, ref: 'User' },
     demoDetails: { type: DemoDetailsSchema },
     createdBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     notes: { type: String },

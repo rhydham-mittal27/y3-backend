@@ -1,5 +1,5 @@
 import mongoose, { Schema, Document, Model } from 'mongoose';
-import { ATTENDANCE_STATUS } from '../config/constants';
+import { ATTENDANCE_STATUS, STUDENT_ATTENDANCE_STATUS } from '../config/constants';
 
 export interface IAttendanceDocument extends Document {
   _id: mongoose.Types.ObjectId;
@@ -10,6 +10,7 @@ export interface IAttendanceDocument extends Document {
   coordinator: mongoose.Types.ObjectId;
   parent?: mongoose.Types.ObjectId;
   status: ATTENDANCE_STATUS | string;
+  studentAttendanceStatus: STUDENT_ATTENDANCE_STATUS | string;
   submittedBy: mongoose.Types.ObjectId;
   submittedAt: Date;
   coordinatorApprovedBy?: mongoose.Types.ObjectId;
@@ -33,6 +34,11 @@ const AttendanceSchema: Schema<IAttendanceDocument> = new Schema<IAttendanceDocu
     coordinator: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     parent: { type: Schema.Types.ObjectId, ref: 'User' },
     status: { type: String, enum: Object.values(ATTENDANCE_STATUS), default: ATTENDANCE_STATUS.PENDING },
+    studentAttendanceStatus: {
+      type: String,
+      enum: Object.values(STUDENT_ATTENDANCE_STATUS),
+      default: STUDENT_ATTENDANCE_STATUS.PRESENT,
+    },
     submittedBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     submittedAt: { type: Date, default: Date.now },
     coordinatorApprovedBy: { type: Schema.Types.ObjectId, ref: 'User' },

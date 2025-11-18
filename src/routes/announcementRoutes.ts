@@ -2,6 +2,7 @@ import { Router } from 'express';
 import {
   postAnnouncement,
   getAnnouncements,
+  getTutorAvailableAnnouncementsController,
   getAnnouncement,
   getAnnouncementByLead,
   expressInterestInAnnouncement,
@@ -32,6 +33,11 @@ router.use(protect);
 
 router.post('/', authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN), postAnnouncementValidation, postAnnouncement);
 router.get('/', authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN, USER_ROLES.TUTOR), getAnnouncements);
+router.get(
+  '/tutor/available',
+  authorize(USER_ROLES.TUTOR),
+  getTutorAvailableAnnouncementsController
+);
 router.get('/lead/:leadId', authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN), leadIdValidation, getAnnouncementByLead);
 router.get('/:id', authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN, USER_ROLES.TUTOR), announcementIdValidation, getAnnouncement);
 router.post('/:id/interest', authorize(USER_ROLES.TUTOR), expressInterestValidation, expressInterestInAnnouncement);

@@ -12,7 +12,7 @@ import Manager from '../models/Manager';
 
 export const convertLeadToFinalClass = async (params: {
   classLeadId: string;
-  coordinatorUserId: string;
+  coordinatorUserId?: string;
   parentUserId?: string;
   startDate: Date;
   schedule?: { daysOfWeek?: string[]; timeSlot?: string };
@@ -38,7 +38,14 @@ export const convertLeadToFinalClass = async (params: {
     const existing = await FinalClass.findOne({ classLead: classLeadId }).session(session);
     if (existing) throw new ErrorResponse('Final class already exists for this lead', 409);
 
-    const coordinator = await Coordinator.findOne({ user: coordinatorUserId }).session(session);
+    let coordinatorUserIdToUse = coordinatorUserId;
+    if (!coordinatorUserIdToUse) {
+      const anyCoordinator = await Coordinator.findOne({ isActive: true }).session(session);
+      if (!anyCoordinator) throw new ErrorResponse('Coordinator not found', 404);
+      coordinatorUserIdToUse = String(anyCoordinator.user);
+    }
+
+    const coordinator = await Coordinator.findOne({ user: coordinatorUserIdToUse }).session(session);
     if (!coordinator) throw new ErrorResponse('Coordinator not found', 404);
     if (!coordinator.isActive) throw new ErrorResponse('Coordinator is not active', 400);
     const availableCapacity = (coordinator.maxClassCapacity || 0) - (coordinator.activeClassesCount || 0);
@@ -58,30 +65,44 @@ export const convertLeadToFinalClass = async (params: {
       parentUserObjectId = new mongoose.Types.ObjectId(parentUserId);
     }
 
-    const finalClass = await FinalClass.create([
-      {
-        classLead: new mongoose.Types.ObjectId(classLeadId),
-        tutor: lead.assignedTutor as any,
-        coordinator: new mongoose.Types.ObjectId(coordinatorUserId),
-        parent: parentUserObjectId,
-        startDate: new Date(startDate),
-        schedule,
-        totalSessions: totalSessions ?? 0,
-        ratePerSession: typeof ratePerSession === 'number' ? ratePerSession : 0,
-        completedSessions: 0,
-        studentName: lead.studentName,
-        subject: lead.subject,
-        grade: lead.grade,
-        board: String(lead.board),
-        mode: String(lead.mode),
-        location: lead.location,
-        convertedBy: new mongoose.Types.ObjectId(convertedBy),
-        status: FINAL_CLASS_STATUS.ACTIVE,
-        notes,
-      },
-    ], { session });
+    // Generate a unique class name CL-1234 (4 random digits)
+    let className: string | null = null;
+    for (let i = 0; i < 5; i++) {
+      const suffix = Math.floor(1000 + Math.random() * 9000); // 1000-9999
+      const candidate = `CL-${suffix}`;
+      const exists = await FinalClass.findOne({ className: candidate }).session(session);
+      if (!exists) {
+        className = candidate;
+        break;
+      }
+    }
+    if (!className) {
+      throw new ErrorResponse('Failed to generate unique class name', 500);
+    }
 
-    const created = finalClass[0];
+    const created = new FinalClass({
+      className,
+      classLead: new mongoose.Types.ObjectId(classLeadId),
+      tutor: lead.assignedTutor as any,
+      coordinator: new mongoose.Types.ObjectId(coordinatorUserIdToUse),
+      parent: parentUserObjectId,
+      startDate: new Date(startDate),
+      schedule,
+      totalSessions: totalSessions ?? 0,
+      ratePerSession: typeof ratePerSession === 'number' ? ratePerSession : 0,
+      completedSessions: 0,
+      studentName: lead.studentName,
+      subject: lead.subject,
+      grade: lead.grade,
+      board: String(lead.board),
+      mode: String(lead.mode),
+      location: lead.location,
+      convertedBy: new mongoose.Types.ObjectId(convertedBy),
+      status: FINAL_CLASS_STATUS.ACTIVE,
+      notes,
+    });
+
+    await created.save({ session });
 
     await Coordinator.findByIdAndUpdate(
       coordinator._id,
@@ -99,22 +120,25 @@ export const convertLeadToFinalClass = async (params: {
     );
 
     // Notifications
-    await Notification.create([
-      {
-        recipient: lead.assignedTutor,
-        type: 'GENERAL',
-        title: 'New Class Assigned',
-        message: `You have been assigned a new class for student ${lead.studentName}.`,
-        relatedClassLead: lead._id,
-      },
-      {
-        recipient: coordinator.user,
-        type: 'GENERAL',
-        title: 'Class Conversion Completed',
-        message: `A converted class has been assigned under your coordination for ${lead.studentName}.`,
-        relatedClassLead: lead._id,
-      },
-    ], { session });
+    await Notification.insertMany(
+      [
+        {
+          recipient: lead.assignedTutor,
+          type: 'GENERAL',
+          title: 'New Class Assigned',
+          message: `You have been assigned a new class for student ${lead.studentName}.`,
+          relatedClassLead: lead._id,
+        },
+        {
+          recipient: coordinator.user,
+          type: 'GENERAL',
+          title: 'Class Conversion Completed',
+          message: `A converted class has been assigned under your coordination for ${lead.studentName}.`,
+          relatedClassLead: lead._id,
+        },
+      ],
+      { session, ordered: true }
+    );
 
     await session.commitTransaction();
 
@@ -133,7 +157,7 @@ export const convertLeadToFinalClass = async (params: {
         MANAGER_ACTION_TYPE.CONVERT_TO_FINAL_CLASS,
         `Converted class lead to final class for student ${studentName}`,
         { entityType: 'FinalClass', entityId: String(created._id), entityName: studentName },
-        { classLeadId, tutorId: String(lead.assignedTutor), coordinatorId: coordinatorUserId, startDate }
+        { classLeadId, tutorId: String(lead.assignedTutor), coordinatorId: coordinatorUserIdToUse, startDate }
       );
     } catch {}
     return created;

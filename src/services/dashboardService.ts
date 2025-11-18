@@ -155,14 +155,16 @@ export const getTutorProgressReport = async (
 
   const tutorMetrics = await Promise.all(
     tutors.map(async (t: any) => {
-      const tId = t._id as mongoose.Types.ObjectId;
-      const classMatch: any = { tutor: tId };
+      // NOTE: FinalClass, Payment and Attendance models reference the tutor as a User _id,
+      // so we must match on t.user (ObjectId of User) instead of the Tutor document _id.
+      const tutorUserId = t.user?._id as mongoose.Types.ObjectId;
+      const classMatch: any = { tutor: tutorUserId };
       if (fromDate || toDate) {
         classMatch.convertedAt = {};
         if (fromDate) classMatch.convertedAt.$gte = new Date(fromDate);
         if (toDate) classMatch.convertedAt.$lte = new Date(toDate);
       }
-      const paymentMatch: any = { tutor: tId };
+      const paymentMatch: any = { tutor: tutorUserId };
       if (fromDate || toDate) {
         paymentMatch.createdAt = {};
         if (fromDate) paymentMatch.createdAt.$gte = new Date(fromDate);
@@ -184,7 +186,7 @@ export const getTutorProgressReport = async (
           },
         ]),
         Attendance.aggregate([
-          { $match: { tutor: tId } },
+          { $match: { tutor: tutorUserId } },
           { $group: { _id: '$status', count: { $sum: 1 } } },
         ]),
       ]);

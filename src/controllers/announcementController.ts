@@ -6,6 +6,7 @@ import { AuthRequest } from '../types';
 import {
   createAnnouncement,
   getAllAnnouncements,
+  getTutorAvailableAnnouncements,
   getAnnouncementById,
   getAnnouncementByLeadId,
   expressInterest,
@@ -40,6 +41,28 @@ export const getAnnouncements = asyncHandler(async (req, res) => {
   const isActive = typeof isActiveParam !== 'undefined' ? isActiveParam === 'true' : undefined;
 
   const { announcements, total } = await getAllAnnouncements(page, limit, isActive, sortBy, sortOrder);
+  return res.status(200).json(paginatedResponse(announcements, page, limit, total));
+});
+
+export const getTutorAvailableAnnouncementsController = asyncHandler(
+  async (req: AuthRequest, res) => {
+  const tutorUserId = req.user!.id;
+  const page = parseInt((req.query.page as string) || '1', 10);
+  const limit = parseInt((req.query.limit as string) || '10', 10);
+  const isActiveParam = req.query.isActive as string | undefined;
+  const sortBy = (req.query.sortBy as string) || 'postedAt';
+  const sortOrder = ((req.query.sortOrder as string) || 'desc') as 'asc' | 'desc';
+
+  const isActive = typeof isActiveParam !== 'undefined' ? isActiveParam === 'true' : true;
+
+  const { announcements, total } = await getTutorAvailableAnnouncements({
+    tutorUserId,
+    page,
+    limit,
+    isActive,
+    sortBy,
+    sortOrder,
+  });
   return res.status(200).json(paginatedResponse(announcements, page, limit, total));
 });
 

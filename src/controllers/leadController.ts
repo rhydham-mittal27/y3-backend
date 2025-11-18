@@ -19,17 +19,48 @@ export const createLead = asyncHandler(async (req: AuthRequest, res) => {
     throw new ErrorResponse(errors.array()[0].msg, 400);
   }
 
-  const { studentName, grade, subject, board, mode, location, timing, notes } = req.body;
-  const createdBy = req.user!.id;
-
-  const lead = await createClassLead({
+  const {
     studentName,
+    parentName,
+    parentPhone,
     grade,
     subject,
     board,
     mode,
     location,
+    city,
+    area,
+    address,
     timing,
+    classesPerMonth,
+    classDurationHours,
+    preferredTutorGender,
+    leadSource,
+    paymentReceived,
+    paymentAmount,
+    notes,
+  } = req.body;
+  const createdBy = req.user!.id;
+
+  const lead = await createClassLead({
+    studentName,
+    parentName,
+    parentPhone,
+    grade,
+    subject,
+    board,
+    mode,
+    location,
+    city,
+    area,
+    address,
+    timing,
+    classesPerMonth,
+    classDurationHours,
+    preferredTutorGender,
+    leadSource,
+    paymentReceived,
+    paymentAmount,
     notes,
     createdBy,
   });

@@ -1,18 +1,36 @@
 import mongoose from 'mongoose';
 import ClassLead, { IClassLeadDocument } from '../models/ClassLead';
 import ErrorResponse from '../utils/errorResponse';
-import { BOARD_TYPE, CLASS_LEAD_STATUS, TEACHING_MODE, MANAGER_ACTION_TYPE } from '../config/constants';
+import {
+  BOARD_TYPE,
+  CLASS_LEAD_STATUS,
+  TEACHING_MODE,
+  MANAGER_ACTION_TYPE,
+  LEAD_SOURCE,
+  PREFERRED_TUTOR_GENDER,
+} from '../config/constants';
 import Manager from '../models/Manager';
 import { logManagerActivity } from './managerService';
 
 export const createClassLead = async (params: {
   studentName: string;
+  parentName?: string;
+  parentPhone?: string;
   grade: string;
   subject: string[];
   board: BOARD_TYPE | string;
   mode: TEACHING_MODE | string;
   location?: string;
+  city?: string;
+  area?: string;
+  address?: string;
   timing: string;
+  classesPerMonth?: number;
+  classDurationHours?: number;
+  preferredTutorGender?: PREFERRED_TUTOR_GENDER | string;
+  leadSource?: LEAD_SOURCE | string;
+  paymentReceived?: boolean;
+  paymentAmount?: number;
   notes?: string;
   createdBy: string;
 }) => {
@@ -140,14 +158,27 @@ export const updateClassLeadStatus = async (
   }
 
   const current = lead.status as CLASS_LEAD_STATUS;
-  const allowedTransitions: Record<CLASS_LEAD_STATUS, (CLASS_LEAD_STATUS | string)[]> = {
+  const allowedTransitions: Partial<Record<CLASS_LEAD_STATUS, (CLASS_LEAD_STATUS | string)[]>> = {
     [CLASS_LEAD_STATUS.NEW]: [CLASS_LEAD_STATUS.ANNOUNCED],
     [CLASS_LEAD_STATUS.ANNOUNCED]: [CLASS_LEAD_STATUS.DEMO_SCHEDULED],
     [CLASS_LEAD_STATUS.DEMO_SCHEDULED]: [CLASS_LEAD_STATUS.DEMO_COMPLETED],
     [CLASS_LEAD_STATUS.DEMO_COMPLETED]: [CLASS_LEAD_STATUS.CONVERTED, CLASS_LEAD_STATUS.REJECTED],
-    [CLASS_LEAD_STATUS.CONVERTED]: [],
+    // After a lead is converted, we may later mark that payment has been received
+    [CLASS_LEAD_STATUS.CONVERTED]: [CLASS_LEAD_STATUS.PAYMENT_RECEIVED],
     [CLASS_LEAD_STATUS.REJECTED]: [],
   };
+
+  // Special case: once a lead is converted, marking PAYMENT_RECEIVED should not
+  // change the status away from CONVERTED. Instead, just flip the payment flag.
+  if (current === CLASS_LEAD_STATUS.CONVERTED && newStatus === CLASS_LEAD_STATUS.PAYMENT_RECEIVED) {
+    (lead as any).paymentReceived = true;
+    await lead.save();
+    await lead.populate([
+      { path: 'createdBy', select: 'name email role' },
+      { path: 'assignedTutor', select: 'name email phone' },
+    ]);
+    return lead;
+  }
 
   if (current === newStatus) {
     return lead; // no change

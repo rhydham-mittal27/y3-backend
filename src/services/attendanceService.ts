@@ -4,7 +4,7 @@ import FinalClass from '../models/FinalClass';
 import User from '../models/User';
 import Notification from '../models/Notification';
 import ErrorResponse from '../utils/errorResponse';
-import { ATTENDANCE_STATUS, FINAL_CLASS_STATUS } from '../config/constants';
+import { ATTENDANCE_STATUS, FINAL_CLASS_STATUS, STUDENT_ATTENDANCE_STATUS } from '../config/constants';
 import { createPayment } from './paymentService';
 import logger from '../utils/logger';
 
@@ -13,9 +13,10 @@ export const createAttendance = async (params: {
   sessionDate: Date;
   sessionNumber?: number;
   notes?: string;
+  studentAttendanceStatus?: string;
   submittedBy: string;
 }) => {
-  const { finalClassId, sessionDate, sessionNumber, notes, submittedBy } = params;
+  const { finalClassId, sessionDate, sessionNumber, notes, studentAttendanceStatus, submittedBy } = params;
 
   const cls = await FinalClass.findById(finalClassId);
   if (!cls) throw new ErrorResponse('Final class not found', 404);
@@ -34,6 +35,7 @@ export const createAttendance = async (params: {
     coordinator: cls.coordinator,
     parent: (cls as any).parent,
     status: ATTENDANCE_STATUS.PENDING,
+    studentAttendanceStatus: studentAttendanceStatus || STUDENT_ATTENDANCE_STATUS.PRESENT,
     submittedBy: new mongoose.Types.ObjectId(submittedBy),
     notes,
   });
@@ -246,7 +248,7 @@ export const rejectAttendance = async (attendanceId: string, rejectedByUserId: s
 
 export const updateAttendance = async (
   attendanceId: string,
-  updateData: Partial<{ sessionDate: Date; sessionNumber: number; notes: string }>
+  updateData: Partial<{ sessionDate: Date; sessionNumber: number; notes: string; studentAttendanceStatus: string }>
 ) => {
   const attendance = await Attendance.findById(attendanceId);
   if (!attendance) throw new ErrorResponse('Attendance not found', 404);
@@ -256,6 +258,9 @@ export const updateAttendance = async (
   if (updateData.sessionDate) attendance.sessionDate = new Date(updateData.sessionDate);
   if (typeof updateData.sessionNumber !== 'undefined') attendance.sessionNumber = updateData.sessionNumber;
   if (typeof updateData.notes !== 'undefined') attendance.notes = updateData.notes;
+  if (typeof updateData.studentAttendanceStatus !== 'undefined') {
+    attendance.studentAttendanceStatus = updateData.studentAttendanceStatus as any;
+  }
   await attendance.save();
 
   await attendance.populate([

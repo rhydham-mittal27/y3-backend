@@ -31,6 +31,7 @@ export interface ITutorDocument extends Document {
   isAvailable: boolean;
   preferredMode?: TEACHING_MODE | string;
   preferredLocations?: string[];
+  preferredCities?: string[];
   createdAt: Date;
   updatedAt: Date;
   approvalRatio?: number;
@@ -82,6 +83,7 @@ const TutorSchema: Schema<ITutorDocument> = new Schema<ITutorDocument>(
     isAvailable: { type: Boolean, default: true },
     preferredMode: { type: String, enum: Object.values(TEACHING_MODE) },
     preferredLocations: { type: [String] },
+    preferredCities: { type: [String] },
     tier: { type: String, enum: Object.values(TUTOR_TIER), default: TUTOR_TIER.BRONZE, required: true },
     tierUpdatedAt: { type: Date },
     tierUpdatedBy: { type: Schema.Types.ObjectId, ref: 'User' },

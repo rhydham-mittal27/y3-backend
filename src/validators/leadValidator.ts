@@ -8,6 +8,7 @@ export const createLeadValidation = [
     .withMessage('Student name is required')
     .isLength({ min: 2, max: 100 })
     .withMessage('Student name must be 2-100 characters'),
+  body('parentPhone').optional().trim().isLength({ min: 7, max: 20 }).withMessage('Parent phone must be 7-20 characters'),
   body('grade').trim().notEmpty().withMessage('Grade is required'),
   body('subject')
     .isArray({ min: 1 })
@@ -28,24 +29,49 @@ export const createLeadValidation = [
     .trim()
     .isLength({ min: 2, max: 200 })
     .withMessage('Location must be 2-200 characters'),
+  body('city')
+    .optional({ checkFalsy: true })
+    .trim()
+    .isLength({ min: 2, max: 100 })
+    .withMessage('City must be 2-100 characters'),
+  body('area')
+    .optional({ checkFalsy: true })
+    .trim()
+    .isLength({ min: 2, max: 100 })
+    .withMessage('Area must be 2-100 characters'),
+  body('address')
+    .optional({ checkFalsy: true })
+    .trim()
+    .isLength({ min: 5, max: 200 })
+    .withMessage('Address must be 5-200 characters'),
   body('timing')
     .trim()
     .notEmpty()
     .withMessage('Timing is required')
     .isLength({ min: 2, max: 100 })
     .withMessage('Timing must be 2-100 characters'),
+  body('classesPerMonth').optional().isInt({ min: 1 }).withMessage('Classes per month must be a positive integer'),
+  body('classDurationHours').optional().isFloat({ min: 0.5 }).withMessage('Class duration must be at least 0.5 hours'),
+  body('paymentAmount').optional().isFloat({ min: 0 }).withMessage('Fees must be a non-negative number'),
   body('notes').optional().trim().isLength({ max: 500 }).withMessage('Notes must not exceed 500 characters'),
 ];
 
 export const updateLeadValidation = [
   param('id').isMongoId().withMessage('Invalid lead ID'),
   body('studentName').optional().trim().isLength({ min: 2, max: 100 }),
+  body('parentPhone').optional().trim().isLength({ min: 7, max: 20 }),
   body('grade').optional().trim().notEmpty(),
   body('subject').optional().isArray({ min: 1 }),
   body('board').optional().isIn(Object.values(BOARD_TYPE) as string[]),
   body('mode').optional().isIn(Object.values(TEACHING_MODE) as string[]),
   body('location').optional().trim(),
+  body('city').optional().trim(),
+  body('area').optional().trim(),
+  body('address').optional().trim(),
   body('timing').optional().trim().isLength({ min: 2, max: 100 }),
+  body('classesPerMonth').optional().isInt({ min: 1 }),
+  body('classDurationHours').optional().isFloat({ min: 0.5 }),
+  body('paymentAmount').optional().isFloat({ min: 0 }),
   body('notes').optional().trim().isLength({ max: 500 }),
 ];
 

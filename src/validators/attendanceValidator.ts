@@ -1,11 +1,15 @@
 import { body, param } from 'express-validator';
-import { ATTENDANCE_STATUS } from '../config/constants';
+import { ATTENDANCE_STATUS, STUDENT_ATTENDANCE_STATUS } from '../config/constants';
 
 export const createAttendanceValidation = [
   body('finalClassId').notEmpty().withMessage('Final class ID is required').isMongoId().withMessage('Invalid final class ID'),
   body('sessionDate').notEmpty().withMessage('Session date is required').isISO8601().withMessage('Invalid date format'),
   body('sessionNumber').optional().isInt({ min: 1 }).withMessage('Session number must be positive integer'),
   body('notes').optional().trim().isLength({ max: 1000 }).withMessage('Notes must not exceed 1000 characters'),
+  body('studentAttendanceStatus')
+    .optional()
+    .isIn(Object.values(STUDENT_ATTENDANCE_STATUS))
+    .withMessage('Invalid student attendance status. Must be PRESENT, ABSENT, or LATE'),
 ];
 
 export const updateAttendanceValidation = [
@@ -13,6 +17,10 @@ export const updateAttendanceValidation = [
   body('sessionDate').optional().isISO8601().withMessage('Invalid date format'),
   body('sessionNumber').optional().isInt({ min: 1 }).withMessage('Session number must be positive integer'),
   body('notes').optional().trim().isLength({ max: 1000 }).withMessage('Notes must not exceed 1000 characters'),
+  body('studentAttendanceStatus')
+    .optional()
+    .isIn(Object.values(STUDENT_ATTENDANCE_STATUS))
+    .withMessage('Invalid student attendance status. Must be PRESENT, ABSENT, or LATE'),
 ];
 
 export const rejectAttendanceValidation = [
