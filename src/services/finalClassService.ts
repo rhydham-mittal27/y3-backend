@@ -11,6 +11,31 @@ import { CLASS_LEAD_STATUS, FINAL_CLASS_STATUS, MANAGER_ACTION_TYPE, ATTENDANCE_
 import { logManagerActivity } from './managerService';
 import Manager from '../models/Manager';
 
+const DAYS_ORDER = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY'];
+
+const computeMonthlyTotalSessions = (startDate: Date, schedule?: { daysOfWeek?: string[] }): number => {
+  if (!schedule) return 0;
+  const daysOfWeek: string[] = Array.isArray(schedule.daysOfWeek) ? schedule.daysOfWeek : [];
+  if (!daysOfWeek.length) return 0;
+
+  const start = new Date(startDate);
+  start.setHours(0, 0, 0, 0);
+  const end = new Date(start);
+  end.setMonth(end.getMonth() + 1);
+
+  let total = 0;
+  for (let current = new Date(start); current < end; current.setDate(current.getDate() + 1)) {
+    current.setHours(0, 0, 0, 0);
+    const weekdayIndex = (current.getDay() + 6) % 7; // convert Sun=0..Sat=6 to Mon=0..Sun=6
+    const weekdayName = DAYS_ORDER[weekdayIndex];
+    if (daysOfWeek.includes(weekdayName)) {
+      total += 1;
+    }
+  }
+
+  return total;
+};
+
 export const convertLeadToFinalClass = async (params: {
   classLeadId: string;
   coordinatorUserId?: string;
@@ -81,6 +106,11 @@ export const convertLeadToFinalClass = async (params: {
       throw new ErrorResponse('Failed to generate unique class name', 500);
     }
 
+    const autoTotalSessions =
+      typeof totalSessions === 'number'
+        ? totalSessions
+        : computeMonthlyTotalSessions(new Date(startDate), schedule);
+
     const created = new FinalClass({
       className,
       classLead: new mongoose.Types.ObjectId(classLeadId),
@@ -89,7 +119,7 @@ export const convertLeadToFinalClass = async (params: {
       parent: parentUserObjectId,
       startDate: new Date(startDate),
       schedule,
-      totalSessions: totalSessions ?? 0,
+      totalSessions: autoTotalSessions,
       ratePerSession: typeof ratePerSession === 'number' ? ratePerSession : 0,
       completedSessions: 0,
       studentName: lead.studentName,
@@ -229,7 +259,16 @@ export const updateFinalClass = async (
   if (cls.status !== FINAL_CLASS_STATUS.ACTIVE) {
     throw new ErrorResponse('Cannot update completed/cancelled class', 400);
   }
-  Object.assign(cls, updateData);
+  if (updateData.schedule && !('totalSessions' in updateData)) {
+    const mergedSchedule: { daysOfWeek?: string[]; timeSlot?: string } = {
+      ...((cls as any).schedule || {}),
+      ...updateData.schedule,
+    };
+    cls.totalSessions = computeMonthlyTotalSessions(cls.startDate, mergedSchedule);
+    (cls as any).schedule = mergedSchedule;
+  } else {
+    Object.assign(cls, updateData);
+  }
   await cls.save();
   await cls.populate([
     { path: 'classLead' },

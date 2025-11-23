@@ -74,6 +74,13 @@ const CoordinatorSchema: Schema<ICoordinatorDocument> = new Schema<ICoordinatorD
           },
           default: {},
         },
+        attendanceControls: {
+          type: {
+            sameDayOnly: { type: Boolean, default: true },
+            allowTutorReschedule: { type: Boolean, default: true },
+          },
+          default: {},
+        },
       },
       default: {},
     },

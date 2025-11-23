@@ -626,6 +626,7 @@ export const getTutorPerformanceMetrics = async (params: { tutorId: string; coor
       tutor: null,
       classesAssigned: 0,
       classesCompleted: 0,
+      totalClassHours: 0,
       attendanceApprovalRate: 0,
       averageTestScore: 0,
       feedbackRatings: {
@@ -652,6 +653,25 @@ export const getTutorPerformanceMetrics = async (params: { tutorId: string; coor
   if (coordinatorUserId && classes.length === 0) throw new ErrorResponse('Tutor not assigned to your classes', 403);
 
   const classIds = classes.map((c) => c._id);
+
+  // Compute total class hours across all final classes for this tutor (any status)
+  const allTutorClasses = await FinalClass.find({
+    $or: [
+      { tutor: tutor.user },
+      { tutorUser: tutor.user },
+    ],
+  })
+    .select('completedSessions classLead')
+    .populate({ path: 'classLead', select: 'classDurationHours' });
+
+  let totalClassHours = 0;
+  for (const cls of allTutorClasses as any[]) {
+    const completed = cls.completedSessions || 0;
+    const duration = (cls.classLead as any)?.classDurationHours || 0;
+    if (completed > 0 && duration > 0) {
+      totalClassHours += completed * duration;
+    }
+  }
 
   // Attendance approval rate
   const [totalAttendance, approvedAttendance] = await Promise.all([
@@ -688,6 +708,7 @@ export const getTutorPerformanceMetrics = async (params: { tutorId: string; coor
     tutor,
     classesAssigned: tutor.classesAssigned,
     classesCompleted: tutor.classesCompleted,
+    totalClassHours,
     attendanceApprovalRate,
     averageTestScore,
     feedbackRatings: {

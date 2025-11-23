@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import Attendance from '../models/Attendance';
 import FinalClass from '../models/FinalClass';
+import Coordinator from '../models/Coordinator';
 import User from '../models/User';
 import Notification from '../models/Notification';
 import ErrorResponse from '../utils/errorResponse';
@@ -25,7 +26,7 @@ export const createAttendance = async (params: {
     throw new ErrorResponse('Class must be ACTIVE to create attendance', 400);
   }
 
-  // Enforce that attendance can only be marked on the actual day of the class
+  // Optionally enforce that attendance can only be marked on today's date
   const requestedDate = new Date(sessionDate);
   const today = new Date();
   const normalize = (d: Date) => {
@@ -33,17 +34,41 @@ export const createAttendance = async (params: {
     nd.setHours(0, 0, 0, 0);
     return nd.getTime();
   };
-  if (normalize(requestedDate) !== normalize(today)) {
+  let sameDayOnly = true;
+  try {
+    const coord = await Coordinator.findOne({ user: cls.coordinator as any });
+    if (coord && (coord as any).settings?.attendanceControls) {
+      const flag = (coord as any).settings.attendanceControls.sameDayOnly;
+      if (typeof flag === 'boolean') sameDayOnly = flag;
+    }
+  } catch {}
+
+  if (sameDayOnly && normalize(requestedDate) !== normalize(today)) {
     throw new ErrorResponse('Attendance can only be marked for today\'s date', 400);
   }
 
-  // Additionally, ensure that today is one of the scheduled days for this class (if schedule exists)
-  const schedule: any = (cls as any).schedule;
-  if (schedule && Array.isArray(schedule.daysOfWeek) && schedule.daysOfWeek.length > 0) {
-    const dayNames = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'];
-    const todayDayName = dayNames[today.getDay()];
-    if (!schedule.daysOfWeek.includes(todayDayName)) {
-      throw new ErrorResponse('Attendance can only be marked on a scheduled class day', 400);
+  // Check one-time reschedules: allow attendance on target dates (toDate),
+  // and treat original dates (fromDate) as moved away when toDate differs.
+  const reschedules: any[] = ((cls as any).oneTimeReschedules || []).map((r: any) => ({ ...r }));
+  const hasTodayRescheduleTarget = reschedules.some((r) => normalize(new Date(r.toDate)) === normalize(today));
+  const isMovedFromToday = reschedules.some(
+    (r) => normalize(new Date(r.fromDate)) === normalize(today) && normalize(new Date(r.toDate)) !== normalize(new Date(r.fromDate))
+  );
+
+  if (isMovedFromToday && !hasTodayRescheduleTarget) {
+    throw new ErrorResponse('This session has been rescheduled to another date', 400);
+  }
+
+  // Additionally, if there is NO one-time reschedule target, ensure that today is one of the scheduled days
+  // for this class (if a recurring schedule exists)
+  if (!hasTodayRescheduleTarget) {
+    const schedule: any = (cls as any).schedule;
+    if (schedule && Array.isArray(schedule.daysOfWeek) && schedule.daysOfWeek.length > 0) {
+      const dayNames = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'];
+      const todayDayName = dayNames[today.getDay()];
+      if (!schedule.daysOfWeek.includes(todayDayName)) {
+        throw new ErrorResponse('Attendance can only be marked on a scheduled class day', 400);
+      }
     }
   }
 
@@ -315,13 +340,66 @@ export const getAttendanceByClass = async (finalClassId: string, status?: ATTEND
   const attendances = await Attendance.find(query)
     .sort({ sessionDate: -1 })
     .populate([
-      { path: 'finalClass' },
+      {
+        path: 'finalClass',
+        populate: { path: 'classLead', select: 'classDurationHours' },
+      },
       { path: 'tutor', select: 'name email phone' },
       { path: 'coordinator', select: 'name email phone' },
       { path: 'parent', select: 'name email phone' },
       { path: 'submittedBy', select: 'name email' },
     ]);
   return attendances;
+};
+
+export const getTutorAttendanceSummary = async (tutorUserId: string) => {
+  if (!mongoose.isValidObjectId(tutorUserId)) {
+    return [];
+  }
+
+  const tutorObjectId = new mongoose.Types.ObjectId(tutorUserId);
+
+  const agg = await Attendance.aggregate([
+    { $match: { tutor: tutorObjectId } },
+    {
+      $group: {
+        _id: '$finalClass',
+        totalSessionsTaken: { $sum: 1 },
+        presentCount: {
+          $sum: {
+            $cond: [
+              { $eq: ['$studentAttendanceStatus', STUDENT_ATTENDANCE_STATUS.PRESENT] },
+              1,
+              0,
+            ],
+          },
+        },
+      },
+    },
+  ]);
+
+  const classIds = agg.map((a: any) => a._id).filter(Boolean);
+  if (!classIds.length) return [];
+
+  const classes = await FinalClass.find({ _id: { $in: classIds } }).select('className studentName');
+  const classMap: Record<string, any> = {};
+  classes.forEach((c: any) => {
+    classMap[String(c._id)] = c;
+  });
+
+  return agg
+    .map((row: any) => {
+      const cls = classMap[String(row._id)];
+      if (!cls) return null;
+      return {
+        classId: String(row._id),
+        className: cls.className || '',
+        studentName: cls.studentName || '',
+        totalSessionsTaken: row.totalSessionsTaken || 0,
+        presentCount: row.presentCount || 0,
+      };
+    })
+    .filter(Boolean);
 };
 
 export const getAttendanceHistory = async (finalClassId: string) => {
@@ -386,4 +464,5 @@ export default {
   getAttendanceHistory,
   getPendingApprovalsForCoordinator,
   getPendingApprovalsForParent,
+  getTutorAttendanceSummary,
 };

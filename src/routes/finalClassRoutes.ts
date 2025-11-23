@@ -10,6 +10,7 @@ import {
   getTutorClasses,
   getMyClassesController,
   getParentClassesController,
+  createOneTimeRescheduleController,
 } from '../controllers/finalClassController';
 import {
   convertToFinalClassValidation,
@@ -53,6 +54,12 @@ router.get(
   ),
   classIdValidation,
   getFinalClass
+);
+router.post(
+  '/:id/reschedule',
+  authorize(USER_ROLES.TUTOR),
+  classIdValidation,
+  createOneTimeRescheduleController
 );
 router.put('/:id', authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN, USER_ROLES.COORDINATOR,USER_ROLES.TUTOR), updateFinalClassValidation, updateFinalClassDetails);
 router.patch('/:id/status', authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN), updateClassStatusValidation, updateClassStatus);

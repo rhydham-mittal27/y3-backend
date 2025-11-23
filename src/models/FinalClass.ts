@@ -31,6 +31,7 @@ export interface IFinalClassDocument extends Document {
   createdAt: Date;
   updatedAt: Date;
   progressPercentage?: number;
+  oneTimeReschedules?: { fromDate: Date; toDate: Date; timeSlot: string }[];
 }
 
 const FinalClassSchema: Schema<IFinalClassDocument> = new Schema<IFinalClassDocument>(
@@ -60,6 +61,13 @@ const FinalClassSchema: Schema<IFinalClassDocument> = new Schema<IFinalClassDocu
     convertedBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     convertedAt: { type: Date, default: Date.now },
     notes: { type: String },
+    oneTimeReschedules: [
+      {
+        fromDate: { type: Date, required: true },
+        toDate: { type: Date, required: true },
+        timeSlot: { type: String, required: true },
+      },
+    ],
   },
   { timestamps: true, toJSON: { virtuals: true }, toObject: { virtuals: true } }
 );
@@ -77,6 +85,16 @@ FinalClassSchema.virtual('progressPercentage').get(function (this: IFinalClassDo
   const done = this.completedSessions || 0;
   if (total <= 0) return 0;
   return Math.min(100, Math.max(0, (done / total) * 100));
+});
+
+FinalClassSchema.pre('validate', function (next) {
+  const doc = this as IFinalClassDocument & { oneTimeReschedules?: any[] };
+  if (Array.isArray(doc.oneTimeReschedules)) {
+    doc.oneTimeReschedules = doc.oneTimeReschedules.filter(
+      (r: any) => r && r.fromDate && r.toDate && r.timeSlot
+    );
+  }
+  next();
 });
 
 const FinalClass: Model<IFinalClassDocument> =

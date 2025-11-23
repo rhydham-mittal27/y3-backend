@@ -63,12 +63,14 @@ export const getTutorDemoHistoryController = asyncHandler(async (req: AuthReques
   const page = parseInt((req.query.page as string) || '1', 10);
   const limit = parseInt((req.query.limit as string) || '10', 10);
   const result = await getTutorDemoHistory(tutorId, page, limit);
-  res.status(200).json(paginatedResponse(result.history, result.total, result.page, result.limit));
+  // paginatedResponse expects (data, page, limit, total)
+  res.status(200).json(paginatedResponse(result.history, result.page, result.limit, result.total));
 });
 
 export const getMyDemosController = asyncHandler(async (req: AuthRequest, res) => {
   const page = parseInt((req.query.page as string) || '1', 10);
   const limit = parseInt((req.query.limit as string) || '10', 10);
   const result = await getTutorDemoHistory(req.user!.id, page, limit);
-  res.status(200).json(paginatedResponse(result.history, result.total, result.page, result.limit));
+  // paginatedResponse expects (data, page, limit, total)
+  res.status(200).json(paginatedResponse(result.history, result.page, result.limit, result.total));
 });

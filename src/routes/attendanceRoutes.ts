@@ -12,6 +12,8 @@ import {
   getClassAttendanceHistory,
   getCoordinatorPendingApprovals,
   getParentPendingApprovals,
+  getTutorAttendanceSummaryController,
+  exportClassAttendancePdfController,
 } from '../controllers/attendanceController';
 import {
   createAttendanceValidation,
@@ -45,6 +47,8 @@ router.get('/coordinator/pending', authorize(USER_ROLES.COORDINATOR), getCoordin
 
 router.get('/parent/pending', authorize(USER_ROLES.PARENT), getParentPendingApprovals);
 
+router.get('/tutor/summary', authorize(USER_ROLES.TUTOR), getTutorAttendanceSummaryController);
+
 router.get(
   '/class/:classId',
   authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN, USER_ROLES.COORDINATOR, USER_ROLES.TUTOR, USER_ROLES.PARENT),
@@ -57,6 +61,13 @@ router.get(
   authorize(USER_ROLES.MANAGER, USER_ROLES.TUTOR, USER_ROLES.ADMIN, USER_ROLES.COORDINATOR),
   classIdParamValidation,
   getClassAttendanceHistory
+);
+
+router.get(
+  '/class/:classId/export-pdf',
+  authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN, USER_ROLES.COORDINATOR, USER_ROLES.TUTOR),
+  classIdParamValidation,
+  exportClassAttendancePdfController
 );
 
 router.get(

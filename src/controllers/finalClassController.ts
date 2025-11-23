@@ -3,6 +3,9 @@ import asyncHandler from '../utils/asyncHandler';
 import { successResponse, paginatedResponse } from '../utils/responseFormatter';
 import ErrorResponse from '../utils/errorResponse';
 import { AuthRequest } from '../types';
+import FinalClass from '../models/FinalClass';
+import Coordinator from '../models/Coordinator';
+import { FINAL_CLASS_STATUS } from '../config/constants';
 import {
   convertLeadToFinalClass,
   getAllFinalClasses,
@@ -14,7 +17,7 @@ import {
   getClassesByTutor,
   getClassesByParent,
 } from '../services/finalClassService';
-import { FINAL_CLASS_STATUS } from '../config/constants';
+// FINAL_CLASS_STATUS already imported above
 
 export const convertToFinalClass = asyncHandler(async (req: AuthRequest, res) => {
   const errors = validationResult(req);
@@ -99,6 +102,60 @@ export const updateProgress = asyncHandler(async (req: AuthRequest, res) => {
   return res.json(successResponse(cls, 'Session progress updated successfully'));
 });
 
+export const createOneTimeRescheduleController = asyncHandler(async (req: AuthRequest, res) => {
+  const classId = req.params.id as string;
+  const tutorUserId = req.user!.id;
+  const { fromDate, toDate, timeSlot } = req.body as { fromDate?: string; toDate?: string; timeSlot?: string };
+
+  if (!fromDate || !timeSlot) {
+    throw new ErrorResponse('fromDate and timeSlot are required', 400);
+  }
+
+  const cls = await FinalClass.findById(classId);
+  if (!cls) throw new ErrorResponse('Final class not found', 404);
+  if (String(cls.tutor) !== String(tutorUserId)) {
+    throw new ErrorResponse('You are not the assigned tutor for this class', 403);
+  }
+  if (cls.status !== FINAL_CLASS_STATUS.ACTIVE) {
+    throw new ErrorResponse('Only active classes can be rescheduled', 400);
+  }
+
+  let allowTutorReschedule = true;
+  try {
+    const coord = await Coordinator.findOne({ user: cls.coordinator as any });
+    if (coord && (coord as any).settings?.attendanceControls) {
+      const flag = (coord as any).settings.attendanceControls.allowTutorReschedule;
+      if (typeof flag === 'boolean') allowTutorReschedule = flag;
+    }
+  } catch {}
+
+  if (!allowTutorReschedule) {
+    throw new ErrorResponse('Rescheduling is disabled by your coordinator', 403);
+  }
+
+  const normalize = (d: Date) => {
+    const nd = new Date(d);
+    nd.setHours(0, 0, 0, 0);
+    return nd.getTime();
+  };
+
+  const from = new Date(fromDate);
+  from.setHours(0, 0, 0, 0);
+  const to = new Date(toDate || fromDate);
+  to.setHours(0, 0, 0, 0);
+
+  const list: any[] = ((cls as any).oneTimeReschedules || [])
+    .map((r: any) => ({ ...r }))
+    .filter((r: any) => r && r.fromDate && r.toDate && r.timeSlot);
+  // Replace any existing reschedule for the same original date
+  const filtered = list.filter((r) => normalize(new Date(r.fromDate)) !== normalize(from));
+  filtered.push({ fromDate: from, toDate: to, timeSlot });
+  (cls as any).oneTimeReschedules = filtered;
+
+  await cls.save();
+  return res.status(200).json(successResponse(cls, 'One-time reschedule saved'));
+});
+
 export const getCoordinatorClasses = asyncHandler(async (req: AuthRequest, res) => {
   const coordinatorUserId = req.params.coordinatorId as string;
   const status = (req.query.status as string) || undefined;
@@ -154,4 +211,5 @@ export default {
   getTutorClasses,
   getMyClassesController,
   getParentClassesController,
+  createOneTimeRescheduleController,
 };

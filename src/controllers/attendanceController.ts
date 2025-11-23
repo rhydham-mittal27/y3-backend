@@ -4,6 +4,7 @@ import { successResponse, paginatedResponse } from '../utils/responseFormatter';
 import ErrorResponse from '../utils/errorResponse';
 import { AuthRequest } from '../types';
 import { USER_ROLES } from '../config/constants';
+import PDFDocument from 'pdfkit';
 import {
   createAttendance,
   getAllAttendance,
@@ -17,6 +18,7 @@ import {
   getAttendanceHistory,
   getPendingApprovalsForCoordinator,
   getPendingApprovalsForParent,
+  getTutorAttendanceSummary,
 } from '../services/attendanceService';
 
 export const createAttendanceRecord = asyncHandler(async (req: AuthRequest, res) => {
@@ -164,6 +166,48 @@ export const getParentPendingApprovals = asyncHandler(async (req: AuthRequest, r
   return res.json(successResponse(attendances));
 });
 
+export const getTutorAttendanceSummaryController = asyncHandler(async (req: AuthRequest, res) => {
+  const tutorUserId = req.user!.id;
+  const summary = await getTutorAttendanceSummary(tutorUserId);
+  return res.json(successResponse(summary));
+});
+
+export const exportClassAttendancePdfController = asyncHandler(async (req: AuthRequest, res) => {
+  const { classId } = req.params as any;
+
+  const attendances = await getAttendanceByClass(classId);
+  if (!attendances.length) {
+    throw new ErrorResponse('No attendance records found for this class', 404);
+  }
+
+  const doc = new PDFDocument({ margin: 50 });
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename=attendance-${classId}.pdf`);
+  doc.pipe(res as any);
+
+  const first = attendances[0] as any;
+  const studentName = first?.finalClass?.studentName || '';
+  const className = first?.finalClass?.className || '';
+
+  doc.fontSize(18).text('Attendance Report', { align: 'center' });
+  doc.moveDown();
+  doc.fontSize(12).text(`Class: ${className}`);
+  doc.text(`Student: ${studentName}`);
+  doc.moveDown();
+
+  doc.fontSize(12).text('Date', { continued: true, width: 150 });
+  doc.text('Status', { width: 150 });
+  doc.moveDown(0.5);
+
+  attendances.forEach((a: any) => {
+    const d = a.sessionDate ? new Date(a.sessionDate).toDateString() : '';
+    doc.text(d, { continued: true, width: 150 });
+    doc.text(String(a.studentAttendanceStatus || ''), { width: 150 });
+  });
+
+  doc.end();
+});
+
 export default {
   createAttendanceRecord,
   getAttendances,
@@ -177,4 +221,6 @@ export default {
   getClassAttendanceHistory,
   getCoordinatorPendingApprovals,
   getParentPendingApprovals,
+  getTutorAttendanceSummaryController,
+  exportClassAttendancePdfController,
 };

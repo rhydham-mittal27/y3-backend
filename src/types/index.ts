@@ -202,6 +202,10 @@ export interface ICoordinatorSettings {
     endTime?: string;
     workingDays?: string[];
   };
+  attendanceControls?: {
+    sameDayOnly?: boolean;
+    allowTutorReschedule?: boolean;
+  };
 }
 
 export interface ICoordinator {
@@ -423,6 +427,7 @@ export interface ITutorPerformanceMetrics {
   tutor: ITutor;
   classesAssigned: number;
   classesCompleted: number;
+  totalClassHours: number;
   attendanceApprovalRate: number;
   averageTestScore: number;
   feedbackRatings: {
