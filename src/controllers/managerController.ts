@@ -9,11 +9,13 @@ import {
   getManagerById,
   getManagerByUserId,
   updateManagerProfile,
+  updateManagerSettings,
   getManagerMetrics,
   getManagerPerformanceHistory,
   getManagerActivityLog,
   getManagerContribution,
   deleteManagerProfile,
+  getManagerTodoList,
 } from '../services/managerService';
 
 export const createManagerProfileController = asyncHandler(async (req: AuthRequest, res) => {
@@ -61,6 +63,13 @@ export const updateManagerProfileController = asyncHandler(async (req: AuthReque
   return res.json(successResponse(manager, 'Manager profile updated successfully'));
 });
 
+export const updateManagerSettingsController = asyncHandler(async (req: AuthRequest, res) => {
+  const managerId = req.params.managerId as string;
+  const settingsData = req.body;
+  const manager = await updateManagerSettings(managerId, settingsData);
+  return res.json(successResponse(manager, 'Manager settings updated successfully'));
+});
+
 export const getManagerMetricsController = asyncHandler(async (req: AuthRequest, res) => {
   const managerId = req.params.id as string;
   const fromDate = req.query.fromDate ? new Date(String(req.query.fromDate)) : undefined;
@@ -98,6 +107,12 @@ export const getManagerContributionController = asyncHandler(async (req: AuthReq
   return res.json(successResponse(data));
 });
 
+export const getManagerTodoListController = asyncHandler(async (req: AuthRequest, res) => {
+  const managerId = req.params.id as string;
+  const leads = await getManagerTodoList(managerId);
+  return res.json(successResponse(leads));
+});
+
 export const getMyMetrics = asyncHandler(async (req: AuthRequest, res) => {
   const userId = req.user?.id as string;
   const manager = await getManagerByUserId(userId);
@@ -133,6 +148,7 @@ export default {
   getManagerByUser,
   getMyProfile,
   updateManagerProfileController,
+  updateManagerSettingsController,
   getManagerMetricsController,
   getManagerPerformanceHistoryController,
   getManagerActivityLogController,
@@ -140,4 +156,5 @@ export default {
   getMyMetrics,
   getMyActivityLog,
   deleteManagerProfileController,
+  getManagerTodoListController,
 };

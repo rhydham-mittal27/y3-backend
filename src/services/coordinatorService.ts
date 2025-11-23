@@ -48,6 +48,60 @@ export const createCoordinator = async (
   return coordinator;
 };
 
+export const updateCoordinatorSettings = async (
+  coordinatorId: string,
+  settingsData: Partial<{
+    classCapacitySettings: {
+      preferredMaxCapacity?: number;
+      autoAcceptClasses?: boolean;
+      capacityAlertThreshold?: number;
+    };
+    specializationAreas?: string[];
+    notificationSettings: {
+      attendanceApprovals?: boolean;
+      paymentReminders?: boolean;
+      testScheduling?: boolean;
+      parentComplaints?: boolean;
+    };
+    workingHours: {
+      startTime?: string;
+      endTime?: string;
+      workingDays?: string[];
+    };
+  }>
+) => {
+  const coordinator: any = await Coordinator.findById(coordinatorId);
+  if (!coordinator) throw new ErrorResponse('Coordinator not found', 404);
+
+  const currentSettings: any = coordinator.settings || {};
+  const nextSettings: any = {
+    ...currentSettings,
+    ...settingsData,
+    classCapacitySettings: {
+      ...(currentSettings.classCapacitySettings || {}),
+      ...(settingsData.classCapacitySettings || {}),
+    },
+    notificationSettings: {
+      ...(currentSettings.notificationSettings || {}),
+      ...(settingsData.notificationSettings || {}),
+    },
+    workingHours: {
+      ...(currentSettings.workingHours || {}),
+      ...(settingsData.workingHours || {}),
+    },
+  };
+
+  const preferredMaxCapacity = nextSettings.classCapacitySettings?.preferredMaxCapacity;
+  if (typeof preferredMaxCapacity === 'number' && preferredMaxCapacity < (coordinator.activeClassesCount || 0)) {
+    throw new ErrorResponse('preferredMaxCapacity cannot be less than active classes', 400);
+  }
+
+  coordinator.settings = nextSettings;
+  await coordinator.save();
+  await coordinator.populate({ path: 'user', select: 'name email phone role' });
+  return coordinator;
+};
+
 export const getCoordinatorPaymentSummary = async (
   coordinatorUserId: string,
   filters?: { status?: string; classId?: string; fromDate?: Date; toDate?: Date; page: number; limit: number; sortBy?: string; sortOrder?: 'asc' | 'desc' }
@@ -454,6 +508,7 @@ export default {
   getCoordinatorById,
   getCoordinatorByUserId,
   updateCoordinator,
+  updateCoordinatorSettings,
   deleteCoordinator,
   getCoordinatorWorkload,
   getAvailableCoordinators,

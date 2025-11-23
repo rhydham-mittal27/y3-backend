@@ -6,6 +6,7 @@ import {
   getManagerByUser,
   getMyProfile,
   updateManagerProfileController,
+  updateManagerSettingsController,
   getManagerMetricsController,
   getManagerPerformanceHistoryController,
   getManagerActivityLogController,
@@ -13,6 +14,7 @@ import {
   getMyMetrics,
   getMyActivityLog,
   deleteManagerProfileController,
+  getManagerTodoListController,
 } from '../controllers/managerController';
 import {
   createManagerValidation,
@@ -37,6 +39,7 @@ router.get('/', authorize(USER_ROLES.ADMIN), getManagers);
 router.get('/my-profile', authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN), getMyProfile);
 router.get('/my-metrics', authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN), metricsQueryValidation, getMyMetrics);
 router.get('/my-activity-log', authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN), activityLogValidation, getMyActivityLog);
+router.get('/todo-list/:id', authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN), managerIdValidation, getManagerTodoListController);
 router.get('/user/:userId', authorize(USER_ROLES.ADMIN, USER_ROLES.MANAGER), userIdParamValidation, getManagerByUser);
 // Specific alias before generic ':id' routes to avoid CastError
 router.get('/eligible-users', authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN), getEligibleUsers);
@@ -46,6 +49,7 @@ router.get('/:id/performance-history', authorize(USER_ROLES.ADMIN, USER_ROLES.MA
 router.get('/:id/activity-log', authorize(USER_ROLES.ADMIN, USER_ROLES.MANAGER), activityLogValidation, getManagerActivityLogController);
 router.get('/:id/contribution', authorize(USER_ROLES.ADMIN, USER_ROLES.MANAGER), managerIdValidation, metricsQueryValidation, getManagerContributionController);
 router.put('/:id', authorize(USER_ROLES.ADMIN), updateManagerValidation, updateManagerProfileController);
+router.patch('/:managerId/settings', authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN), updateManagerSettingsController);
 router.delete('/:id', authorize(USER_ROLES.ADMIN), managerIdValidation, deleteManagerProfileController);
 
 export default router;

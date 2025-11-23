@@ -18,6 +18,29 @@ export interface IManagerDocument extends Document {
   updatedAt: Date;
   conversionRate?: number;
   averageRevenuePerClass?: number;
+  settings?: {
+    dashboardPreferences?: {
+      defaultView?: 'overview' | 'leads' | 'classes' | 'revenue';
+      defaultDateRange?: 'week' | 'month' | 'quarter' | 'year';
+      chartPreferences?: string[];
+    };
+    defaultFilters?: {
+      leadStatus?: string[];
+      classStatus?: string[];
+      tutorVerificationStatus?: string;
+    };
+    notificationSettings?: {
+      newLeads?: boolean;
+      leadConversions?: boolean;
+      demoScheduled?: boolean;
+      paymentReceived?: boolean;
+      tutorVerifications?: boolean;
+    };
+    reportPreferences?: {
+      autoExportFrequency?: 'daily' | 'weekly' | 'monthly' | 'never';
+      exportFormat?: 'csv' | 'pdf' | 'both';
+    };
+  };
 }
 
 const ManagerSchema: Schema<IManagerDocument> = new Schema<IManagerDocument>(
@@ -34,6 +57,44 @@ const ManagerSchema: Schema<IManagerDocument> = new Schema<IManagerDocument>(
     department: { type: String },
     isActive: { type: Boolean, default: true },
     lastActivityAt: { type: Date },
+    settings: {
+      type: {
+        dashboardPreferences: {
+          type: {
+            defaultView: { type: String, default: 'overview' },
+            defaultDateRange: { type: String, default: 'month' },
+            chartPreferences: { type: [String], default: ['conversionFunnel', 'revenueChart'] },
+          },
+          default: {},
+        },
+        defaultFilters: {
+          type: {
+            leadStatus: { type: [String], default: [] },
+            classStatus: { type: [String], default: [] },
+            tutorVerificationStatus: { type: String, default: 'PENDING' },
+          },
+          default: {},
+        },
+        notificationSettings: {
+          type: {
+            newLeads: { type: Boolean, default: true },
+            leadConversions: { type: Boolean, default: true },
+            demoScheduled: { type: Boolean, default: true },
+            paymentReceived: { type: Boolean, default: true },
+            tutorVerifications: { type: Boolean, default: true },
+          },
+          default: {},
+        },
+        reportPreferences: {
+          type: {
+            autoExportFrequency: { type: String, default: 'weekly' },
+            exportFormat: { type: String, default: 'csv' },
+          },
+          default: {},
+        },
+      },
+      default: {},
+    },
   },
   { timestamps: true, toJSON: { virtuals: true }, toObject: { virtuals: true } }
 );

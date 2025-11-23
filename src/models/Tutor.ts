@@ -44,6 +44,27 @@ export interface ITutorDocument extends Document {
     requestedBy: mongoose.Types.ObjectId;
     reason?: string;
   };
+  monthlyStats?: {
+    month: string; // e.g. '2025-11'
+    totalClasses: number;
+    totalSessions: number;
+    completedSessions: number;
+  };
+  settings?: {
+    availabilityPreferences?: {
+      daysAvailable?: string[];
+      timeSlots?: string[];
+      maxClassesPerWeek?: number;
+    };
+    teachingModePreference?: TEACHING_MODE | string;
+    preferredSubjects?: string[];
+    preferredLocations?: string[];
+    notificationSettings?: {
+      classAssignments?: boolean;
+      demoRequests?: boolean;
+      feedbackReceived?: boolean;
+    };
+  };
 }
 
 const DocumentSchema = new Schema<IDocumentEmbedded>(
@@ -84,6 +105,30 @@ const TutorSchema: Schema<ITutorDocument> = new Schema<ITutorDocument>(
     preferredMode: { type: String, enum: Object.values(TEACHING_MODE) },
     preferredLocations: { type: [String] },
     preferredCities: { type: [String] },
+    settings: {
+      type: {
+        availabilityPreferences: {
+          type: {
+            daysAvailable: { type: [String], default: [] },
+            timeSlots: { type: [String], default: [] },
+            maxClassesPerWeek: { type: Number, default: 0 },
+          },
+          default: {},
+        },
+        teachingModePreference: { type: String, enum: Object.values(TEACHING_MODE) },
+        preferredSubjects: { type: [String], default: [] },
+        preferredLocations: { type: [String], default: [] },
+        notificationSettings: {
+          type: {
+            classAssignments: { type: Boolean, default: true },
+            demoRequests: { type: Boolean, default: true },
+            feedbackReceived: { type: Boolean, default: true },
+          },
+          default: {},
+        },
+      },
+      default: {},
+    },
     tier: { type: String, enum: Object.values(TUTOR_TIER), default: TUTOR_TIER.BRONZE, required: true },
     tierUpdatedAt: { type: Date },
     tierUpdatedBy: { type: Schema.Types.ObjectId, ref: 'User' },
@@ -94,6 +139,12 @@ const TutorSchema: Schema<ITutorDocument> = new Schema<ITutorDocument>(
         requestedBy: { type: Schema.Types.ObjectId, ref: 'User' },
         reason: String,
       },
+    },
+    monthlyStats: {
+      month: { type: String },
+      totalClasses: { type: Number, default: 0 },
+      totalSessions: { type: Number, default: 0 },
+      completedSessions: { type: Number, default: 0 },
     },
   },
   { timestamps: true, toJSON: { virtuals: true }, toObject: { virtuals: true } }

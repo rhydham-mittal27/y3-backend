@@ -7,6 +7,7 @@ import ErrorResponse from '../utils/errorResponse';
 import { ATTENDANCE_STATUS, FINAL_CLASS_STATUS, STUDENT_ATTENDANCE_STATUS } from '../config/constants';
 import { createPayment } from './paymentService';
 import logger from '../utils/logger';
+import { createNotificationWithPreferences } from './notificationService';
 
 export const createAttendance = async (params: {
   finalClassId: string;
@@ -24,6 +25,28 @@ export const createAttendance = async (params: {
     throw new ErrorResponse('Class must be ACTIVE to create attendance', 400);
   }
 
+  // Enforce that attendance can only be marked on the actual day of the class
+  const requestedDate = new Date(sessionDate);
+  const today = new Date();
+  const normalize = (d: Date) => {
+    const nd = new Date(d);
+    nd.setHours(0, 0, 0, 0);
+    return nd.getTime();
+  };
+  if (normalize(requestedDate) !== normalize(today)) {
+    throw new ErrorResponse('Attendance can only be marked for today\'s date', 400);
+  }
+
+  // Additionally, ensure that today is one of the scheduled days for this class (if schedule exists)
+  const schedule: any = (cls as any).schedule;
+  if (schedule && Array.isArray(schedule.daysOfWeek) && schedule.daysOfWeek.length > 0) {
+    const dayNames = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'];
+    const todayDayName = dayNames[today.getDay()];
+    if (!schedule.daysOfWeek.includes(todayDayName)) {
+      throw new ErrorResponse('Attendance can only be marked on a scheduled class day', 400);
+    }
+  }
+
   const existing = await Attendance.findOne({ finalClass: finalClassId, sessionDate: new Date(sessionDate) });
   if (existing) throw new ErrorResponse('Attendance already exists for this date', 409);
 
@@ -34,11 +57,14 @@ export const createAttendance = async (params: {
     tutor: cls.tutor,
     coordinator: cls.coordinator,
     parent: (cls as any).parent,
-    status: ATTENDANCE_STATUS.PENDING,
+    status: ATTENDANCE_STATUS.APPROVED,
     studentAttendanceStatus: studentAttendanceStatus || STUDENT_ATTENDANCE_STATUS.PRESENT,
     submittedBy: new mongoose.Types.ObjectId(submittedBy),
     notes,
   });
+
+  // Since attendance is auto-approved in the new flow, increment completed sessions for this class
+  await FinalClass.findByIdAndUpdate(cls._id, { $inc: { completedSessions: 1 } });
 
   await attendance.populate([
     { path: 'finalClass' },
@@ -135,8 +161,8 @@ export const coordinatorApprove = async (attendanceId: string, coordinatorUserId
 
   // Notify parent if exists
   if (attendance.parent) {
-    await Notification.create({
-      recipient: attendance.parent,
+    await createNotificationWithPreferences({
+      recipient: attendance.parent as any,
       type: 'ATTENDANCE',
       title: 'Attendance Approval Required',
       message: `Please review and approve attendance for session on ${new Date(attendance.sessionDate).toDateString()}.`,
@@ -186,8 +212,8 @@ export const parentApprove = async (attendanceId: string, parentUserId: string) 
     }
 
     // Notify tutor
-    await Notification.create({
-      recipient: attendance.tutor,
+    await createNotificationWithPreferences({
+      recipient: attendance.tutor as any,
       type: 'ATTENDANCE',
       title: 'Attendance Approved',
       message: `Attendance for session on ${new Date(attendance.sessionDate).toDateString()} has been approved by parent.`,
@@ -228,8 +254,8 @@ export const rejectAttendance = async (attendanceId: string, rejectedByUserId: s
   attendance.rejectionReason = rejectionReason;
   await attendance.save();
 
-  await Notification.create({
-    recipient: attendance.tutor,
+  await createNotificationWithPreferences({
+    recipient: attendance.tutor as any,
     type: 'ATTENDANCE',
     title: 'Attendance Rejected',
     message: `Attendance for session on ${new Date(attendance.sessionDate).toDateString()} was rejected: ${rejectionReason}`,
@@ -309,7 +335,10 @@ export const getAttendanceHistory = async (finalClassId: string) => {
     ]);
 
   const total = attendances.length;
-  const approvedCount = attendances.filter((a) => String(a.status) === ATTENDANCE_STATUS.PARENT_APPROVED).length;
+  const approvedCount = attendances.filter((a) =>
+    String(a.status) === ATTENDANCE_STATUS.PARENT_APPROVED ||
+    String(a.status) === ATTENDANCE_STATUS.APPROVED
+  ).length;
   const pendingCount = attendances.filter((a) => String(a.status) === ATTENDANCE_STATUS.PENDING).length;
   const rejectedCount = attendances.filter((a) => String(a.status) === ATTENDANCE_STATUS.REJECTED).length;
   const approvalRate = total > 0 ? Math.round((approvedCount / total) * 100) : 0;

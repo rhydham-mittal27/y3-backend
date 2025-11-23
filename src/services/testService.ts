@@ -1,7 +1,7 @@
 import mongoose from 'mongoose';
 import Test from '../models/Test';
 import FinalClass from '../models/FinalClass';
-import Notification from '../models/Notification';
+import { createNotificationWithPreferences } from './notificationService';
 import ErrorResponse from '../utils/errorResponse';
 import { TEST_STATUS, FINAL_CLASS_STATUS } from '../config/constants';
 
@@ -45,8 +45,8 @@ export const scheduleTest = async (params: {
     { path: 'scheduledBy', select: 'name email' },
   ]);
 
-  await Notification.create({
-    recipient: test.tutor,
+  await createNotificationWithPreferences({
+    recipient: test.tutor as any,
     type: 'GENERAL',
     title: 'Test Scheduled',
     message: `A test has been scheduled for ${new Date(test.testDate).toDateString()}. Please prepare accordingly.`,
@@ -130,6 +130,32 @@ export const getTestsByClass = async (finalClassId: string, status?: TEST_STATUS
   return tests;
 };
 
+export const getTestsByParent = async (parentUserId: string, status?: TEST_STATUS | string) => {
+  if (!mongoose.isValidObjectId(parentUserId)) {
+    return [];
+  }
+
+  const classes = await FinalClass.find({ parent: new mongoose.Types.ObjectId(parentUserId) }).select('_id');
+  const classIds = classes.map((c) => c._id);
+  if (!classIds.length) {
+    return [];
+  }
+
+  const query: any = { finalClass: { $in: classIds } };
+  if (status) query.status = status;
+
+  const tests = await Test.find(query)
+    .sort({ testDate: 1 })
+    .populate([
+      { path: 'finalClass' },
+      { path: 'tutor', select: 'name email phone' },
+      { path: 'coordinator', select: 'name email phone' },
+      { path: 'scheduledBy', select: 'name email' },
+    ]);
+
+  return tests;
+};
+
 export const updateTestStatus = async (testId: string, status: TEST_STATUS, userId: string) => {
   const test = await Test.findById(testId);
   if (!test) throw new ErrorResponse('Test not found', 404);
@@ -180,8 +206,8 @@ export const submitTestReport = async (
     { path: 'reportSubmittedBy', select: 'name email' },
   ]);
 
-  await Notification.create({
-    recipient: test.coordinator,
+  await createNotificationWithPreferences({
+    recipient: test.coordinator as any,
     type: 'GENERAL',
     title: 'Test Report Submitted',
     message: 'Tutor has submitted test report for the class.',
@@ -210,8 +236,8 @@ export const updateTest = async (
 
   if ((updateData.testDate && new Date(updateData.testDate).getTime() !== new Date(prevDate).getTime()) ||
       (typeof updateData.testTime !== 'undefined' && updateData.testTime !== prevTime)) {
-    await Notification.create({
-      recipient: test.tutor,
+    await createNotificationWithPreferences({
+      recipient: test.tutor as any,
       type: 'GENERAL',
       title: 'Test Updated',
       message: `Test schedule updated to ${new Date(test.testDate).toDateString()} at ${test.testTime}.`,
@@ -241,8 +267,8 @@ export const cancelTest = async (testId: string, cancellationReason: string, coo
   test.cancelledAt = new Date();
   await test.save();
 
-  await Notification.create({
-    recipient: test.tutor,
+  await createNotificationWithPreferences({
+    recipient: test.tutor as any,
     type: 'GENERAL',
     title: 'Test Cancelled',
     message: `Test scheduled for ${new Date(test.testDate).toDateString()} has been cancelled: ${cancellationReason}`,
@@ -293,4 +319,5 @@ export default {
   cancelTest,
   deleteTest,
   getTestsForCoordinator,
+  getTestsByParent,
 };

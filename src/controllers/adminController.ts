@@ -13,6 +13,7 @@ import {
   getAdminById,
   getAdminByUserId,
   updateAdminProfile,
+  updateAdminSettings,
   deleteAdminProfile,
   getSystemWideAnalytics,
   bulkUpdateUsers,
@@ -84,6 +85,13 @@ export const updateAdminProfileController = asyncHandler(async (req: AuthRequest
   const updateData = req.body as Partial<{ department: string; isActive: boolean }>;
   const admin = await updateAdminProfile(adminId, updateData);
   return res.json(successResponse(admin, 'Admin profile updated successfully'));
+});
+
+export const updateAdminSettingsController = asyncHandler(async (req: AuthRequest, res: Response) => {
+  const adminId = req.params.adminId as string;
+  const settingsData = req.body;
+  const admin = await updateAdminSettings(adminId, settingsData);
+  return res.json(successResponse(admin, 'Admin settings updated successfully'));
 });
 
 export const deleteAdminProfileController = asyncHandler(async (req: AuthRequest, res: Response) => {
@@ -367,6 +375,7 @@ export default {
   getAdminByUser,
   getMyProfile,
   updateAdminProfileController,
+   updateAdminSettingsController,
   deleteAdminProfileController,
   getSystemAnalytics,
   bulkUpdateUsersController,

@@ -33,7 +33,7 @@ router.post(
 
 router.patch(
   '/status/:leadId',
-  authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN),
+  authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN, USER_ROLES.TUTOR),
   updateDemoStatusValidation,
   updateDemoStatusController
 );

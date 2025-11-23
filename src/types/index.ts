@@ -1,5 +1,38 @@
 import { Request } from 'express';
-import { USER_ROLES, CLASS_LEAD_STATUS, DEMO_STATUS, TEACHING_MODE, BOARD_TYPE, VERIFICATION_STATUS, FINAL_CLASS_STATUS, ATTENDANCE_STATUS, PAYMENT_STATUS, PAYMENT_METHOD } from '../config/constants';
+import {
+  USER_ROLES,
+  CLASS_LEAD_STATUS,
+  DEMO_STATUS,
+  TEACHING_MODE,
+  BOARD_TYPE,
+  VERIFICATION_STATUS,
+  FINAL_CLASS_STATUS,
+  ATTENDANCE_STATUS,
+  PAYMENT_STATUS,
+  PAYMENT_METHOD,
+} from '../config/constants';
+
+export interface IUserPreferences {
+  id: string;
+  user: IUser;
+  notificationPreferences: {
+    ANNOUNCEMENT: boolean;
+    DEMO_ASSIGNED: boolean;
+    PAYMENT: boolean;
+    VERIFICATION: boolean;
+    GENERAL: boolean;
+    ATTENDANCE: boolean;
+  };
+  themeMode: 'light' | 'dark' | 'system';
+  language: 'en' | 'hi' | 'es' | 'fr';
+  privacySettings: {
+    profileVisibility: 'public' | 'private' | 'contacts';
+    showEmail: boolean;
+    showPhone: boolean;
+  };
+  createdAt: Date;
+  updatedAt: Date;
+}
 
 export interface IUser {
   id: string;
@@ -10,6 +43,10 @@ export interface IUser {
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
+  preferences?: IUserPreferences;
+  devices?: IDevice[];
+  lastLoginAt?: Date;
+  lastLoginDevice?: string;
 }
 
 export interface AuthRequest extends Request {
@@ -21,6 +58,11 @@ export interface PaginationParams {
   limit: number;
   sort?: string;
   order?: 'asc' | 'desc';
+}
+
+export interface IMobilePaginationParams extends PaginationParams {
+  cursor?: string;
+  lastId?: string;
 }
 
 export type ApiResponse<T> = {
@@ -38,6 +80,29 @@ export type PaginatedApiResponse<T> = ApiResponse<T> & {
   };
 };
 
+export interface IDevice {
+  deviceId: string;
+  fcmToken: string;
+  deviceType: 'ios' | 'android';
+  deviceName?: string;
+  lastActiveAt: Date;
+  registeredAt: Date;
+}
+
+export interface IDeviceRegistration {
+  deviceId: string;
+  fcmToken: string;
+  deviceType: 'ios' | 'android';
+  deviceName?: string;
+}
+
+export interface IPushNotificationPayload {
+  title: string;
+  body: string;
+  data?: Record<string, string>;
+  imageUrl?: string;
+}
+
 // New model interfaces
 export interface IDemoDetails {
   demoDate?: Date;
@@ -52,6 +117,22 @@ export interface IDocument {
   documentUrl: string;
   uploadedAt: Date;
   verifiedAt?: Date;
+}
+
+export interface ITutorSettings {
+  availabilityPreferences?: {
+    daysAvailable?: string[];
+    timeSlots?: string[];
+    maxClassesPerWeek?: number;
+  };
+  teachingModePreference?: TEACHING_MODE | string;
+  preferredSubjects?: string[];
+  preferredLocations?: string[];
+  notificationSettings?: {
+    classAssignments?: boolean;
+    demoRequests?: boolean;
+    feedbackReceived?: boolean;
+  };
 }
 
 export interface IClassLead {
@@ -100,6 +181,27 @@ export interface ITutor {
   tierUpdatedAt?: Date;
   tierUpdatedBy?: IUser;
   pendingTierChange?: IPendingTierChange;
+  settings?: ITutorSettings;
+}
+
+export interface ICoordinatorSettings {
+  classCapacitySettings?: {
+    preferredMaxCapacity?: number;
+    autoAcceptClasses?: boolean;
+    capacityAlertThreshold?: number;
+  };
+  specializationAreas?: string[];
+  notificationSettings?: {
+    attendanceApprovals?: boolean;
+    paymentReminders?: boolean;
+    testScheduling?: boolean;
+    parentComplaints?: boolean;
+  };
+  workingHours?: {
+    startTime?: string;
+    endTime?: string;
+    workingDays?: string[];
+  };
 }
 
 export interface ICoordinator {
@@ -116,6 +218,7 @@ export interface ICoordinator {
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
+  settings?: ICoordinatorSettings;
 }
 
 // Announcement and Notification types
@@ -449,6 +552,30 @@ export interface IDashboardStatistics {
 }
 
 // Manager related interfaces
+export interface IManagerSettings {
+  dashboardPreferences?: {
+    defaultView?: string;
+    defaultDateRange?: string;
+    chartPreferences?: string[];
+  };
+  defaultFilters?: {
+    leadStatus?: string[];
+    classStatus?: string[];
+    tutorVerificationStatus?: string;
+  };
+  notificationSettings?: {
+    newLeads?: boolean;
+    leadConversions?: boolean;
+    demoScheduled?: boolean;
+    paymentReceived?: boolean;
+    tutorVerifications?: boolean;
+  };
+  reportPreferences?: {
+    autoExportFrequency?: string;
+    exportFormat?: string;
+  };
+}
+
 export interface IManager {
   id: string;
   user: IUser;
@@ -467,6 +594,34 @@ export interface IManager {
   lastActivityAt?: Date;
   createdAt: Date;
   updatedAt: Date;
+  settings?: IManagerSettings;
+}
+
+export interface IAdminSettings {
+  systemPreferences?: {
+    maintenanceMode?: boolean;
+    allowBulkOperations?: boolean;
+    requireApprovalForDeletes?: boolean;
+    sessionTimeout?: number;
+  };
+  dataExportSettings?: {
+    autoBackupEnabled?: boolean;
+    backupFrequency?: string;
+    exportFormats?: string[];
+    includeDeletedRecords?: boolean;
+  };
+  auditLogPreferences?: {
+    logLevel?: string;
+    retentionDays?: number;
+    alertOnCriticalActions?: boolean;
+    emailDigestFrequency?: string;
+  };
+  notificationSettings?: {
+    systemAlerts?: boolean;
+    userCreations?: boolean;
+    bulkOperations?: boolean;
+    securityEvents?: boolean;
+  };
 }
 
 export interface IManagerMetrics {

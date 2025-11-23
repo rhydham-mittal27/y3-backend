@@ -10,6 +10,7 @@ import {
   getTutorById,
   getTutorByUserId,
   updateTutorProfile,
+  updateTutorSettings,
   uploadDocument as uploadDocumentService,
   deleteDocument as deleteDocumentService,
   updateVerificationStatus as updateVerificationStatusService,
@@ -67,6 +68,13 @@ export const updateTutorProfileController = asyncHandler(async (req: Request, re
 
   const tutor = await updateTutorProfile(req.params.id, req.body);
   return res.json(successResponse(tutor, 'Tutor profile updated successfully'));
+});
+
+export const updateTutorSettingsController = asyncHandler(async (req: Request, res: Response) => {
+  const tutorId = req.params.tutorId;
+  const settingsData = req.body;
+  const tutor = await updateTutorSettings(tutorId, settingsData);
+  return res.status(200).json(successResponse(tutor, 'Tutor settings updated successfully'));
 });
 
 export const uploadDocumentController = asyncHandler(async (req: Request, res: Response) => {

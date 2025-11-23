@@ -25,6 +25,8 @@ import managerRoutes from './routes/managerRoutes';
 import adminRoutes from './routes/adminRoutes';
 import testRoutes from './routes/testRoutes';
 import tutorLeadRoutes from './routes/tutorLeadRoutes';
+import studentRoutes from './routes/studentRoutes';
+import settingsRoutes from './routes/settingsRoutes';
 
 dotenv.config();
 
@@ -69,6 +71,8 @@ app.use('/api/managers', managerRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/tests', testRoutes);
 app.use('/api/v1/tutor-leads', tutorLeadRoutes);
+app.use('/api/students', studentRoutes);
+app.use('/api/settings', settingsRoutes);
 
 // Not Found Middleware
 app.use(notFound);

@@ -1,12 +1,13 @@
 import mongoose from 'mongoose';
 import FinalClass from '../models/FinalClass';
+import Attendance from '../models/Attendance';
 import ClassLead from '../models/ClassLead';
 import Tutor from '../models/Tutor';
 import Coordinator from '../models/Coordinator';
 import User from '../models/User';
 import Notification from '../models/Notification';
 import ErrorResponse from '../utils/errorResponse';
-import { CLASS_LEAD_STATUS, FINAL_CLASS_STATUS, MANAGER_ACTION_TYPE } from '../config/constants';
+import { CLASS_LEAD_STATUS, FINAL_CLASS_STATUS, MANAGER_ACTION_TYPE, ATTENDANCE_STATUS } from '../config/constants';
 import { logManagerActivity } from './managerService';
 import Manager from '../models/Manager';
 
@@ -333,6 +334,77 @@ export const getClassesByCoordinator = async (coordinatorUserId: string, status?
   return classes;
 };
 
+export const computeTutorMonthlyStats = async (tutorUserId: string) => {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth(); // 0-11
+
+  const classes = await getClassesByTutor(tutorUserId, FINAL_CLASS_STATUS.ACTIVE);
+
+  const classesThisMonth = classes.filter((cls: any) => {
+    if (!cls.startDate) return false;
+    const start = new Date(cls.startDate);
+    return start.getFullYear() === year && start.getMonth() === month;
+  });
+
+  // Compute total sessions from today until end of this month from timetable (schedule)
+  const firstDayOfMonth = new Date(year, month, 1);
+  const lastDayOfMonth = new Date(year, month + 1, 0);
+  const DAYS_ORDER = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY'];
+
+  let totalSessions = 0;
+
+  // Start from "today" (login day), but never before the 1st of this month
+  const startFrom = new Date(now);
+  startFrom.setHours(0, 0, 0, 0);
+  if (startFrom < firstDayOfMonth) {
+    startFrom.setTime(firstDayOfMonth.getTime());
+  }
+
+  for (let current = new Date(startFrom); current <= lastDayOfMonth; current.setDate(current.getDate() + 1)) {
+    current.setHours(0, 0, 0, 0);
+
+    classesThisMonth.forEach((cls: any) => {
+      const sched = cls.schedule || {};
+      const daysOfWeek: string[] = Array.isArray(sched.daysOfWeek) ? sched.daysOfWeek : [];
+      if (!daysOfWeek.length) return;
+
+      const classStart = cls.startDate ? new Date(cls.startDate) : firstDayOfMonth;
+      classStart.setHours(0, 0, 0, 0);
+      if (current < classStart) return;
+      if (cls.endDate) {
+        const classEnd = new Date(cls.endDate as Date);
+        classEnd.setHours(0, 0, 0, 0);
+        if (current > classEnd) return;
+      }
+
+      const weekdayIndex = (current.getDay() + 6) % 7; // convert Sun=0..Sat=6 to Mon=0..Sun=6
+      const weekdayName = DAYS_ORDER[weekdayIndex];
+      if (daysOfWeek.includes(weekdayName)) {
+        totalSessions += 1;
+      }
+    });
+  }
+
+  // Completed sessions this month based on approved attendance (from month start up to now)
+  const monthStart = new Date(year, month, 1, 0, 0, 0, 0);
+  const monthNowEnd = new Date(now);
+  monthNowEnd.setHours(23, 59, 59, 999);
+
+  const completedSessions = await Attendance.countDocuments({
+    tutor: new mongoose.Types.ObjectId(tutorUserId),
+    sessionDate: { $gte: monthStart, $lte: monthNowEnd },
+    status: { $in: [ATTENDANCE_STATUS.COORDINATOR_APPROVED, ATTENDANCE_STATUS.PARENT_APPROVED] },
+  });
+
+  return {
+    month: `${year}-${String(month + 1).padStart(2, '0')}`,
+    totalClasses: classesThisMonth.length,
+    totalSessions,
+    completedSessions,
+  };
+};
+
 export const getClassesByTutor = async (tutorUserId: string, status?: FINAL_CLASS_STATUS | string) => {
   if (!mongoose.isValidObjectId(tutorUserId)) {
     return [];
@@ -349,6 +421,24 @@ export const getClassesByTutor = async (tutorUserId: string, status?: FINAL_CLAS
   return classes;
 };
 
+export const getClassesByParent = async (parentUserId: string, status?: FINAL_CLASS_STATUS | string) => {
+  if (!mongoose.isValidObjectId(parentUserId)) {
+    return [];
+  }
+  const query: any = { parent: new mongoose.Types.ObjectId(parentUserId) };
+  if (status) query.status = status;
+  const classes = await FinalClass.find(query)
+    .sort({ startDate: -1 })
+    .populate([
+      { path: 'classLead' },
+      { path: 'tutor', select: 'name email phone' },
+      { path: 'coordinator', select: 'name email phone' },
+      { path: 'parent', select: 'name email phone' },
+      { path: 'convertedBy', select: 'name email role' },
+    ]);
+  return classes;
+};
+
 export default {
   convertLeadToFinalClass,
   getAllFinalClasses,
@@ -358,4 +448,6 @@ export default {
   updateSessionProgress,
   getClassesByCoordinator,
   getClassesByTutor,
+  getClassesByParent,
+  computeTutorMonthlyStats,
 };

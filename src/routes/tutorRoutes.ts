@@ -6,6 +6,7 @@ import {
   getTutorByUser,
   getMyProfile,
   updateTutorProfileController,
+  updateTutorSettingsController,
   uploadDocumentController,
   deleteDocumentController,
   updateVerificationStatusController,
@@ -85,6 +86,12 @@ router.put(
   authorize(USER_ROLES.TUTOR, USER_ROLES.MANAGER, USER_ROLES.ADMIN),
   updateTutorValidation,
   updateTutorProfileController
+);
+
+router.patch(
+  '/:tutorId/settings',
+  authorize(USER_ROLES.TUTOR, USER_ROLES.MANAGER, USER_ROLES.ADMIN),
+  updateTutorSettingsController
 );
 
 router.delete(

@@ -11,6 +11,7 @@ import TutorFeedback from '../models/TutorFeedback';
 import Attendance from '../models/Attendance';
 import FinalClass from '../models/FinalClass';
 import Test from '../models/Test';
+import { createNotificationWithPreferences } from './notificationService';
 
 export const createTutorProfile = async (
   userId: string,
@@ -119,39 +120,103 @@ export const updateTutorProfile = async (
   return tutor;
 };
 
+export const updateTutorSettings = async (
+  tutorId: string,
+  settingsData: Partial<{
+    availabilityPreferences: {
+      daysAvailable?: string[];
+      timeSlots?: string[];
+      maxClassesPerWeek?: number;
+    };
+    teachingModePreference?: string;
+    preferredSubjects?: string[];
+    preferredLocations?: string[];
+    notificationSettings: {
+      classAssignments?: boolean;
+      demoRequests?: boolean;
+      feedbackReceived?: boolean;
+    };
+  }>
+) => {
+  const tutor = await Tutor.findById(tutorId);
+  if (!tutor) throw new ErrorResponse('Tutor not found', 404);
+
+  const currentSettings: any = tutor.settings || {};
+  tutor.settings = {
+    ...currentSettings,
+    ...settingsData,
+    availabilityPreferences: {
+      ...(currentSettings.availabilityPreferences || {}),
+      ...(settingsData.availabilityPreferences || {}),
+    },
+    notificationSettings: {
+      ...(currentSettings.notificationSettings || {}),
+      ...(settingsData.notificationSettings || {}),
+    },
+  } as any;
+
+  await tutor.save();
+  await tutor.populate([{ path: 'user', select: 'name email phone role' }]);
+  return tutor;
+};
+
 export const uploadDocument = async (
   tutorId: string,
   documentType: string,
   file: any
 ) => {
   const tutor = await Tutor.findById(tutorId);
-  if (!tutor) throw new ErrorResponse('Tutor not found', 404);
+  if (!tutor) {
+    console.error('[uploadDocument] Tutor not found', { tutorId });
+    throw new ErrorResponse('Tutor not found', 404);
+  }
 
   if (!(DOCUMENT_TYPES as readonly string[]).includes(documentType)) {
+    console.error('[uploadDocument] Invalid document type', { tutorId, documentType });
     throw new ErrorResponse('Invalid document type', 400);
   }
 
   // Upload buffer to Cloudinary
   const buffer: Buffer | undefined = file?.buffer;
   const originalname: string = file?.originalname || 'document';
-  if (!buffer) throw new ErrorResponse('Invalid file upload', 400);
+  if (!buffer) {
+    console.error('[uploadDocument] Invalid file upload - missing buffer', {
+      tutorId,
+      documentType,
+      originalname,
+      hasFile: !!file,
+    });
+    throw new ErrorResponse('Invalid file upload', 400);
+  }
 
-  const uploadResult: any = await new Promise((resolve, reject) => {
-    const stream = cloudinary.uploader.upload_stream(
-      {
-        folder: CLOUDINARY_FOLDER,
-        resource_type: 'auto',
-        filename_override: originalname,
-        use_filename: true,
-        unique_filename: true,
-      },
-      (error: any, result: any) => {
-        if (error) return reject(error);
-        return resolve(result);
-      }
-    );
-    stream.end(buffer);
-  });
+  let uploadResult: any;
+  try {
+    uploadResult = await new Promise((resolve, reject) => {
+      const stream = cloudinary.uploader.upload_stream(
+        {
+          folder: CLOUDINARY_FOLDER,
+          resource_type: 'auto',
+          filename_override: originalname,
+          use_filename: true,
+          unique_filename: true,
+        },
+        (error: any, result: any) => {
+          if (error) return reject(error);
+          return resolve(result);
+        }
+      );
+      stream.end(buffer);
+    });
+  } catch (err: any) {
+    console.error('[uploadDocument] Cloudinary upload failed', {
+      tutorId,
+      documentType,
+      originalname,
+      errorMessage: err?.message,
+      rawError: err,
+    });
+    throw new ErrorResponse('Failed to upload document to storage', 500);
+  }
 
   const doc = {
     documentType,
@@ -160,13 +225,21 @@ export const uploadDocument = async (
     publicId: uploadResult.public_id,
     resourceType: uploadResult.resource_type,
   } as any;
+  try {
+    tutor.documents.push(doc);
+    if (tutor.documents.length === 1 && tutor.verificationStatus === VERIFICATION_STATUS.PENDING) {
+      tutor.verificationStatus = VERIFICATION_STATUS.UNDER_REVIEW;
+    }
 
-  tutor.documents.push(doc);
-  if (tutor.documents.length === 1 && tutor.verificationStatus === VERIFICATION_STATUS.PENDING) {
-    tutor.verificationStatus = VERIFICATION_STATUS.UNDER_REVIEW;
+    await tutor.save();
+  } catch (err: any) {
+    console.error('[uploadDocument] Failed to save tutor with new document', {
+      tutorId,
+      documentType,
+      errorMessage: err?.message,
+    });
+    throw new ErrorResponse('Failed to save tutor document', 500);
   }
-
-  await tutor.save();
   await tutor.populate([
     { path: 'user', select: 'name email phone role' },
     { path: 'verifiedBy', select: 'name email phone role' },
@@ -208,7 +281,11 @@ export const updateVerificationStatus = async (
 
   const current = tutor.verificationStatus as VERIFICATION_STATUS;
   const valid = (from: VERIFICATION_STATUS, to: VERIFICATION_STATUS) => {
+    // Allow moving from PENDING -> UNDER_REVIEW (auto when first doc uploaded)
     if (from === VERIFICATION_STATUS.PENDING && to === VERIFICATION_STATUS.UNDER_REVIEW) return true;
+    // Allow managers to directly approve or reject from PENDING as well (for older tutors or manual flows)
+    if (from === VERIFICATION_STATUS.PENDING && (to === VERIFICATION_STATUS.VERIFIED || to === VERIFICATION_STATUS.REJECTED)) return true;
+    // Normal flow: UNDER_REVIEW -> VERIFIED / REJECTED
     if (from === VERIFICATION_STATUS.UNDER_REVIEW && (to === VERIFICATION_STATUS.VERIFIED || to === VERIFICATION_STATUS.REJECTED)) return true;
     return false;
   };
@@ -223,6 +300,15 @@ export const updateVerificationStatus = async (
   if (newStatus === VERIFICATION_STATUS.VERIFIED || newStatus === VERIFICATION_STATUS.REJECTED) {
     tutor.verifiedBy = new mongoose.Types.ObjectId(verifiedBy) as any;
     tutor.verifiedAt = new Date();
+    // When tutor is verified, mark all existing documents as verified at the same time
+    if (newStatus === VERIFICATION_STATUS.VERIFIED && Array.isArray(tutor.documents)) {
+      const now = tutor.verifiedAt || new Date();
+      tutor.documents = tutor.documents.map((d: any) => {
+        if (!d) return d;
+        if (!d.verifiedAt) d.verifiedAt = now;
+        return d;
+      }) as any;
+    }
   }
 
   await tutor.save();
@@ -238,12 +324,12 @@ export const updateVerificationStatus = async (
     ? `Your verification was rejected. ${verificationNotes || ''}`
     : `Your verification status is now: ${newStatus}`;
 
-  await Notification.create({
-    user: tutor.user,
+  await createNotificationWithPreferences({
+    recipient: tutor.user as any,
     type: 'VERIFICATION',
     title: titleMap[newStatus],
     message,
-  });
+  } as any);
 
   await tutor.populate([
     { path: 'user', select: 'name email phone role' },

@@ -11,6 +11,7 @@ import {
   deleteTestController,
   getCoordinatorTests,
   exportTestReportPDF,
+  getMyTestsForParent,
 } from '../controllers/testController';
 import {
   scheduleTestValidation,
@@ -35,9 +36,21 @@ router.get('/', authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN, USER_ROLES.COORD
 
 router.get('/coordinator/tests', authorize(USER_ROLES.COORDINATOR), getCoordinatorTests);
 
-router.get('/class/:classId', authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN, USER_ROLES.COORDINATOR, USER_ROLES.TUTOR), classIdParamValidation, getClassTests);
+router.get('/parent/my-tests', authorize(USER_ROLES.PARENT), getMyTestsForParent);
 
-router.get('/:id', authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN, USER_ROLES.COORDINATOR, USER_ROLES.TUTOR), testIdValidation, getTest);
+router.get(
+  '/class/:classId',
+  authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN, USER_ROLES.COORDINATOR, USER_ROLES.TUTOR, USER_ROLES.PARENT),
+  classIdParamValidation,
+  getClassTests
+);
+
+router.get(
+  '/:id',
+  authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN, USER_ROLES.COORDINATOR, USER_ROLES.TUTOR, USER_ROLES.PARENT),
+  testIdValidation,
+  getTest
+);
 
 router.get('/:id/export-pdf', authorize(USER_ROLES.COORDINATOR, USER_ROLES.MANAGER, USER_ROLES.ADMIN), testIdValidation, exportTestReportPDF);
 

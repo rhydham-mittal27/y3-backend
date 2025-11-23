@@ -10,7 +10,7 @@ import Tutor from '../models/Tutor';
 import Coordinator from '../models/Coordinator';
 import ErrorResponse from '../utils/errorResponse';
 import dashboardService from './dashboardService';
-import { MANAGER_ACTION_TYPE, PAYMENT_STATUS, USER_ROLES } from '../config/constants';
+import { CLASS_LEAD_STATUS, MANAGER_ACTION_TYPE, PAYMENT_STATUS, USER_ROLES } from '../config/constants';
 
 export const createManagerProfile = async (userId: string, department?: string) => {
   const user = await User.findById(userId);
@@ -72,6 +72,62 @@ export const updateManagerProfile = async (
   const mgr = await Manager.findById(managerId);
   if (!mgr) throw new ErrorResponse('Manager not found', 404);
   Object.assign(mgr, updateData);
+  await mgr.save();
+  await mgr.populate({ path: 'user', select: 'name email phone role' });
+  return mgr;
+};
+
+export const updateManagerSettings = async (
+  managerId: string,
+  settingsData: Partial<{
+    dashboardPreferences: {
+      defaultView?: string;
+      defaultDateRange?: string;
+      chartPreferences?: string[];
+    };
+    defaultFilters: {
+      leadStatus?: string[];
+      classStatus?: string[];
+      tutorVerificationStatus?: string;
+    };
+    notificationSettings: {
+      newLeads?: boolean;
+      leadConversions?: boolean;
+      demoScheduled?: boolean;
+      paymentReceived?: boolean;
+      tutorVerifications?: boolean;
+    };
+    reportPreferences: {
+      autoExportFrequency?: string;
+      exportFormat?: string;
+    };
+  }>
+) => {
+  const mgr: any = await Manager.findById(managerId);
+  if (!mgr) throw new ErrorResponse('Manager not found', 404);
+
+  const currentSettings: any = mgr.settings || {};
+  mgr.settings = {
+    ...currentSettings,
+    ...settingsData,
+    dashboardPreferences: {
+      ...(currentSettings.dashboardPreferences || {}),
+      ...(settingsData.dashboardPreferences || {}),
+    },
+    defaultFilters: {
+      ...(currentSettings.defaultFilters || {}),
+      ...(settingsData.defaultFilters || {}),
+    },
+    notificationSettings: {
+      ...(currentSettings.notificationSettings || {}),
+      ...(settingsData.notificationSettings || {}),
+    },
+    reportPreferences: {
+      ...(currentSettings.reportPreferences || {}),
+      ...(settingsData.reportPreferences || {}),
+    },
+  };
+
   await mgr.save();
   await mgr.populate({ path: 'user', select: 'name email phone role' });
   return mgr;
@@ -274,6 +330,25 @@ export const getManagerContribution = async (managerId: string, fromDate?: Date,
   };
 };
 
+export const getManagerTodoList = async (managerId: string) => {
+  const manager = await Manager.findById(managerId);
+  if (!manager) throw new ErrorResponse('Manager not found', 404);
+
+  const userId = manager.user as unknown as mongoose.Types.ObjectId;
+
+  const leads = await ClassLead.find({
+    createdBy: userId,
+    status: { $ne: CLASS_LEAD_STATUS.CONVERTED as any },
+  })
+    .sort({ createdAt: -1 })
+    .populate([
+      { path: 'createdBy', select: 'name email role' },
+      { path: 'assignedTutor', select: 'name email phone' },
+    ]);
+
+  return leads;
+};
+
 export type IRelatedEntityType = 'ClassLead' | 'FinalClass' | 'Demo' | 'Payment' | 'Tutor' | 'Coordinator' | 'Announcement';
 
 export const logManagerActivity = async (
@@ -321,10 +396,12 @@ export default {
   getManagerById,
   getManagerByUserId,
   updateManagerProfile,
+  updateManagerSettings,
   getManagerMetrics,
   getManagerPerformanceHistory,
   getManagerActivityLog,
   getManagerContribution,
   logManagerActivity,
   deleteManagerProfile,
+  getManagerTodoList,
 };

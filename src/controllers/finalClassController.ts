@@ -12,6 +12,7 @@ import {
   updateSessionProgress,
   getClassesByCoordinator,
   getClassesByTutor,
+  getClassesByParent,
 } from '../services/finalClassService';
 import { FINAL_CLASS_STATUS } from '../config/constants';
 
@@ -127,6 +128,21 @@ export const getMyClassesController = asyncHandler(async (req: AuthRequest, res)
   return res.status(200).json(paginatedResponse(paginatedClasses, page, limit, total));
 });
 
+export const getParentClassesController = asyncHandler(async (req: AuthRequest, res) => {
+  const status = (req.query.status as string) || FINAL_CLASS_STATUS.ACTIVE;
+  const page = parseInt((req.query.page as string) || '1', 10);
+  const limit = parseInt((req.query.limit as string) || '10', 10);
+
+  const classes = await getClassesByParent(req.user!.id, status);
+
+  const total = classes.length;
+  const start = (page - 1) * limit;
+  const end = page * limit;
+  const paginatedClasses = classes.slice(start, end);
+
+  return res.status(200).json(paginatedResponse(paginatedClasses, page, limit, total));
+});
+
 export default {
   convertToFinalClass,
   getFinalClasses,
@@ -137,4 +153,5 @@ export default {
   getCoordinatorClasses,
   getTutorClasses,
   getMyClassesController,
+  getParentClassesController,
 };

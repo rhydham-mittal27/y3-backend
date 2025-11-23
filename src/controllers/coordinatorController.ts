@@ -9,6 +9,7 @@ import {
   getCoordinatorById,
   getCoordinatorByUserId,
   updateCoordinator,
+  updateCoordinatorSettings,
   deleteCoordinator,
   getCoordinatorWorkload,
   getAvailableCoordinators,
@@ -71,6 +72,13 @@ export const updateCoordinatorProfile = asyncHandler(async (req: AuthRequest, re
   const updateData = req.body;
   const coordinator = await updateCoordinator(coordinatorId, updateData);
   return res.json(successResponse(coordinator, 'Coordinator updated successfully'));
+});
+
+export const updateCoordinatorSettingsController = asyncHandler(async (req: AuthRequest, res) => {
+  const coordinatorId = req.params.coordinatorId as string;
+  const settingsData = req.body;
+  const coordinator = await updateCoordinatorSettings(coordinatorId, settingsData);
+  return res.json(successResponse(coordinator, 'Coordinator settings updated successfully'));
 });
 
 export const deleteCoordinatorProfile = asyncHandler(async (req: AuthRequest, res) => {
@@ -169,6 +177,7 @@ export default {
   getCoordinator,
   getCoordinatorByUser,
   updateCoordinatorProfile,
+  updateCoordinatorSettingsController,
   deleteCoordinatorProfile,
   getWorkload,
   getAvailableCoordinatorsController,

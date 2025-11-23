@@ -14,6 +14,25 @@ export interface ICoordinatorDocument extends Document {
   createdAt: Date;
   updatedAt: Date;
   availableCapacity?: number;
+  settings?: {
+    classCapacitySettings?: {
+      preferredMaxCapacity?: number;
+      autoAcceptClasses?: boolean;
+      capacityAlertThreshold?: number;
+    };
+    specializationAreas?: string[];
+    notificationSettings?: {
+      attendanceApprovals?: boolean;
+      paymentReminders?: boolean;
+      testScheduling?: boolean;
+      parentComplaints?: boolean;
+    };
+    workingHours?: {
+      startTime?: string;
+      endTime?: string;
+      workingDays?: string[];
+    };
+  };
 }
 
 const CoordinatorSchema: Schema<ICoordinatorDocument> = new Schema<ICoordinatorDocument>(
@@ -27,6 +46,37 @@ const CoordinatorSchema: Schema<ICoordinatorDocument> = new Schema<ICoordinatorD
     joiningDate: { type: Date, default: Date.now },
     performanceScore: { type: Number, default: 0, min: 0, max: 100 },
     isActive: { type: Boolean, default: true },
+    settings: {
+      type: {
+        classCapacitySettings: {
+          type: {
+            preferredMaxCapacity: { type: Number, default: 10 },
+            autoAcceptClasses: { type: Boolean, default: false },
+            capacityAlertThreshold: { type: Number, default: 80 },
+          },
+          default: {},
+        },
+        specializationAreas: { type: [String], default: [] },
+        notificationSettings: {
+          type: {
+            attendanceApprovals: { type: Boolean, default: true },
+            paymentReminders: { type: Boolean, default: true },
+            testScheduling: { type: Boolean, default: true },
+            parentComplaints: { type: Boolean, default: true },
+          },
+          default: {},
+        },
+        workingHours: {
+          type: {
+            startTime: { type: String, default: '09:00' },
+            endTime: { type: String, default: '18:00' },
+            workingDays: { type: [String], default: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'] },
+          },
+          default: {},
+        },
+      },
+      default: {},
+    },
   },
   { timestamps: true, toJSON: { virtuals: true }, toObject: { virtuals: true } }
 );

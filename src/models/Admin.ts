@@ -19,6 +19,32 @@ export interface IAdminDocument extends Document {
   updatedAt: Date;
   totalUsersManaged?: number;
   averageActionsPerDay?: number;
+  settings?: {
+    systemPreferences?: {
+      maintenanceMode?: boolean;
+      allowBulkOperations?: boolean;
+      requireApprovalForDeletes?: boolean;
+      sessionTimeout?: number;
+    };
+    dataExportSettings?: {
+      autoBackupEnabled?: boolean;
+      backupFrequency?: 'daily' | 'weekly' | 'monthly';
+      exportFormats?: string[];
+      includeDeletedRecords?: boolean;
+    };
+    auditLogPreferences?: {
+      logLevel?: 'minimal' | 'standard' | 'detailed';
+      retentionDays?: number;
+      alertOnCriticalActions?: boolean;
+      emailDigestFrequency?: 'daily' | 'weekly' | 'never';
+    };
+    notificationSettings?: {
+      systemAlerts?: boolean;
+      userCreations?: boolean;
+      bulkOperations?: boolean;
+      securityEvents?: boolean;
+    };
+  };
 }
 
 const AdminSchema: Schema<IAdminDocument> = new Schema<IAdminDocument>(
@@ -36,6 +62,47 @@ const AdminSchema: Schema<IAdminDocument> = new Schema<IAdminDocument>(
     department: { type: String },
     isActive: { type: Boolean, default: true },
     lastActivityAt: { type: Date },
+    settings: {
+      type: {
+        systemPreferences: {
+          type: {
+            maintenanceMode: { type: Boolean, default: false },
+            allowBulkOperations: { type: Boolean, default: true },
+            requireApprovalForDeletes: { type: Boolean, default: true },
+            sessionTimeout: { type: Number, default: 30 },
+          },
+          default: {},
+        },
+        dataExportSettings: {
+          type: {
+            autoBackupEnabled: { type: Boolean, default: true },
+            backupFrequency: { type: String, default: 'daily' },
+            exportFormats: { type: [String], default: ['csv', 'json'] },
+            includeDeletedRecords: { type: Boolean, default: false },
+          },
+          default: {},
+        },
+        auditLogPreferences: {
+          type: {
+            logLevel: { type: String, default: 'standard' },
+            retentionDays: { type: Number, default: 90 },
+            alertOnCriticalActions: { type: Boolean, default: true },
+            emailDigestFrequency: { type: String, default: 'weekly' },
+          },
+          default: {},
+        },
+        notificationSettings: {
+          type: {
+            systemAlerts: { type: Boolean, default: true },
+            userCreations: { type: Boolean, default: true },
+            bulkOperations: { type: Boolean, default: true },
+            securityEvents: { type: Boolean, default: true },
+          },
+          default: {},
+        },
+      },
+      default: {},
+    },
   },
   { timestamps: true, toJSON: { virtuals: true }, toObject: { virtuals: true } }
 );

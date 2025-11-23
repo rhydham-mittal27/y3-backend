@@ -15,6 +15,7 @@ import {
   cancelTest,
   deleteTest,
   getTestsForCoordinator,
+  getTestsByParent,
 } from '../services/testService';
 
 export const scheduleTestController = asyncHandler(async (req: AuthRequest, res) => {
@@ -127,6 +128,13 @@ export const getCoordinatorTests = asyncHandler(async (req: AuthRequest, res) =>
   return res.json(successResponse(tests));
 });
 
+export const getMyTestsForParent = asyncHandler(async (req: AuthRequest, res) => {
+  const parentUserId = req.user!.id;
+  const { status } = req.query as any;
+  const tests = await getTestsByParent(parentUserId, status as any);
+  return res.json(successResponse(tests));
+});
+
 export const exportTestReportPDF = asyncHandler(async (req, res) => {
   const { id } = req.params as any;
   const test: any = await getTestById(id);
@@ -208,4 +216,5 @@ export default {
   deleteTestController,
   getCoordinatorTests,
   exportTestReportPDF,
+  getMyTestsForParent,
 };

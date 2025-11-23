@@ -18,6 +18,7 @@ import {
   getPaymentStatistics,
   generatePaymentReport,
   sendPaymentReminder,
+  getPaymentsByParent,
 } from '../services/paymentService';
 
 export const createPaymentRecord = asyncHandler(async (req: AuthRequest, res: Response) => {
@@ -77,6 +78,17 @@ export const getTutorPayments = asyncHandler(async (req: Request, res: Response)
   const { status, fromDate, toDate } = req.query as any;
   const result = await getPaymentsByTutor(
     req.params.tutorId,
+    status as any,
+    fromDate ? new Date(fromDate) : undefined,
+    toDate ? new Date(toDate) : undefined
+  );
+  return res.json(successResponse(result));
+});
+
+export const getMyPaymentsForParent = asyncHandler(async (req: AuthRequest, res: Response) => {
+  const { status, fromDate, toDate } = req.query as any;
+  const result = await getPaymentsByParent(
+    req.user!.id,
     status as any,
     fromDate ? new Date(fromDate) : undefined,
     toDate ? new Date(toDate) : undefined
@@ -257,4 +269,5 @@ export default {
   exportPaymentsPDF,
   downloadPaymentReceipt,
   sendReminderController,
+  getMyPaymentsForParent,
 };

@@ -4,9 +4,9 @@ import Tutor from '../models/Tutor';
 import User from '../models/User';
 import Announcement from '../models/Announcement';
 import DemoHistory from '../models/DemoHistory';
-import Notification from '../models/Notification';
+import { createNotificationWithPreferences } from './notificationService';
 import ErrorResponse from '../utils/errorResponse';
-import { CLASS_LEAD_STATUS, DEMO_STATUS, MANAGER_ACTION_TYPE } from '../config/constants';
+import { CLASS_LEAD_STATUS, DEMO_STATUS, MANAGER_ACTION_TYPE, USER_ROLES } from '../config/constants';
 import { logManagerActivity } from './managerService';
 import Manager from '../models/Manager';
 import { convertLeadToFinalClass } from './finalClassService';
@@ -70,8 +70,8 @@ export const assignDemo = async (
   } catch {}
 
   try {
-    await Notification.create({
-      user: tutorUserId,
+    await createNotificationWithPreferences({
+      recipient: tutorUserId,
       type: 'DEMO_ASSIGNED',
       title: 'New demo assigned',
       message: `A demo has been scheduled on ${new Date(demoDate).toDateString()} at ${demoTime}.`,
@@ -87,7 +87,8 @@ export const updateDemoStatus = async (
   newStatus: DEMO_STATUS,
   feedback: string | undefined,
   rejectionReason: string | undefined,
-  updatedBy: string
+  updatedBy: string,
+  updatedByRole: USER_ROLES | string
 ) => {
   const lead = await ClassLead.findById(classLeadId);
   if (!lead) throw new ErrorResponse('Class lead not found', 404);
@@ -95,6 +96,18 @@ export const updateDemoStatus = async (
 
   const currentStatus = lead.demoDetails.demoStatus;
   if (!currentStatus) throw new ErrorResponse('Demo status not set', 400);
+
+  const isTutor = String(updatedByRole) === USER_ROLES.TUTOR;
+  const isManagerOrAdmin = [USER_ROLES.MANAGER, USER_ROLES.ADMIN].includes(updatedByRole as USER_ROLES);
+
+  if (isTutor) {
+    if (String(lead.assignedTutor) !== String(updatedBy)) {
+      throw new ErrorResponse('You are not the assigned tutor for this demo', 403);
+    }
+    if (!(currentStatus === DEMO_STATUS.SCHEDULED && newStatus === DEMO_STATUS.COMPLETED)) {
+      throw new ErrorResponse('Tutors can only mark their own scheduled demos as completed', 403);
+    }
+  }
 
   if (currentStatus === DEMO_STATUS.SCHEDULED && newStatus !== DEMO_STATUS.COMPLETED)
     throw new ErrorResponse('Invalid status transition', 400);
@@ -104,8 +117,6 @@ export const updateDemoStatus = async (
   lead.demoDetails.demoStatus = newStatus as any;
   if (newStatus === DEMO_STATUS.COMPLETED) {
     if (feedback) (lead.demoDetails as any).feedback = feedback;
-    // Reflect demo completion in class lead status so timelines and summaries stay in sync
-    lead.status = CLASS_LEAD_STATUS.DEMO_COMPLETED as any;
   }
   if (newStatus === DEMO_STATUS.APPROVED) {
     const tutorProfile = await Tutor.findOne({ user: lead.assignedTutor });
@@ -249,8 +260,8 @@ export const reassignDemo = async (
   } catch {}
 
   try {
-    await Notification.create({
-      user: newTutorUserId,
+    await createNotificationWithPreferences({
+      recipient: newTutorUserId,
       type: 'DEMO_ASSIGNED',
       title: 'New demo assigned',
       message: `A demo has been scheduled on ${new Date(demoDate).toDateString()} at ${demoTime}.`,

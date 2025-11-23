@@ -12,11 +12,31 @@ export interface IUserDocument extends Document {
   role: USER_ROLES | string;
   isActive: boolean;
   refreshToken?: string | null;
+  preferences?: mongoose.Types.ObjectId;
+  devices?: {
+    deviceId: string;
+    fcmToken: string;
+    deviceType: 'ios' | 'android';
+    deviceName?: string;
+    lastActiveAt: Date;
+    registeredAt: Date;
+  }[];
+  lastLoginAt?: Date;
+  lastLoginDevice?: string;
   createdAt: Date;
   updatedAt: Date;
   comparePassword(enteredPassword: string): Promise<boolean>;
   generateAccessToken(): string;
   generateRefreshToken(): string;
+  addDevice(
+    deviceId: string,
+    fcmToken: string,
+    deviceType: 'ios' | 'android',
+    deviceName?: string
+  ): Promise<void>;
+  removeDevice(deviceId: string): Promise<void>;
+  updateDeviceToken(deviceId: string, newFcmToken: string): Promise<void>;
+  removeAllDevices(): Promise<void>;
 }
 
 const UserSchema: Schema<IUserDocument> = new Schema<IUserDocument>(
@@ -39,9 +59,25 @@ const UserSchema: Schema<IUserDocument> = new Schema<IUserDocument>(
     },
     isActive: { type: Boolean, default: true },
     refreshToken: { type: String, select: false },
+    preferences: { type: Schema.Types.ObjectId, ref: 'UserPreferences' },
+    devices: [
+      {
+        deviceId: { type: String, required: true },
+        fcmToken: { type: String, required: true },
+        deviceType: { type: String, enum: ['ios', 'android'], required: true },
+        deviceName: { type: String },
+        lastActiveAt: { type: Date, default: Date.now },
+        registeredAt: { type: Date, default: Date.now },
+      },
+    ],
+    lastLoginAt: { type: Date },
+    lastLoginDevice: { type: String },
   },
   { timestamps: true }
 );
+
+UserSchema.index({ 'devices.fcmToken': 1 });
+UserSchema.index({ 'devices.deviceId': 1 });
 
 UserSchema.pre<IUserDocument>('save', async function (next) {
   if (!this.isModified('password')) return next();
@@ -83,6 +119,61 @@ UserSchema.methods.generateRefreshToken = function (): string {
     : '30d';
   const options: jwt.SignOptions = { expiresIn: expiresIn as jwt.SignOptions['expiresIn'] };
   return jwt.sign(payload, secret, options);
+};
+
+UserSchema.methods.addDevice = async function (
+  deviceId: string,
+  fcmToken: string,
+  deviceType: 'ios' | 'android',
+  deviceName?: string
+) {
+  const devices = this.devices || [];
+  const existingIndex = devices.findIndex((d: any) => d.deviceId === deviceId);
+
+  const now = new Date();
+  const devicePayload = {
+    deviceId,
+    fcmToken,
+    deviceType,
+    deviceName,
+    lastActiveAt: now,
+    registeredAt: now,
+  };
+
+  if (existingIndex >= 0) {
+    devices[existingIndex] = {
+      ...devices[existingIndex],
+      ...devicePayload,
+      registeredAt: devices[existingIndex].registeredAt || now,
+    };
+  } else {
+    devices.push(devicePayload as any);
+  }
+
+  this.devices = devices;
+  await this.save();
+};
+
+UserSchema.methods.removeDevice = async function (deviceId: string) {
+  const devices = this.devices || [];
+  this.devices = devices.filter((d: any) => d.deviceId !== deviceId);
+  await this.save();
+};
+
+UserSchema.methods.updateDeviceToken = async function (deviceId: string, newFcmToken: string) {
+  const devices = this.devices || [];
+  const device = devices.find((d: any) => d.deviceId === deviceId);
+  if (device) {
+    device.fcmToken = newFcmToken;
+    device.lastActiveAt = new Date();
+  }
+  this.devices = devices;
+  await this.save();
+};
+
+UserSchema.methods.removeAllDevices = async function () {
+  this.devices = [];
+  await this.save();
 };
 
 const User: Model<IUserDocument> = mongoose.models.User || mongoose.model<IUserDocument>('User', UserSchema);

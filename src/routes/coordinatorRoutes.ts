@@ -5,6 +5,7 @@ import {
   getCoordinator,
   getCoordinatorByUser,
   updateCoordinatorProfile,
+  updateCoordinatorSettingsController,
   deleteCoordinatorProfile,
   getWorkload,
   getAvailableCoordinatorsController,
@@ -45,6 +46,7 @@ router.get('/user/:userId', authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN, USER
 router.get('/:id', authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN, USER_ROLES.COORDINATOR), coordinatorIdValidation, getCoordinator);
 router.get('/:id/workload', authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN, USER_ROLES.COORDINATOR), coordinatorIdValidation, getWorkload);
 router.put('/:id', authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN), updateCoordinatorValidation, updateCoordinatorProfile);
+router.patch('/:coordinatorId/settings', authorize(USER_ROLES.COORDINATOR, USER_ROLES.MANAGER, USER_ROLES.ADMIN), updateCoordinatorSettingsController);
 router.delete('/:id', authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN), coordinatorIdValidation, deleteCoordinatorProfile);
 
 export default router;

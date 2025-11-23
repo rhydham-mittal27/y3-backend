@@ -6,6 +6,7 @@ import {
   getAdminByUser,
   getMyProfile,
   updateAdminProfileController,
+  updateAdminSettingsController,
   deleteAdminProfileController,
   getSystemAnalytics,
   exportAnalyticsCSVController,
@@ -67,6 +68,7 @@ router.delete('/bulk/records', authorize(USER_ROLES.ADMIN), bulkDeleteRecordsVal
 // Generic ID routes (placed last)
 router.get('/:id', authorize(USER_ROLES.ADMIN), adminIdValidation, getAdmin);
 router.put('/:id', authorize(USER_ROLES.ADMIN), updateAdminValidation, updateAdminProfileController);
+router.patch('/:adminId/settings', authorize(USER_ROLES.ADMIN), updateAdminSettingsController);
 router.delete('/:id', authorize(USER_ROLES.ADMIN), adminIdValidation, deleteAdminProfileController);
 
 export default router;

@@ -91,6 +91,65 @@ export const updateAdminProfile = async (
   return admin;
 };
 
+export const updateAdminSettings = async (
+  adminId: string,
+  settingsData: Partial<{
+    systemPreferences: {
+      maintenanceMode?: boolean;
+      allowBulkOperations?: boolean;
+      requireApprovalForDeletes?: boolean;
+      sessionTimeout?: number;
+    };
+    dataExportSettings: {
+      autoBackupEnabled?: boolean;
+      backupFrequency?: string;
+      exportFormats?: string[];
+      includeDeletedRecords?: boolean;
+    };
+    auditLogPreferences: {
+      logLevel?: string;
+      retentionDays?: number;
+      alertOnCriticalActions?: boolean;
+      emailDigestFrequency?: string;
+    };
+    notificationSettings: {
+      systemAlerts?: boolean;
+      userCreations?: boolean;
+      bulkOperations?: boolean;
+      securityEvents?: boolean;
+    };
+  }>
+) => {
+  const admin: any = await Admin.findById(adminId);
+  if (!admin) throw new ErrorResponse('Admin not found', 404);
+
+  const currentSettings: any = admin.settings || {};
+  admin.settings = {
+    ...currentSettings,
+    ...settingsData,
+    systemPreferences: {
+      ...(currentSettings.systemPreferences || {}),
+      ...(settingsData.systemPreferences || {}),
+    },
+    dataExportSettings: {
+      ...(currentSettings.dataExportSettings || {}),
+      ...(settingsData.dataExportSettings || {}),
+    },
+    auditLogPreferences: {
+      ...(currentSettings.auditLogPreferences || {}),
+      ...(settingsData.auditLogPreferences || {}),
+    },
+    notificationSettings: {
+      ...(currentSettings.notificationSettings || {}),
+      ...(settingsData.notificationSettings || {}),
+    },
+  };
+
+  await admin.save();
+  await admin.populate({ path: 'user', select: 'name email role phone' });
+  return admin;
+};
+
 export const deleteAdminProfile = async (adminId: string) => {
   const admin = await Admin.findById(adminId);
   if (!admin) throw new ErrorResponse('Admin not found', 404);
@@ -518,6 +577,7 @@ const exported = {
   getAdminById,
   getAdminByUserId,
   updateAdminProfile,
+  updateAdminSettings,
   deleteAdminProfile,
   getSystemWideAnalytics,
   bulkUpdateUsers,

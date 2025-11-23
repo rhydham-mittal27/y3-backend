@@ -28,7 +28,8 @@ export const updateDemoStatusController = asyncHandler(async (req: AuthRequest, 
   const { leadId } = req.params as any;
   const { status, feedback, rejectionReason } = req.body;
   const updatedBy = req.user!.id;
-  const lead = await updateDemoStatus(leadId, status, feedback, rejectionReason, updatedBy);
+  const updatedByRole = req.user!.role;
+  const lead = await updateDemoStatus(leadId, status, feedback, rejectionReason, updatedBy, updatedByRole);
   res.status(200).json(successResponse(lead, 'Demo status updated successfully'));
 });
 

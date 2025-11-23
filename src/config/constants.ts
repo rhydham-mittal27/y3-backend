@@ -39,6 +39,7 @@ export enum ATTENDANCE_STATUS {
   PENDING = 'PENDING',
   COORDINATOR_APPROVED = 'COORDINATOR_APPROVED',
   PARENT_APPROVED = 'PARENT_APPROVED',
+  APPROVED = 'APPROVED',
   REJECTED = 'REJECTED',
 }
 
@@ -147,3 +148,48 @@ export const UPLOAD_CONFIG = {
 };
 
 export const DOCUMENT_TYPES = ['AADHAAR', 'CERTIFICATE', 'EXPERIENCE_PROOF', 'DEGREE', 'OTHER'] as const;
+
+export enum THEME_MODE {
+  LIGHT = 'light',
+  DARK = 'dark',
+  SYSTEM = 'system',
+}
+
+export enum LANGUAGE {
+  ENGLISH = 'en',
+  HINDI = 'hi',
+  SPANISH = 'es',
+  FRENCH = 'fr',
+}
+
+export enum PROFILE_VISIBILITY {
+  PUBLIC = 'public',
+  PRIVATE = 'private',
+  CONTACTS = 'contacts',
+}
+
+export const MOBILE_UPLOAD_CONFIG = {
+  MAX_IMAGE_SIZE: 10 * 1024 * 1024,
+  MAX_IMAGES_PER_UPLOAD: 5,
+  ALLOWED_IMAGE_TYPES: ['image/jpeg', 'image/png', 'image/jpg', 'image/webp'],
+  MAX_IMAGE_DIMENSION: 4096,
+  THUMBNAIL_SIZE: 300,
+  MOBILE_IMAGE_QUALITY: 85,
+};
+
+export const MOBILE_PAGINATION_DEFAULTS = {
+  DEFAULT_LIMIT: 20,
+  MAX_LIMIT: 100,
+  MIN_LIMIT: 5,
+};
+
+export enum DEVICE_TYPE {
+  IOS = 'ios',
+  ANDROID = 'android',
+}
+
+export const FCM_CONFIG = {
+  MAX_TOKENS_PER_BATCH: 500,
+  NOTIFICATION_PRIORITY: 'high',
+  NOTIFICATION_TTL: 86400,
+};

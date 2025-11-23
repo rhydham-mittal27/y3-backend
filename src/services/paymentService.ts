@@ -9,6 +9,7 @@ import { PAYMENT_STATUS, PAYMENT_METHOD, ATTENDANCE_STATUS, MANAGER_ACTION_TYPE 
 import logger, { logError } from '../utils/logger';
 import { logManagerActivity } from './managerService';
 import Manager from '../models/Manager';
+import { createNotificationWithPreferences } from './notificationService';
 
 const DEFAULT_DUE_DAYS = 7;
 
@@ -50,8 +51,8 @@ export const createPayment = async (attendanceId: string, createdBy: string) => 
   ]);
 
   try {
-    await Notification.create({
-      recipient: attendance.tutor,
+    await createNotificationWithPreferences({
+      recipient: attendance.tutor as any,
       type: 'PAYMENT',
       title: 'Payment Created',
       message: `A payment of INR ${amount} is created for your approved session. Due by ${dueDate.toDateString()}.`,
@@ -86,13 +87,12 @@ export const sendPaymentReminder = async (args: { paymentId: string; reminderMes
   } on ${dueText}. Please make the payment at your earliest convenience.`;
 
   try {
-    await Notification.create({
-      recipient: parent,
+    await createNotificationWithPreferences({
+      recipient: parent as any,
       type: 'PAYMENT',
       title: status === PAYMENT_STATUS.OVERDUE ? 'Payment Overdue Reminder' : 'Payment Due Reminder',
       message: (reminderMessage && reminderMessage.trim().length > 0) ? reminderMessage : defaultMsg,
-      createdBy: new mongoose.Types.ObjectId(sentBy) as any,
-    } as any);
+    });
   } catch (e) {
     logError(`Failed to create payment reminder notification: ${String(e)}`);
     throw new ErrorResponse('Failed to send payment reminder', 500);
@@ -192,8 +192,8 @@ export const updatePaymentStatus = async (
   await payment.save();
 
   try {
-    await Notification.create({
-      recipient: payment.tutor,
+    await createNotificationWithPreferences({
+      recipient: payment.tutor as any,
       type: 'PAYMENT',
       title: newStatus === PAYMENT_STATUS.PAID ? 'Payment Received' : 'Payment Status Updated',
       message:
@@ -301,6 +301,48 @@ export const getPaymentsByTutor = async (
   return { payments, statistics: { totalAmount, paidAmount, pendingAmount } };
 };
 
+export const getPaymentsByParent = async (
+  parentUserId: string,
+  status?: PAYMENT_STATUS | string,
+  fromDate?: Date,
+  toDate?: Date
+) => {
+  if (!mongoose.isValidObjectId(parentUserId)) {
+    return { payments: [], statistics: { totalAmount: 0, paidAmount: 0, pendingAmount: 0, overdueAmount: 0 } };
+  }
+
+  const classes = await FinalClass.find({ parent: new mongoose.Types.ObjectId(parentUserId) }).select('_id');
+  const classIds = classes.map((c) => c._id);
+  if (!classIds.length) {
+    return { payments: [], statistics: { totalAmount: 0, paidAmount: 0, pendingAmount: 0, overdueAmount: 0 } };
+  }
+
+  const query: any = { finalClass: { $in: classIds } };
+  if (status) query.status = status;
+  if (fromDate || toDate) {
+    query.createdAt = {};
+    if (fromDate) query.createdAt.$gte = new Date(fromDate);
+    if (toDate) query.createdAt.$lte = new Date(toDate);
+  }
+
+  const payments = await Payment.find(query)
+    .sort({ createdAt: -1 })
+    .populate([
+      { path: 'finalClass' },
+      { path: 'attendance' },
+      { path: 'tutor', select: 'name email phone' },
+      { path: 'createdBy', select: 'name email' },
+      { path: 'paidBy', select: 'name email' },
+    ]);
+
+  const totalAmount = payments.reduce((sum, p) => sum + (p.amount || 0), 0);
+  const paidAmount = payments.filter((p) => String(p.status) === PAYMENT_STATUS.PAID).reduce((s, p) => s + (p.amount || 0), 0);
+  const pendingAmount = payments.filter((p) => String(p.status) === PAYMENT_STATUS.PENDING).reduce((s, p) => s + (p.amount || 0), 0);
+  const overdueAmount = payments.filter((p) => String(p.status) === PAYMENT_STATUS.OVERDUE).reduce((s, p) => s + (p.amount || 0), 0);
+
+  return { payments, statistics: { totalAmount, paidAmount, pendingAmount, overdueAmount } };
+};
+
 export const getPaymentsByClass = async (finalClassId: string, status?: PAYMENT_STATUS | string) => {
   const query: any = { finalClass: new mongoose.Types.ObjectId(finalClassId) };
   if (status) query.status = status;
@@ -326,13 +368,14 @@ export const markOverduePayments = async () => {
   const res = await Payment.updateMany({ status: PAYMENT_STATUS.PENDING, dueDate: { $lt: now } }, { $set: { status: PAYMENT_STATUS.OVERDUE } });
   const overduePayments = await Payment.find({ status: PAYMENT_STATUS.OVERDUE, dueDate: { $lt: now } });
   try {
-    const notifications = overduePayments.map((p) => ({
-      recipient: p.tutor,
-      type: 'PAYMENT',
-      title: 'Payment Overdue',
-      message: `Your payment of INR ${p.amount} is overdue.`,
-    }));
-    if (notifications.length) await Notification.create(notifications);
+    for (const p of overduePayments) {
+      await createNotificationWithPreferences({
+        recipient: p.tutor as any,
+        type: 'PAYMENT',
+        title: 'Payment Overdue',
+        message: `Your payment of INR ${p.amount} is overdue.`,
+      });
+    }
   } catch (e) {
     logError(`Failed to notify overdue payments: ${String(e)}`);
   }
@@ -459,4 +502,5 @@ export default {
   getPaymentStatistics,
   generatePaymentReport,
   sendPaymentReminder,
+  getPaymentsByParent,
 };

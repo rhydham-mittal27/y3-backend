@@ -54,7 +54,7 @@ router.get(
 
 router.get(
   '/class/:classId/history',
-  authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN, USER_ROLES.COORDINATOR),
+  authorize(USER_ROLES.MANAGER, USER_ROLES.TUTOR, USER_ROLES.ADMIN, USER_ROLES.COORDINATOR),
   classIdParamValidation,
   getClassAttendanceHistory
 );
