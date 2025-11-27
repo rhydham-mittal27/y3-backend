@@ -5,6 +5,7 @@ import ErrorResponse from '../utils/errorResponse';
 import { AuthRequest } from '../types';
 import { USER_ROLES } from '../config/constants';
 import PDFDocument from 'pdfkit';
+import path from 'path';
 import {
   createAttendance,
   getAllAttendance,
@@ -26,12 +27,13 @@ export const createAttendanceRecord = asyncHandler(async (req: AuthRequest, res)
   if (!errors.isEmpty()) {
     throw new ErrorResponse(errors.array()[0].msg, 400);
   }
-  const { finalClassId, sessionDate, sessionNumber, notes, studentAttendanceStatus } = req.body as any;
+  const { finalClassId, sessionDate, sessionNumber, topicCovered, notes, studentAttendanceStatus } = req.body as any;
   const submittedBy = req.user!.id;
   const attendance = await createAttendance({
     finalClassId,
     sessionDate,
     sessionNumber,
+    topicCovered,
     notes,
     studentAttendanceStatus,
     submittedBy,
@@ -174,13 +176,27 @@ export const getTutorAttendanceSummaryController = asyncHandler(async (req: Auth
 
 export const exportClassAttendancePdfController = asyncHandler(async (req: AuthRequest, res) => {
   const { classId } = req.params as any;
+  const { start, end } = req.query as any;
 
-  const attendances = await getAttendanceByClass(classId);
+  let attendances = await getAttendanceByClass(classId);
   if (!attendances.length) {
     throw new ErrorResponse('No attendance records found for this class', 404);
   }
 
-  const doc = new PDFDocument({ margin: 50 });
+  // Optional date range filter similar to YS trial monthly sheets (using sessionDate)
+  if (start || end) {
+    const from = start ? new Date(start) : undefined;
+    const to = end ? new Date(end) : undefined;
+    attendances = attendances.filter((a: any) => {
+      if (!a.sessionDate) return false;
+      const d = new Date(a.sessionDate);
+      if (from && d < from) return false;
+      if (to && d > to) return false;
+      return true;
+    });
+  }
+
+  const doc = new PDFDocument({ margin: 36 });
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `attachment; filename=attendance-${classId}.pdf`);
   doc.pipe(res as any);
@@ -188,22 +204,109 @@ export const exportClassAttendancePdfController = asyncHandler(async (req: AuthR
   const first = attendances[0] as any;
   const studentName = first?.finalClass?.studentName || '';
   const className = first?.finalClass?.className || '';
+  const subjects = Array.isArray(first?.finalClass?.subject)
+    ? (first.finalClass.subject as string[]).join(', ')
+    : (first?.finalClass?.subject as string) || '';
 
-  doc.fontSize(18).text('Attendance Report', { align: 'center' });
+  // Header band similar to template
+  const pageWidth = doc.page.width;
+  const headerHeight = 40;
+  doc.rect(0, 0, pageWidth, headerHeight).fill('#0F172A'); // slate-900 style background
+  // Logo from frontend/public/1.jpg (one level up from backend and into frontend/public)
+  try {
+    const logoPath = path.resolve(__dirname, '../../../frontend/public/1.jpg');
+    doc.image(logoPath, 36, 8, { fit: [22, 22] });
+  } catch {
+    // if logo missing, continue without breaking PDF generation
+  }
+
+  doc.fillColor('#FFFFFF').fontSize(14);
+  doc.text('Your Shikshak – Home Tuition Attendance Sheet', 70, 14, { align: 'left' });
+  doc.fontSize(9).fillColor('#E5E7EB');
+  doc.text('Your Learning Partner', 40, 26, { align: 'left' });
   doc.moveDown();
-  doc.fontSize(12).text(`Class: ${className}`);
-  doc.text(`Student: ${studentName}`);
+  doc.moveTo(36, headerHeight).lineTo(pageWidth - 36, headerHeight).strokeColor('#E5E7EB').stroke();
+  doc.strokeColor('#000000');
+  doc.y = headerHeight + 12;
+
+  // Class & student info
+  doc.fontSize(10).fillColor('#111827');
+  doc.text(`Class: ${className}`, { continued: true }).text(`   Student: ${studentName}`);
+  if (subjects) {
+    doc.text(`Subject(s): ${subjects}`);
+  }
+  if (start || end) {
+    doc.text(`Period: ${start || '—'} to ${end || '—'}`);
+  }
   doc.moveDown();
 
-  doc.fontSize(12).text('Date', { continued: true, width: 150 });
-  doc.text('Status', { width: 150 });
-  doc.moveDown(0.5);
+  // Table header
+  const tableTop = doc.y;
+  const colDate = 40;
+  const colDuration = 150;
+  const colTopic = 230;
+  const colStatus = 430;
 
-  attendances.forEach((a: any) => {
-    const d = a.sessionDate ? new Date(a.sessionDate).toDateString() : '';
-    doc.text(d, { continued: true, width: 150 });
-    doc.text(String(a.studentAttendanceStatus || ''), { width: 150 });
+  const drawHeader = () => {
+    doc.fontSize(9).font('Helvetica-Bold').fillColor('#111827');
+    const headerY = doc.y;
+    doc.rect(colDate - 2, headerY - 4, 510 - colDate, 16).fill('#E5E7EB');
+    doc.fillColor('#111827');
+    doc.text('Date', colDate, headerY, { width: 90 });
+    doc.text('Duration (mins)', colDuration, headerY, { width: 70 });
+    doc.text('Topic / Chapter Covered', colTopic, headerY, { width: 180 });
+    doc.text('Status', colStatus, headerY, { width: 80 });
+    doc.moveDown(1.2);
+    doc.moveTo(colDate - 2, doc.y).lineTo(510, doc.y).strokeColor('#9CA3AF').stroke();
+    doc.strokeColor('#000000');
+  };
+
+  drawHeader();
+  doc.font('Helvetica');
+
+  attendances.forEach((a: any, index: number) => {
+    const d = a.sessionDate ? new Date(a.sessionDate) : null;
+    const dateStr = d ? d.toLocaleDateString('en-IN') : '';
+    const durationMins = a.durationMinutes || (a.durationHours ? Math.round(a.durationHours * 60) : '');
+    const topic = a.topicCovered || '';
+    const status = String(a.studentAttendanceStatus || '');
+
+    const rowTop = doc.y;
+    const rowHeight = 14;
+
+    // Zebra striping with light blue/gray
+    if (index % 2 === 0) {
+      doc.rect(colDate - 2, rowTop - 2, 510 - colDate, rowHeight)
+        .fillOpacity(0.04)
+        .fill('#3B82F6')
+        .fillOpacity(1);
+    }
+
+    doc.fontSize(9).fillColor('#111827');
+    doc.text(dateStr, colDate + 2, rowTop, { width: 90 });
+    doc.text(String(durationMins ?? ''), colDuration + 2, rowTop, { width: 70 });
+    doc.text(topic, colTopic + 2, rowTop, { width: 180 });
+    doc.text(status, colStatus + 2, rowTop, { width: 80 });
+    doc.moveDown(1);
+
+    // New page if close to bottom
+    if (doc.y > doc.page.height - 60 && index !== attendances.length - 1) {
+      doc.addPage();
+      doc.y = headerHeight + 12;
+      drawHeader();
+    }
   });
+
+  // Footer lines for total hours / remarks / signature, similar to template
+  doc.moveDown(2);
+  const footerY = doc.y;
+  doc.fontSize(9).fillColor('#111827');
+  doc.text('Total Teaching Hours: __________________________', colDate, footerY);
+  doc.moveDown(0.7);
+  doc.text('Tutor’s Remarks (if any): ________________________________________________', colDate);
+  doc.moveDown(1);
+  doc.text('Parent’s Final Signature: __________________________', colDate, doc.y, { continued: true });
+  doc.text('Date: ___ / ___ / ___', colStatus, doc.y);
 
   doc.end();
 });

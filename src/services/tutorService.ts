@@ -94,6 +94,65 @@ export const getTutorByUserId = async (userId: string) => {
     { path: 'verifiedBy', select: 'name email phone role' },
   ]);
   if (!tutor) throw new ErrorResponse('Tutor not found', 404);
+
+  const tutorUserId = new mongoose.Types.ObjectId(
+    String(((tutor.user as any)?._id) || tutor.user)
+  );
+
+  // Compute total experience hours as: sum over all classes of
+  // (number of attendance records for that class * classLead.classDurationHours).
+  // This uses actual attendance, not just the completedSessions counter.
+
+  // First, load all classes for this tutor (any status) with their classLead.
+  const allTutorClasses = await FinalClass.find({
+    $or: [
+      { tutor: tutorUserId },
+      { tutorUser: tutorUserId },
+    ],
+  })
+    .select('classLead')
+    .populate({ path: 'classLead', select: 'classDurationHours' });
+
+  const classIdMap = new Map<string, any>();
+  const classIds: mongoose.Types.ObjectId[] = [];
+  for (const cls of allTutorClasses as any[]) {
+    const id = cls._id as mongoose.Types.ObjectId;
+    classIds.push(id);
+    classIdMap.set(String(id), cls);
+  }
+
+  let totalClassHours = 0;
+
+  if (classIds.length > 0) {
+    // Aggregate attendance counts per finalClass for this tutor.
+    const attendanceCounts = await Attendance.aggregate([
+      {
+        $match: {
+          tutor: tutorUserId,
+          finalClass: { $in: classIds },
+        },
+      },
+      {
+        $group: {
+          _id: '$finalClass',
+          count: { $sum: 1 },
+        },
+      },
+    ]);
+
+    for (const row of attendanceCounts as any[]) {
+      const cls = classIdMap.get(String(row._id));
+      if (!cls) continue;
+      const duration = (cls.classLead as any)?.classDurationHours || 0;
+      const count = row.count || 0;
+      if (duration > 0 && count > 0) {
+        totalClassHours += duration * count;
+      }
+    }
+  }
+
+  (tutor as any).experienceHours = totalClassHours;
+
   return tutor;
 };
 

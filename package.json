@@ -8,7 +8,10 @@
     "dev": "nodemon --watch src --exec ts-node src/server.ts",
     "build": "tsc",
     "start": "node dist/server.js",
-    "lint": "eslint src"
+    "lint": "eslint src",
+    "seed:mass": "ts-node src/scripts/massSeed.ts",
+    "seed:large": "ts-node src/scripts/seedLargeDemo.ts",
+    "seed:admin": "ts-node src/scripts/seedAdmin.ts"
   },
   "dependencies": {
     "@faker-js/faker": "^10.1.0",

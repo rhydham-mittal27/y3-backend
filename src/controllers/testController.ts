@@ -3,6 +3,7 @@ import asyncHandler from '../utils/asyncHandler';
 import { successResponse, paginatedResponse } from '../utils/responseFormatter';
 import ErrorResponse from '../utils/errorResponse';
 import { AuthRequest } from '../types';
+import { USER_ROLES } from '../config/constants';
 import PDFDocument from 'pdfkit';
 import {
   scheduleTest,
@@ -29,7 +30,7 @@ export const scheduleTestController = asyncHandler(async (req: AuthRequest, res)
   return res.status(201).json(successResponse(test, 'Test scheduled successfully'));
 });
 
-export const getTests = asyncHandler(async (req, res) => {
+export const getTests = asyncHandler(async (req: AuthRequest, res) => {
   const { page = '1', limit = '10', finalClassId, status, tutorId, coordinatorId, fromDate, toDate, sortBy, sortOrder } =
     req.query as any;
 
@@ -38,12 +39,17 @@ export const getTests = asyncHandler(async (req, res) => {
   const from = fromDate ? new Date(fromDate) : undefined;
   const to = toDate ? new Date(toDate) : undefined;
 
+  // Tutors should only see their own tests regardless of the query string
+  const callerRole = req.user?.role;
+  const callerId = req.user?.id;
+  const effectiveTutorId = callerRole === USER_ROLES.TUTOR ? callerId : (tutorId as string | undefined);
+
   const { tests, total } = await getAllTests({
     page: pageNum,
     limit: limitNum,
     finalClassId: finalClassId as string,
     status: status as any,
-    tutorId: tutorId as string,
+    tutorId: effectiveTutorId,
     coordinatorId: coordinatorId as string,
     fromDate: from,
     toDate: to,

@@ -11,6 +11,7 @@ import {
   updateClassLeadStatus,
   deleteClassLead,
   getLeadsByManager,
+  getLeadsByTutor,
 } from '../services/leadService';
 
 export const createLead = asyncHandler(async (req: AuthRequest, res) => {
@@ -131,6 +132,12 @@ export const getMyLeads = asyncHandler(async (req: AuthRequest, res) => {
   return res.json(successResponse(leads));
 });
 
+export const getTutorLeads = asyncHandler(async (req: AuthRequest, res) => {
+  const tutorUserId = req.user!.id;
+  const leads = await getLeadsByTutor(tutorUserId);
+  return res.json(successResponse(leads));
+});
+
 export default {
   createLead,
   getLeads,
@@ -139,4 +146,5 @@ export default {
   updateLeadStatus,
   deleteLead,
   getMyLeads,
+  getTutorLeads,
 };

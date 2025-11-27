@@ -5,6 +5,7 @@ export const createAttendanceValidation = [
   body('finalClassId').notEmpty().withMessage('Final class ID is required').isMongoId().withMessage('Invalid final class ID'),
   body('sessionDate').notEmpty().withMessage('Session date is required').isISO8601().withMessage('Invalid date format'),
   body('sessionNumber').optional().isInt({ min: 1 }).withMessage('Session number must be positive integer'),
+  body('topicCovered').optional().trim().isLength({ max: 200 }).withMessage('Topic covered must not exceed 200 characters'),
   body('notes').optional().trim().isLength({ max: 1000 }).withMessage('Notes must not exceed 1000 characters'),
   body('studentAttendanceStatus')
     .optional()
@@ -16,6 +17,7 @@ export const updateAttendanceValidation = [
   param('id').isMongoId().withMessage('Invalid attendance ID'),
   body('sessionDate').optional().isISO8601().withMessage('Invalid date format'),
   body('sessionNumber').optional().isInt({ min: 1 }).withMessage('Session number must be positive integer'),
+  body('topicCovered').optional().trim().isLength({ max: 200 }).withMessage('Topic covered must not exceed 200 characters'),
   body('notes').optional().trim().isLength({ max: 1000 }).withMessage('Notes must not exceed 1000 characters'),
   body('studentAttendanceStatus')
     .optional()

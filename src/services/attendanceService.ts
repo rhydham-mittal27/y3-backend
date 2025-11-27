@@ -14,11 +14,12 @@ export const createAttendance = async (params: {
   finalClassId: string;
   sessionDate: Date;
   sessionNumber?: number;
+  topicCovered?: string;
   notes?: string;
   studentAttendanceStatus?: string;
   submittedBy: string;
 }) => {
-  const { finalClassId, sessionDate, sessionNumber, notes, studentAttendanceStatus, submittedBy } = params;
+  const { finalClassId, sessionDate, sessionNumber, topicCovered, notes, studentAttendanceStatus, submittedBy } = params;
 
   const cls = await FinalClass.findById(finalClassId);
   if (!cls) throw new ErrorResponse('Final class not found', 404);
@@ -79,6 +80,7 @@ export const createAttendance = async (params: {
     finalClass: cls._id,
     sessionDate: new Date(sessionDate),
     sessionNumber,
+    topicCovered,
     tutor: cls.tutor,
     coordinator: cls.coordinator,
     parent: (cls as any).parent,
@@ -299,7 +301,7 @@ export const rejectAttendance = async (attendanceId: string, rejectedByUserId: s
 
 export const updateAttendance = async (
   attendanceId: string,
-  updateData: Partial<{ sessionDate: Date; sessionNumber: number; notes: string; studentAttendanceStatus: string }>
+  updateData: Partial<{ sessionDate: Date; sessionNumber: number; topicCovered: string; notes: string; studentAttendanceStatus: string }>
 ) => {
   const attendance = await Attendance.findById(attendanceId);
   if (!attendance) throw new ErrorResponse('Attendance not found', 404);
@@ -308,6 +310,7 @@ export const updateAttendance = async (
   }
   if (updateData.sessionDate) attendance.sessionDate = new Date(updateData.sessionDate);
   if (typeof updateData.sessionNumber !== 'undefined') attendance.sessionNumber = updateData.sessionNumber;
+  if (typeof updateData.topicCovered !== 'undefined') attendance.topicCovered = updateData.topicCovered;
   if (typeof updateData.notes !== 'undefined') attendance.notes = updateData.notes;
   if (typeof updateData.studentAttendanceStatus !== 'undefined') {
     attendance.studentAttendanceStatus = updateData.studentAttendanceStatus as any;

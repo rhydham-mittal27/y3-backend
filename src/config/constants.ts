@@ -147,7 +147,14 @@ export const UPLOAD_CONFIG = {
   UPLOAD_DIR: './uploads/documents',
 };
 
-export const DOCUMENT_TYPES = ['AADHAAR', 'CERTIFICATE', 'EXPERIENCE_PROOF', 'DEGREE', 'OTHER'] as const;
+export const DOCUMENT_TYPES = [
+  'AADHAAR',
+  'CERTIFICATE',
+  'EXPERIENCE_PROOF',
+  'DEGREE',
+  'PROFILE_PHOTO',
+  'OTHER',
+] as const;
 
 export enum THEME_MODE {
   LIGHT = 'light',

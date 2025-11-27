@@ -226,6 +226,16 @@ export const getLeadsByManager = async (managerId: string) => {
   return leads;
 };
 
+export const getLeadsByTutor = async (tutorUserId: string) => {
+  const leads = await ClassLead.find({ assignedTutor: tutorUserId })
+    .sort({ createdAt: -1 })
+    .populate([
+      { path: 'createdBy', select: 'name email role' },
+      { path: 'assignedTutor', select: 'name email phone' },
+    ]);
+  return leads;
+};
+
 export default {
   createClassLead,
   getAllClassLeads,
@@ -234,4 +244,5 @@ export default {
   updateClassLeadStatus,
   deleteClassLead,
   getLeadsByManager,
+  getLeadsByTutor,
 };

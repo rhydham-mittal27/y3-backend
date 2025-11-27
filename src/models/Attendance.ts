@@ -6,6 +6,7 @@ export interface IAttendanceDocument extends Document {
   finalClass: mongoose.Types.ObjectId;
   sessionDate: Date;
   sessionNumber?: number;
+  topicCovered?: string;
   tutor: mongoose.Types.ObjectId;
   coordinator: mongoose.Types.ObjectId;
   parent?: mongoose.Types.ObjectId;
@@ -30,6 +31,7 @@ const AttendanceSchema: Schema<IAttendanceDocument> = new Schema<IAttendanceDocu
     finalClass: { type: Schema.Types.ObjectId, ref: 'FinalClass', required: true, index: true },
     sessionDate: { type: Date, required: true },
     sessionNumber: { type: Number },
+    topicCovered: { type: String, maxlength: 200 },
     tutor: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     coordinator: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     parent: { type: Schema.Types.ObjectId, ref: 'User' },

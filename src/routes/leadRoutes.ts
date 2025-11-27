@@ -7,6 +7,7 @@ import {
   updateLeadStatus,
   deleteLead,
   getMyLeads,
+  getTutorLeads,
 } from '../controllers/leadController';
 import { createLeadValidation, updateLeadValidation, updateStatusValidation, leadIdValidation } from '../validators/leadValidator';
 import protect from '../middlewares/auth';
@@ -20,6 +21,7 @@ router.use(protect);
 router.post('/', authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN), createLeadValidation, createLead);
 router.get('/', authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN), getLeads);
 router.get('/my-leads', authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN), getMyLeads);
+router.get('/tutor/my-leads', authorize(USER_ROLES.TUTOR), getTutorLeads);
 router.get('/:id', authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN), leadIdValidation, getLead);
 router.put('/:id', authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN), updateLeadValidation, updateLead);
 router.patch('/:id/status', authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN), updateStatusValidation, updateLeadStatus);

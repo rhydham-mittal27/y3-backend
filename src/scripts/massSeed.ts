@@ -52,7 +52,8 @@ async function connect() {
 }
 
 async function createUser(role: string): Promise<any> {
-  const email = faker.internet.email().toLowerCase();
+  const username = faker.internet.username().toLowerCase().replace(/[^a-z0-9]/g, '');
+  const email = `${username || 'user'}@gmail.com`;
   const user = await User.create({
     name: faker.person.fullName(),
     email,

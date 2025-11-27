@@ -32,7 +32,7 @@ router.use(protect);
 
 router.post('/', authorize(USER_ROLES.COORDINATOR, USER_ROLES.MANAGER, USER_ROLES.ADMIN), scheduleTestValidation, scheduleTestController);
 
-router.get('/', authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN, USER_ROLES.COORDINATOR), getTests);
+router.get('/', authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN, USER_ROLES.COORDINATOR, USER_ROLES.TUTOR), getTests);
 
 router.get('/coordinator/tests', authorize(USER_ROLES.COORDINATOR), getCoordinatorTests);
 

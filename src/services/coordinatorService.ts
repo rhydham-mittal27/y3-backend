@@ -184,8 +184,24 @@ export const getCoordinatorPaymentSummary = async (
 };
 
 export const getCoordinatorDashboardStats = async (coordinatorUserId: string) => {
-  const coordinator = await Coordinator.findOne({ user: coordinatorUserId });
-  if (!coordinator) throw new ErrorResponse('Coordinator not found', 404);
+  let coordinator = await Coordinator.findOne({ user: coordinatorUserId });
+
+  // If a coordinator profile does not yet exist for this user but the user
+  // has the COORDINATOR role, create a minimal coordinator record on the fly
+  // so that freshly promoted coordinators can access their dashboard without
+  // going through a separate manual creation step.
+  if (!coordinator) {
+    const user = await User.findById(coordinatorUserId);
+    if (!user) throw new ErrorResponse('User not found', 404);
+    if (String(user.role) !== USER_ROLES.COORDINATOR) {
+      throw new ErrorResponse('User is not a COORDINATOR', 400);
+    }
+
+    coordinator = await Coordinator.create({
+      user: new mongoose.Types.ObjectId(coordinatorUserId),
+      maxClassCapacity: 10,
+    });
+  }
 
   const activeClasses = await FinalClass.find({ coordinator: new mongoose.Types.ObjectId(coordinatorUserId), status: FINAL_CLASS_STATUS.ACTIVE });
 

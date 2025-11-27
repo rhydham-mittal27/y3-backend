@@ -117,40 +117,9 @@ export const getTutorAvailableAnnouncements = async (params: {
   // Load tutor profile to apply OFFLINE area filtering and ONLINE subject filtering
   const tutorDoc = await Tutor.findOne({ user: tutorUserId }).select('subjects preferredLocations');
 
-  const leadOrFilters: any[] = [];
-
-  // OFFLINE (or non-ONLINE) classes: match tutor preferred areas/locations
-  if (tutorDoc && Array.isArray(tutorDoc.preferredLocations) && tutorDoc.preferredLocations.length > 0) {
-    const areas = tutorDoc.preferredLocations.filter(Boolean);
-    if (areas.length > 0) {
-      leadOrFilters.push({
-        mode: { $ne: 'ONLINE' },
-        $or: [
-          { area: { $in: areas } },
-          { location: { $in: areas } },
-        ],
-      });
-    }
-  }
-
-  // ONLINE classes: match tutor subjects
-  if (tutorDoc && Array.isArray(tutorDoc.subjects) && tutorDoc.subjects.length > 0) {
-    leadOrFilters.push({
-      mode: 'ONLINE',
-      subject: { $in: tutorDoc.subjects },
-    });
-  }
-
-  if (leadOrFilters.length > 0) {
-    const matchingLeads = await ClassLead.find({ $or: leadOrFilters }).select('_id');
-    const classLeadIds = matchingLeads.map((l) => l._id);
-
-    if (classLeadIds.length === 0) {
-      return { announcements: [], total: 0, page, limit };
-    }
-
-    query.classLead = { $in: classLeadIds };
-  }
+  // NOTE: Tutor-specific subject/location matching is disabled for now so that
+  // all active announcements where the tutor has not already expressed interest
+  // are visible in the Class Opportunities feed.
 
   const skip = (page - 1) * limit;
   const sort: any = {};

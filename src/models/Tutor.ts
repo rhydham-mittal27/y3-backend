@@ -2,7 +2,7 @@ import mongoose, { Schema, Document, Model } from 'mongoose';
 import { TEACHING_MODE, VERIFICATION_STATUS, TUTOR_TIER } from '../config/constants';
 
 export interface IDocumentEmbedded {
-  documentType: 'AADHAAR' | 'CERTIFICATE' | 'EXPERIENCE_PROOF' | 'DEGREE' | 'OTHER';
+  documentType: 'AADHAAR' | 'CERTIFICATE' | 'EXPERIENCE_PROOF' | 'DEGREE' | 'PROFILE_PHOTO' | 'OTHER';
   documentUrl: string;
   uploadedAt: Date;
   publicId?: string;
@@ -71,7 +71,7 @@ const DocumentSchema = new Schema<IDocumentEmbedded>(
   {
     documentType: {
       type: String,
-      enum: ['AADHAAR', 'CERTIFICATE', 'EXPERIENCE_PROOF', 'DEGREE', 'OTHER'],
+      enum: ['AADHAAR', 'CERTIFICATE', 'EXPERIENCE_PROOF', 'DEGREE', 'PROFILE_PHOTO', 'OTHER'],
       required: true,
     },
     documentUrl: { type: String, required: true },
