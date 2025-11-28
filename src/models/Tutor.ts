@@ -12,6 +12,7 @@ export interface IDocumentEmbedded {
 
 export interface ITutorDocument extends Document {
   _id: mongoose.Types.ObjectId;
+  teacherId?: string;
   user: mongoose.Types.ObjectId;
   experienceHours: number;
   subjects: string[];
@@ -86,6 +87,7 @@ const DocumentSchema = new Schema<IDocumentEmbedded>(
 const TutorSchema: Schema<ITutorDocument> = new Schema<ITutorDocument>(
   {
     user: { type: Schema.Types.ObjectId, ref: 'User', required: true, unique: true },
+    teacherId: { type: String, unique: true, sparse: true, index: true },
     experienceHours: { type: Number, required: true, default: 0 },
     subjects: { type: [String], required: true },
     qualifications: { type: [String] },

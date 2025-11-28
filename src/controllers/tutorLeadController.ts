@@ -4,6 +4,7 @@ import ErrorResponse from '../utils/errorResponse';
 import { successResponse } from '../utils/responseFormatter';
 import User from '../models/User';
 import Tutor from '../models/Tutor';
+import generateTeacherId from '../utils/generateTeacherId';
 import { USER_ROLES } from '../config/constants';
 
 function parseExperienceHours(experience: string | undefined): number {
@@ -76,13 +77,42 @@ export const createTutorLeadRegistrationController = asyncHandler(async (req: Re
   });
   if (pincode) preferredLocations.push(String(pincode));
 
-  const tutor = await Tutor.create({
+  // Determine teacherId: prefer client's provided teacherId, otherwise generate server-side.
+  let teacherIdToSave = (req.body && (req.body as any).teacherId) ? String((req.body as any).teacherId).trim() : '';
+  // Ensure uniqueness: if provided and already exists, ignore and generate a new unique id.
+  if (teacherIdToSave) {
+    const existingWithProvided = await Tutor.findOne({ teacherId: teacherIdToSave }).lean();
+    if (existingWithProvided) {
+      teacherIdToSave = '';
+    }
+  }
+
+  // If we don't have a teacherId yet, generate and ensure uniqueness with retries
+  const MAX_RETRIES = 5;
+  let attempts = 0;
+  while (!teacherIdToSave && attempts < MAX_RETRIES) {
+    attempts += 1;
+    const candidate = generateTeacherId(gender, city);
+    const exists = await Tutor.findOne({ teacherId: candidate }).lean();
+    if (!exists) {
+      teacherIdToSave = candidate;
+      break;
+    }
+  }
+
+  // Fallback: if still empty (very unlikely), use the Mongo id string after creation.
+
+  const tutorPayload: any = {
     user: user._id,
     experienceHours,
     subjects: subjects.map(String),
     qualifications: qualification ? [qualification] : [],
     preferredLocations,
-  });
+  };
+  if (teacherIdToSave) tutorPayload.teacherId = teacherIdToSave;
 
-  return res.status(201).json(successResponse({ teacherId: tutor._id }, 'Tutor registered successfully'));
+  const tutor = await Tutor.create(tutorPayload);
+
+  const returnTeacherId = tutor.teacherId || String(tutor._id);
+  return res.status(201).json(successResponse({ teacherId: returnTeacherId }, 'Tutor registered successfully'));
 });
