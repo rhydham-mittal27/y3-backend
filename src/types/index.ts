@@ -138,6 +138,7 @@ export interface ITutorSettings {
 export interface IClassLead {
   id: string;
   studentName: string;
+  parentEmail?: string;
   grade: string;
   subject: string[];
   board: BOARD_TYPE;
@@ -550,7 +551,7 @@ export interface IDashboardStatistics {
   classLeads: { total: number; new: number; converted: number };
   finalClasses: { total: number; active: number; completed: number };
   tutors: { total: number; verified: number; active: number };
-  payments: { total: number; totalRevenue: number; paidRevenue: number; pendingRevenue: number };
+  payments: { total: number; totalRevenue: number; paidRevenue: number; pendingRevenue: number; feesCollected: number; tutorPayout: number };
   conversionRate: number;
   averageRevenuePerClass: number;
   pendingApprovals: number;

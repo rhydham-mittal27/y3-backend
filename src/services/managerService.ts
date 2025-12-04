@@ -7,7 +7,6 @@ import FinalClass from '../models/FinalClass';
 import Payment from '../models/Payment';
 import DemoHistory from '../models/DemoHistory';
 import Tutor from '../models/Tutor';
-import Coordinator from '../models/Coordinator';
 import ErrorResponse from '../utils/errorResponse';
 import dashboardService from './dashboardService';
 import { CLASS_LEAD_STATUS, MANAGER_ACTION_TYPE, PAYMENT_STATUS, USER_ROLES } from '../config/constants';

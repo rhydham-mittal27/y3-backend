@@ -365,7 +365,7 @@ async function createFeedback(finals: any[], parents: any[], tutorUsers: any[], 
   return items;
 }
 
-async function createNotifications(admin: any, tutors: any[], coordinators: any[], count = COUNTS.notifications) {
+async function createNotifications(_admin: any, tutors: any[], coordinators: any[], count = COUNTS.notifications) {
   const items: any[] = [];
   for (let i = 0; i < count; i++) {
     const recipient = faker.helpers.arrayElement([...tutors, ...coordinators])._id || faker.helpers.arrayElement(coordinators).user;

@@ -73,14 +73,14 @@ async function seed() {
   const parentUser = await upsertUser('Priya Parent', 'parent@example.com', USER_ROLES.PARENT, '+919111111111');
 
   // Tutor profiles
-  const tutor1 = await ensureTutorForUser(tutorUser1._id, {
+  await ensureTutorForUser(tutorUser1._id, {
     subjects: ['Math', 'Physics'],
     experienceHours: 320,
     preferredMode: TEACHING_MODE.HYBRID,
     verificationStatus: VERIFICATION_STATUS.VERIFIED,
     preferredLocations: ['Andheri', 'Bandra'],
   });
-  const tutor2 = await ensureTutorForUser(tutorUser2._id, {
+  await ensureTutorForUser(tutorUser2._id, {
     subjects: ['Chemistry', 'Biology'],
     experienceHours: 210,
     preferredMode: TEACHING_MODE.ONLINE,
@@ -189,7 +189,7 @@ async function seed() {
     })) as any);
 
   // Demo history for lead2
-  const demoAssign = await DemoHistory.create({
+  await DemoHistory.create({
     classLead: lead2._id,
     tutor: tutorUser2._id,
     demoDate: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000),

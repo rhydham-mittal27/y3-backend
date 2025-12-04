@@ -16,13 +16,23 @@ export interface IDemoDetailsEmbedded {
   assignedAt?: Date;
 }
 
+export interface IStudentDetail {
+  name: string;
+  gender: 'M' | 'F';
+  fees: number;
+  tutorFees: number;
+}
+
 export interface IClassLeadDocument extends Document {
   _id: mongoose.Types.ObjectId;
+  studentType: 'SINGLE' | 'GROUP';
   studentName: string;
+  studentGender?: 'M' | 'F';
   parentName?: string;
+  parentEmail?: string;
   parentPhone?: string;
-  grade: string;
-  subject: string[];
+  grade?: string; // Only for single student
+  subject?: string[]; // Only for single student
   board: BOARD_TYPE | string;
   mode: TEACHING_MODE | string;
   location?: string;
@@ -36,12 +46,17 @@ export interface IClassLeadDocument extends Document {
   preferredTutorGender?: PREFERRED_TUTOR_GENDER | string;
   leadSource?: LEAD_SOURCE | string;
   paymentReceived?: boolean;
-  paymentAmount?: number;
   assignedTutor?: mongoose.Types.ObjectId | null;
   demoTutor?: mongoose.Types.ObjectId | null;
   demoDetails?: IDemoDetailsEmbedded;
   createdBy: mongoose.Types.ObjectId;
   notes?: string;
+
+  // Group specific fields
+  numberOfStudents?: number;
+  studentDetails?: IStudentDetail[];
+
+  // Timestamps
   createdAt: Date;
   updatedAt: Date;
 }
@@ -57,13 +72,79 @@ const DemoDetailsSchema = new Schema<IDemoDetailsEmbedded>(
   { _id: false }
 );
 
+const StudentDetailSchema = new Schema<IStudentDetail>({
+  name: { type: String, required: true, trim: true },
+  gender: { type: String, enum: ['M', 'F'], required: true },
+  fees: {
+    type: Number,
+    required: true,
+    min: [0, 'Fees cannot be negative']
+  },
+  tutorFees: {
+    type: Number,
+    required: true,
+    min: [0, 'Tutor fees cannot be negative']
+  },
+}, { _id: false });
+
 const ClassLeadSchema: Schema<IClassLeadDocument> = new Schema<IClassLeadDocument>(
   {
-    studentName: { type: String, required: true, trim: true },
+    studentType: {
+      type: String,
+      required: true,
+      enum: ['SINGLE', 'GROUP'],
+      default: 'SINGLE'
+    },
+    studentName: {
+      type: String,
+      required: [
+        function (this: IClassLeadDocument) { return this.studentType === 'SINGLE'; },
+        'Student name is required for single student'
+      ],
+      trim: true
+    },
+    studentGender: {
+      type: String,
+      enum: ['M', 'F'],
+      required: [
+        function (this: IClassLeadDocument) { return this.studentType === 'SINGLE'; },
+        'Student gender is required for single student'
+      ]
+    },
     parentName: { type: String, trim: true },
-    parentPhone: { type: String, trim: true },
-    grade: { type: String, required: true },
-    subject: { type: [String], required: true },
+    parentEmail: {
+      type: String,
+      trim: true,
+      lowercase: true,
+      match: [/^\S+@\S+\.\S+$/, 'Please use a valid email address']
+    },
+    parentPhone: {
+      type: String,
+      trim: true,
+      match: [/^[0-9]{10}$/, 'Please enter a valid 10-digit phone number']
+    },
+    grade: {
+      type: String,
+      required: [
+        function (this: IClassLeadDocument) { return this.studentType === 'SINGLE' || this.studentType === 'GROUP'; },
+        'Grade is required'
+      ]
+    },
+    subject: {
+      type: [String],
+      required: [
+        function (this: IClassLeadDocument) {
+          return this.studentType === 'SINGLE' || this.studentType === 'GROUP';
+        },
+        'At least one subject is required'
+      ],
+      validate: [
+        function (this: IClassLeadDocument, val: string[]) {
+          return (this.studentType !== 'SINGLE' && this.studentType !== 'GROUP') || (Array.isArray(val) && val.length > 0);
+        },
+        'At least one subject is required'
+      ]
+    },
     board: { type: String, enum: Object.values(BOARD_TYPE), required: true },
     mode: { type: String, enum: Object.values(TEACHING_MODE), required: true },
     location: { type: String },
@@ -72,12 +153,37 @@ const ClassLeadSchema: Schema<IClassLeadDocument> = new Schema<IClassLeadDocumen
     address: { type: String },
     timing: { type: String, required: true },
     status: { type: String, enum: Object.values(CLASS_LEAD_STATUS), default: CLASS_LEAD_STATUS.NEW },
+    
+    // Group specific fields
+    numberOfStudents: {
+      type: Number,
+      min: [1, 'At least one student is required'],
+      max: [10, 'Maximum 10 students allowed'],
+      required: [
+        function (this: IClassLeadDocument) { return this.studentType === 'GROUP'; },
+        'Number of students is required for group'
+      ]
+    },
+    studentDetails: {
+      type: [StudentDetailSchema],
+      required: [
+        function (this: IClassLeadDocument) {
+          return this.studentType === 'GROUP';
+        },
+        'Student details are required for group'
+      ],
+      validate: [
+        function (this: IClassLeadDocument, val: IStudentDetail[]) {
+          return this.studentType !== 'GROUP' || (Array.isArray(val) && val.length > 0);
+        },
+        'At least one student detail is required for group'
+      ]
+    },
     classesPerMonth: { type: Number },
     classDurationHours: { type: Number },
     preferredTutorGender: { type: String, enum: Object.values(PREFERRED_TUTOR_GENDER) },
     leadSource: { type: String, enum: Object.values(LEAD_SOURCE) },
     paymentReceived: { type: Boolean, default: false },
-    paymentAmount: { type: Number },
     assignedTutor: { type: Schema.Types.ObjectId, ref: 'User' },
     demoTutor: { type: Schema.Types.ObjectId, ref: 'User' },
     demoDetails: { type: DemoDetailsSchema },

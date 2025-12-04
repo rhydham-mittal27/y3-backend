@@ -1,15 +1,16 @@
 import mongoose, { Schema, Document, Model } from 'mongoose';
-import { PAYMENT_STATUS, PAYMENT_METHOD } from '../config/constants';
+import { PAYMENT_STATUS, PAYMENT_METHOD, PAYMENT_TYPE } from '../config/constants';
 
 export interface IPaymentDocument extends Document {
   _id: mongoose.Types.ObjectId;
   finalClass: mongoose.Types.ObjectId;
-  attendance: mongoose.Types.ObjectId;
+  attendance?: mongoose.Types.ObjectId;
   tutor: mongoose.Types.ObjectId;
   amount: number;
   currency: string;
   status: PAYMENT_STATUS | string;
   paymentMethod?: PAYMENT_METHOD | string;
+  paymentType?: PAYMENT_TYPE | string;
   transactionId?: string;
   paymentDate?: Date;
   dueDate: Date;
@@ -23,12 +24,13 @@ export interface IPaymentDocument extends Document {
 const PaymentSchema: Schema<IPaymentDocument> = new Schema<IPaymentDocument>(
   {
     finalClass: { type: Schema.Types.ObjectId, ref: 'FinalClass', required: true, index: true },
-    attendance: { type: Schema.Types.ObjectId, ref: 'Attendance', required: true, unique: true },
+    attendance: { type: Schema.Types.ObjectId, ref: 'Attendance' },
     tutor: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
     amount: { type: Number, required: true, min: 0 },
     currency: { type: String, default: 'INR' },
     status: { type: String, enum: Object.values(PAYMENT_STATUS), default: PAYMENT_STATUS.PENDING },
     paymentMethod: { type: String, enum: Object.values(PAYMENT_METHOD) },
+    paymentType: { type: String, enum: Object.values(PAYMENT_TYPE), default: PAYMENT_TYPE.FEES_COLLECTED },
     transactionId: { type: String },
     paymentDate: { type: Date },
     dueDate: { type: Date, required: true },
@@ -40,7 +42,7 @@ const PaymentSchema: Schema<IPaymentDocument> = new Schema<IPaymentDocument>(
 );
 
 // Indexes
-PaymentSchema.index({ attendance: 1 }, { unique: true });
+PaymentSchema.index({ attendance: 1 });
 PaymentSchema.index({ tutor: 1, status: 1 });
 PaymentSchema.index({ status: 1, dueDate: 1 });
 PaymentSchema.index({ finalClass: 1 });

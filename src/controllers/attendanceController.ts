@@ -241,7 +241,6 @@ export const exportClassAttendancePdfController = asyncHandler(async (req: AuthR
   doc.moveDown();
 
   // Table header
-  const tableTop = doc.y;
   const colDate = 40;
   const colDuration = 150;
   const colTopic = 230;

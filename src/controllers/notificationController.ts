@@ -1,7 +1,5 @@
-import { validationResult } from 'express-validator';
 import asyncHandler from '../utils/asyncHandler';
 import { successResponse, paginatedResponse } from '../utils/responseFormatter';
-import ErrorResponse from '../utils/errorResponse';
 import { AuthRequest } from '../types';
 import {
   getNotificationsByUser,

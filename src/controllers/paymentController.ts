@@ -19,6 +19,7 @@ import {
   generatePaymentReport,
   sendPaymentReminder,
   getPaymentsByParent,
+  createAdvancePaymentForFinalClass,
 } from '../services/paymentService';
 
 export const createPaymentRecord = asyncHandler(async (req: AuthRequest, res: Response) => {
@@ -54,10 +55,32 @@ export const getPayment = asyncHandler(async (req: Request, res: Response) => {
 
 export const updatePaymentStatusController = asyncHandler(async (req: AuthRequest, res: Response) => {
   const errors = validationResult(req);
-  if (!errors.isEmpty()) throw new ErrorResponse('Validation error', 400);
+  if (!errors.isEmpty()) {
+    console.error('Validation errors:', errors.array());
+    throw new ErrorResponse(`Validation error: ${errors.array().map(e => e.msg).join(', ')}`, 400);
+  }
 
   const { status, paymentMethod, transactionId, notes } = req.body as any;
-  const payment = await updatePaymentStatus(req.params.id, status, paymentMethod, transactionId, notes, req.user!.id);
+  
+  // Log the incoming request data for debugging
+  console.log('Updating payment status with:', {
+    paymentId: req.params.id,
+    status,
+    paymentMethod,
+    transactionId,
+    notes,
+    userId: req.user?.id
+  });
+  
+  const payment = await updatePaymentStatus(
+    req.params.id, 
+    status, 
+    paymentMethod, 
+    transactionId, 
+    notes, 
+    req.user!.id,
+    req.user // Pass the current user for authorization
+  );
   return res.json(successResponse(payment, 'Payment status updated successfully'));
 });
 
@@ -111,6 +134,13 @@ export const getClassPayments = asyncHandler(async (req: Request, res: Response)
   const { status } = req.query as any;
   const result = await getPaymentsByClass(req.params.classId, status as any);
   return res.json(successResponse(result));
+});
+
+export const generateAdvancePaymentForClass = asyncHandler(async (req: AuthRequest, res: Response) => {
+  const classId = req.params.classId as string;
+  const createdBy = req.user!.id;
+  const payment = await createAdvancePaymentForFinalClass(classId, createdBy);
+  return res.status(201).json(successResponse(payment, 'Advance payment created successfully'));
 });
 
 export const getPaymentStats = asyncHandler(async (req: Request, res: Response) => {
@@ -270,4 +300,5 @@ export default {
   downloadPaymentReceipt,
   sendReminderController,
   getMyPaymentsForParent,
+  generateAdvancePaymentForClass,
 };

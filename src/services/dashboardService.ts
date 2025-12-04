@@ -5,8 +5,6 @@ import Payment from '../models/Payment';
 import Attendance from '../models/Attendance';
 import Tutor from '../models/Tutor';
 import DemoHistory from '../models/DemoHistory';
-import User from '../models/User';
-import ErrorResponse from '../utils/errorResponse';
 import { ATTENDANCE_STATUS, CLASS_LEAD_STATUS, DEMO_STATUS, FINAL_CLASS_STATUS, PAYMENT_STATUS } from '../config/constants';
 
 const buildDateMatch = (field: string, fromDate?: Date, toDate?: Date) => {
@@ -371,12 +369,22 @@ export const getOverallStatistics = async (fromDate?: Date, toDate?: Date) => {
     if (f._id === FINAL_CLASS_STATUS.COMPLETED) finalClasses.completed = f.count || 0;
   });
 
-  const payments: any = { total: 0, totalRevenue: 0, paidRevenue: 0, pendingRevenue: 0 };
+  const payments: any = { total: 0, totalRevenue: 0, paidRevenue: 0, pendingRevenue: 0, feesCollected: 0, tutorPayout: 0 };
   paymentAgg.forEach((p: any) => {
     payments.total += p.count || 0;
     payments.totalRevenue += p.amount || 0;
     if (p._id === PAYMENT_STATUS.PAID) payments.paidRevenue = p.amount || 0;
     if (p._id === PAYMENT_STATUS.PENDING) payments.pendingRevenue = p.amount || 0;
+  });
+
+  // Split by paymentType
+  const typeAgg = await Payment.aggregate([
+    { $match: buildDateMatch('createdAt', fromDate, toDate) },
+    { $group: { _id: '$paymentType', amount: { $sum: '$amount' } } },
+  ]);
+  typeAgg.forEach((t: any) => {
+    if (t._id === 'FEES_COLLECTED') payments.feesCollected = +(t.amount || 0).toFixed(2);
+    if (t._id === 'TUTOR_PAYOUT') payments.tutorPayout = +(t.amount || 0).toFixed(2);
   });
 
   const conversionRate = leads.total ? +(100 * (leads.converted || 0) / leads.total).toFixed(2) : 0;

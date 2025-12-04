@@ -3,7 +3,7 @@ import mongoose from 'mongoose';
 import { faker } from '@faker-js/faker';
 import ClassLead from '../models/ClassLead';
 import Manager from '../models/Manager';
-import { BOARD_TYPE, TEACHING_MODE, CLASS_LEAD_STATUS } from '../config/constants';
+import { BOARD_TYPE, TEACHING_MODE } from '../config/constants';
 
 const uri = process.env.MONGODB_URI || process.env.DATABASE_URL || '';
 

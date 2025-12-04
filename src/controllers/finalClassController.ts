@@ -5,7 +5,10 @@ import ErrorResponse from '../utils/errorResponse';
 import { AuthRequest } from '../types';
 import FinalClass from '../models/FinalClass';
 import Coordinator from '../models/Coordinator';
+import User from '../models/User';
 import { FINAL_CLASS_STATUS } from '../config/constants';
+import { createNotificationWithPreferences } from '../services/notificationService';
+import { sendEmail } from '../utils/emailService';
 import {
   convertLeadToFinalClass,
   getAllFinalClasses,
@@ -156,6 +159,51 @@ export const createOneTimeRescheduleController = asyncHandler(async (req: AuthRe
   return res.status(200).json(successResponse(cls, 'One-time reschedule saved'));
 });
 
+export const parentRequestRescheduleController = asyncHandler(async (req: AuthRequest, res) => {
+  const classId = req.params.id as string;
+  const parentUserId = req.user!.id;
+
+  const cls = await FinalClass.findById(classId);
+  if (!cls) throw new ErrorResponse('Final class not found', 404);
+
+  if (!cls.parent || String(cls.parent) !== String(parentUserId)) {
+    throw new ErrorResponse('You are not authorized to reschedule this class', 403);
+  }
+
+  const tutorUserId = String(cls.tutor);
+  const studentName = (cls as any).studentName || 'your child';
+
+  // Create a GENERAL notification to the tutor about the parent reschedule request
+  await createNotificationWithPreferences({
+    recipient: tutorUserId,
+    type: 'GENERAL',
+    title: 'Parent requested to reschedule a class',
+    message: `The parent has requested to reschedule the class for ${studentName}. Please contact the parent to coordinate a new time.`,
+  });
+
+  // Best-effort email notification to tutor
+  try {
+    const tutorUser = await User.findById(tutorUserId).select('email name');
+    if (tutorUser && tutorUser.email) {
+      const tutorName = (tutorUser as any).name || 'Tutor';
+      await sendEmail(
+        tutorUser.email,
+        'Parent requested to reschedule a class',
+        `<p>Dear ${tutorName},</p>
+         <p>The parent has requested to reschedule the class for <strong>${studentName}</strong>.</p>
+         <p>Please contact the parent to coordinate a new time that works for both of you.</p>
+         <p>Regards,<br/>Your Shikshak</p>`
+      );
+    }
+  } catch (e) {
+    // Email failures should not block the parent request
+    // eslint-disable-next-line no-console
+    console.error('[parentRequestRescheduleController] Failed to send tutor email', e);
+  }
+
+  return res.status(200).json(successResponse(null, 'Reschedule request sent to tutor'));
+});
+
 export const getCoordinatorClasses = asyncHandler(async (req: AuthRequest, res) => {
   const coordinatorUserId = req.params.coordinatorId as string;
   const status = (req.query.status as string) || undefined;
@@ -212,4 +260,5 @@ export default {
   getMyClassesController,
   getParentClassesController,
   createOneTimeRescheduleController,
+  parentRequestRescheduleController,
 };

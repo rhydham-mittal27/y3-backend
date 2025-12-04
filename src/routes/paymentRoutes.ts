@@ -15,6 +15,7 @@ import {
   getMyPaymentSummary,
   downloadPaymentReceipt,
   getMyPaymentsForParent,
+  generateAdvancePaymentForClass,
 } from '../controllers/paymentController';
 import {
   createPaymentValidation,
@@ -55,6 +56,12 @@ router.get(
   classIdParamValidation,
   getClassPayments
 );
+router.post(
+  '/class/:classId/advance',
+  authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN, USER_ROLES.COORDINATOR),
+  classIdParamValidation,
+  generateAdvancePaymentForClass
+);
 router.get(
   '/:id/receipt',
   authorize(USER_ROLES.TUTOR),
@@ -69,7 +76,12 @@ router.get(
 );
 router.put('/:id', authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN), updatePaymentValidation, updatePaymentRecord);
 router.delete('/:id', authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN), paymentIdValidation, deletePaymentRecord);
-router.patch('/:id/status', authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN), updatePaymentStatusValidation, updatePaymentStatusController);
+router.patch(
+  '/:id/status', 
+  authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN, USER_ROLES.PARENT), 
+  updatePaymentStatusValidation, 
+  updatePaymentStatusController
+);
 router.post('/:id/send-reminder', authorize(USER_ROLES.COORDINATOR, USER_ROLES.MANAGER, USER_ROLES.ADMIN), sendPaymentReminderValidation, sendReminderController);
 
 export default router;

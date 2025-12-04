@@ -13,7 +13,7 @@ import { getOverallStatistics, getCumulativeClassGrowth, getPendingApprovals } f
 import { registerUser } from './authService';
 import { createManagerProfile } from './managerService';
 import { createCoordinator } from './coordinatorService';
-import { USER_ROLES, PAYMENT_STATUS, VERIFICATION_STATUS, FINAL_CLASS_STATUS } from '../config/constants';
+import { USER_ROLES, PAYMENT_STATUS, VERIFICATION_STATUS } from '../config/constants';
 
 // Helper: copied pattern from managerService
 const buildDateMatch = (field: string, fromDate?: Date, toDate?: Date) => {

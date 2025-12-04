@@ -62,13 +62,16 @@ export const sendPushNotificationToDevice = async (
   data?: Record<string, string>,
   imageUrl?: string
 ) => {
+  const notification: admin.messaging.Notification = {
+    title,
+    body,
+  };
+  if (imageUrl) {
+    notification.imageUrl = imageUrl;
+  }
   const message: admin.messaging.TokenMessage = {
     token: fcmToken,
-    notification: {
-      title,
-      body,
-      imageUrl,
-    },
+    notification,
     data,
     android: {
       priority: 'high',
@@ -95,7 +98,7 @@ export const sendPushNotification = async (
   title: string,
   body: string,
   data?: Record<string, string>,
-  imageUrl?: string
+  _imageUrl?: string
 ) => {
   const user = await User.findById(userId).select('devices');
   if (!user || !user.devices || user.devices.length === 0) {
@@ -171,7 +174,7 @@ export const sendPushToMultipleUsers = async (
   title: string,
   body: string,
   data?: Record<string, string>,
-  imageUrl?: string
+  _imageUrl?: string
 ) => {
   const users = await User.find({ _id: { $in: userIds } }).select('devices');
   const tokens: string[] = [];

@@ -1,7 +1,8 @@
 import { NextFunction, Request, Response } from 'express';
 import mongoose from 'mongoose';
 import ErrorResponse from '../utils/errorResponse';
-import logger, { logError } from '../utils/logger';
+import { logError } from '../utils/logger';
+import { getCorrelationIdFromRequest } from '../middlewares/correlationId';
 import { errorResponse } from '../utils/responseFormatter';
 import { JsonWebTokenError, TokenExpiredError } from 'jsonwebtoken';
 
@@ -9,11 +10,11 @@ const errorHandler = (
   err: any,
   req: Request,
   res: Response,
-  next: NextFunction
+  _next: NextFunction
 ) => {
-  let error = err;
   let statusCode = (err as ErrorResponse)?.statusCode || 500;
   let message = err.message || 'Server Error';
+  const correlationId = getCorrelationIdFromRequest(req);
 
   // Mongoose bad ObjectId
   if (err instanceof mongoose.Error.CastError) {
@@ -45,16 +46,33 @@ const errorHandler = (
     message = 'Token expired';
   }
 
-  logError(`${message} - ${err.stack || ''}`);
+  // Log error with correlation ID and metadata
+  logError(
+    `${message} - ${err.stack || ''}`,
+    correlationId,
+    {
+      statusCode,
+      path: req.path,
+      method: req.method,
+      ip: req.ip,
+      userAgent: req.get('user-agent'),
+    }
+  );
+
+  // Include correlation ID in error response
+  const errorResponseData = {
+    ...errorResponse(message, 'An error occurred'),
+    correlationId,
+  };
 
   if (process.env.NODE_ENV === 'development') {
     return res.status(statusCode).json({
-      ...errorResponse(message, 'An error occurred'),
+      ...errorResponseData,
       stack: err.stack,
     });
   }
 
-  return res.status(statusCode).json(errorResponse(message, 'An error occurred'));
+  return res.status(statusCode).json(errorResponseData);
 };
 
 export default errorHandler;

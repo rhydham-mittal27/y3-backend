@@ -21,8 +21,10 @@ export const createLead = asyncHandler(async (req: AuthRequest, res) => {
   }
 
   const {
+    studentType,
     studentName,
     parentName,
+    parentEmail,
     parentPhone,
     grade,
     subject,
@@ -39,13 +41,18 @@ export const createLead = asyncHandler(async (req: AuthRequest, res) => {
     leadSource,
     paymentReceived,
     paymentAmount,
+    tutorFees,
     notes,
+    numberOfStudents,
+    studentDetails,
   } = req.body;
   const createdBy = req.user!.id;
 
   const lead = await createClassLead({
+    studentType,
     studentName,
     parentName,
+    parentEmail,
     parentPhone,
     grade,
     subject,
@@ -62,7 +69,10 @@ export const createLead = asyncHandler(async (req: AuthRequest, res) => {
     leadSource,
     paymentReceived,
     paymentAmount,
+    tutorFees,
     notes,
+    numberOfStudents,
+    studentDetails,
     createdBy,
   });
 
@@ -73,10 +83,15 @@ export const getLeads = asyncHandler(async (req: AuthRequest, res) => {
   const page = parseInt((req.query.page as string) || '1', 10);
   const limit = parseInt((req.query.limit as string) || '10', 10);
   const status = (req.query.status as string) || undefined;
-  const createdBy = (req.query.createdBy as string) || undefined;
+  let createdBy = (req.query.createdBy as string) || undefined;
   const search = (req.query.search as string) || undefined;
   const sortBy = (req.query.sortBy as string) || undefined;
   const sortOrder = (req.query.sortOrder as 'asc' | 'desc') || undefined;
+
+  // For MANAGER role, always restrict leads to those created by the logged-in manager
+  if (req.user?.role === 'MANAGER') {
+    createdBy = req.user.id;
+  }
 
   const { leads, total } = await getAllClassLeads({
     page,

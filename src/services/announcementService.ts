@@ -115,7 +115,8 @@ export const getTutorAvailableAnnouncements = async (params: {
   }
 
   // Load tutor profile to apply OFFLINE area filtering and ONLINE subject filtering
-  const tutorDoc = await Tutor.findOne({ user: tutorUserId }).select('subjects preferredLocations');
+  // TODO: Use tutorDoc when implementing filtering logic
+  await Tutor.findOne({ user: tutorUserId }).select('subjects preferredLocations');
 
   // NOTE: Tutor-specific subject/location matching is disabled for now so that
   // all active announcements where the tutor has not already expressed interest

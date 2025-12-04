@@ -19,7 +19,7 @@ const router = Router();
 router.use(protect);
 
 router.post('/', authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN), createLeadValidation, createLead);
-router.get('/', authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN), getLeads);
+router.get('/', authorize(USER_ROLES.MANAGER), getLeads);
 router.get('/my-leads', authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN), getMyLeads);
 router.get('/tutor/my-leads', authorize(USER_ROLES.TUTOR), getTutorLeads);
 router.get('/:id', authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN), leadIdValidation, getLead);

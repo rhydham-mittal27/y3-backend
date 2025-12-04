@@ -156,7 +156,7 @@ export const getTestsByParent = async (parentUserId: string, status?: TEST_STATU
   return tests;
 };
 
-export const updateTestStatus = async (testId: string, status: TEST_STATUS, userId: string) => {
+export const updateTestStatus = async (testId: string, status: TEST_STATUS, _userId: string) => {
   const test = await Test.findById(testId);
   if (!test) throw new ErrorResponse('Test not found', 404);
 

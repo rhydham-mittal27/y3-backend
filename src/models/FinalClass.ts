@@ -20,6 +20,8 @@ export interface IFinalClassDocument extends Document {
   ratePerSession?: number;
   completedSessions: number;
   studentName: string;
+  studentGender?: 'M' | 'F';
+  studentId?: string;
   subject: string[];
   grade: string;
   board: string;
@@ -53,6 +55,8 @@ const FinalClassSchema: Schema<IFinalClassDocument> = new Schema<IFinalClassDocu
     ratePerSession: { type: Number, min: 0 },
     completedSessions: { type: Number, default: 0 },
     studentName: { type: String, required: true },
+    studentGender: { type: String, enum: ['M', 'F'] },
+    studentId: { type: String, unique: true, sparse: true },
     subject: { type: [String], required: true },
     grade: { type: String, required: true },
     board: { type: String, required: true },

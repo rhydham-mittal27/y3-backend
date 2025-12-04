@@ -11,8 +11,8 @@ export interface TokenPayload {
 export const generateTokens = (userId: string, email: string, role: string) => {
   const accessSecret = process.env.JWT_SECRET as string;
   const refreshSecret = process.env.JWT_REFRESH_SECRET as string;
-  const accessExpiresIn = process.env.JWT_EXPIRE as string;
-  const refreshExpiresIn = process.env.JWT_REFRESH_EXPIRE as string;
+  const accessExpiresIn = process.env.JWT_EXPIRES_IN as string;
+  const refreshExpiresIn = process.env.JWT_REFRESH_EXPIRES_IN as string;
 
   const accessOptions: jwt.SignOptions = { expiresIn: accessExpiresIn as unknown as jwt.SignOptions['expiresIn'] };
   const refreshOptions: jwt.SignOptions = { expiresIn: refreshExpiresIn as unknown as jwt.SignOptions['expiresIn'] };

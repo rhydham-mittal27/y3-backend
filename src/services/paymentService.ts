@@ -2,11 +2,9 @@ import mongoose from 'mongoose';
 import Payment from '../models/Payment';
 import Attendance from '../models/Attendance';
 import FinalClass from '../models/FinalClass';
-import User from '../models/User';
-import Notification from '../models/Notification';
 import ErrorResponse from '../utils/errorResponse';
 import { PAYMENT_STATUS, PAYMENT_METHOD, ATTENDANCE_STATUS, MANAGER_ACTION_TYPE } from '../config/constants';
-import logger, { logError } from '../utils/logger';
+import { logError } from '../utils/logger';
 import { logManagerActivity } from './managerService';
 import Manager from '../models/Manager';
 import { createNotificationWithPreferences } from './notificationService';
@@ -64,8 +62,49 @@ export const createPayment = async (attendanceId: string, createdBy: string) => 
   return payment;
 };
 
+export const createAdvancePaymentForFinalClass = async (finalClassId: string, createdBy: string) => {
+  const finalClass = await FinalClass.findById(finalClassId).populate([{ path: 'classLead' }]);
+  if (!finalClass) throw new ErrorResponse('Final class not found', 404);
+
+  const cls: any = finalClass as any;
+  const lead: any = cls.classLead;
+  const amount = lead?.paymentAmount;
+
+  if (!amount || amount <= 0) {
+    throw new ErrorResponse('Advance payment amount not set for this class lead', 400);
+  }
+
+  const existing = await Payment.findOne({ finalClass: finalClass._id, attendance: { $exists: false } });
+  if (existing) {
+    return existing;
+  }
+
+  const dueDate = new Date(cls.startDate || Date.now());
+  dueDate.setDate(dueDate.getDate() + DEFAULT_DUE_DAYS);
+
+  const payment = await Payment.create({
+    finalClass: finalClass._id,
+    tutor: cls.tutor,
+    amount,
+    currency: 'INR',
+    status: PAYMENT_STATUS.PENDING,
+    dueDate,
+    createdBy: new mongoose.Types.ObjectId(createdBy),
+    notes: 'Advance class payment',
+  });
+
+  await payment.populate([
+    { path: 'finalClass' },
+    { path: 'tutor', select: 'name email phone' },
+    { path: 'createdBy', select: 'name email' },
+  ]);
+
+  return payment;
+};
+
 export const sendPaymentReminder = async (args: { paymentId: string; reminderMessage?: string; sentBy: string }) => {
-  const { paymentId, reminderMessage, sentBy } = args;
+  // TODO: Use sentBy for logging/audit purposes
+  const { paymentId, reminderMessage } = args;
   const payment = await Payment.findById(paymentId).populate([
     { path: 'finalClass' },
     { path: 'tutor', select: 'name email phone' },
@@ -164,72 +203,123 @@ export const updatePaymentStatus = async (
   paymentMethod?: PAYMENT_METHOD,
   transactionId?: string,
   notes?: string,
-  paidBy?: string
+  paidBy?: string,
+  currentUser?: { id: string; role: string }
 ) => {
-  const payment = await Payment.findById(paymentId);
-  if (!payment) throw new ErrorResponse('Payment not found', 404);
-
-  const current = payment.status as PAYMENT_STATUS;
-  const allowed: Record<PAYMENT_STATUS, (PAYMENT_STATUS | string)[]> = {
-    [PAYMENT_STATUS.PENDING]: [PAYMENT_STATUS.PAID, PAYMENT_STATUS.OVERDUE],
-    [PAYMENT_STATUS.OVERDUE]: [PAYMENT_STATUS.PAID],
-    [PAYMENT_STATUS.PAID]: [],
-  };
-
-  if (current === newStatus) return payment;
-  if (!allowed[current]?.includes(newStatus)) {
-    throw new ErrorResponse('Invalid payment status transition', 400);
-  }
-
-  payment.status = newStatus as any;
-  if (newStatus === PAYMENT_STATUS.PAID) {
-    payment.paymentDate = new Date();
-    if (paymentMethod) payment.paymentMethod = paymentMethod as any;
-    if (transactionId) payment.transactionId = transactionId;
-    if (notes) payment.notes = notes;
-    if (paidBy) payment.paidBy = new mongoose.Types.ObjectId(paidBy) as any;
-  }
-  await payment.save();
+  const session = await mongoose.startSession();
+  session.startTransaction();
 
   try {
-    await createNotificationWithPreferences({
-      recipient: payment.tutor as any,
-      type: 'PAYMENT',
-      title: newStatus === PAYMENT_STATUS.PAID ? 'Payment Received' : 'Payment Status Updated',
-      message:
-        newStatus === PAYMENT_STATUS.PAID
-          ? `Your payment of INR ${payment.amount} has been marked as PAID.`
-          : `Your payment status changed to ${newStatus}.`,
-    });
-  } catch (e) {
-    logError(`Failed to create payment status notification: ${String(e)}`);
-  }
+    // Find payment with necessary population
+    const payment = await Payment.findById(paymentId)
+      .populate('finalClass')
+      .populate('tutor')
+      .session(session);
 
-  await payment.populate([
-    { path: 'finalClass' },
-    { path: 'attendance' },
-    { path: 'tutor', select: 'name email phone' },
-    { path: 'createdBy', select: 'name email' },
-    { path: 'paidBy', select: 'name email' },
-  ]);
-
-  try {
-    if (newStatus === PAYMENT_STATUS.PAID && paidBy) {
-      await Manager.findOneAndUpdate(
-        { user: new mongoose.Types.ObjectId(paidBy) },
-        { $inc: { paymentsProcessed: 1, revenueGenerated: payment.amount || 0 } }
-      );
-      await logManagerActivity(
-        paidBy,
-        MANAGER_ACTION_TYPE.UPDATE_PAYMENT_STATUS,
-        `Marked payment as PAID for tutor ${(payment as any).tutor?.name || ''}, amount ${payment.amount}`,
-        { entityType: 'Payment', entityId: String(payment._id), entityName: `Payment-${String(payment._id)}` },
-        { amount: payment.amount, paymentMethod, transactionId, oldStatus: current, newStatus },
-      );
+    if (!payment) {
+      throw new ErrorResponse('Payment not found', 404);
     }
-  } catch {}
 
-  return payment;
+    // Check if the current user is a parent trying to update the payment
+    if (currentUser?.role === 'parent') {
+      // Get the final class to check if the parent is associated with it
+      const finalClass = await FinalClass.findById(payment.finalClass)
+        .populate('student')
+        .session(session);
+
+      // @ts-ignore - Ignore TypeScript error for student.parent access
+      if (finalClass?.student?.parent?.toString() !== currentUser.id) {
+        throw new ErrorResponse('Not authorized to update this payment', 403);
+      }
+    }
+
+    const current = payment.status as PAYMENT_STATUS;
+    const allowed: Record<PAYMENT_STATUS, (PAYMENT_STATUS | string)[]> = {
+      [PAYMENT_STATUS.PENDING]: [PAYMENT_STATUS.PAID, PAYMENT_STATUS.OVERDUE],
+      [PAYMENT_STATUS.OVERDUE]: [PAYMENT_STATUS.PAID],
+      [PAYMENT_STATUS.PAID]: [],
+    };
+
+    if (current === newStatus) return payment;
+    if (!allowed[current]?.includes(newStatus)) {
+      throw new ErrorResponse('Invalid payment status transition', 400);
+    }
+
+    // Update payment status and related fields
+    payment.status = newStatus as any;
+    if (newStatus === PAYMENT_STATUS.PAID) {
+      payment.paymentDate = new Date();
+      if (paymentMethod) payment.paymentMethod = paymentMethod as any;
+      if (transactionId) payment.transactionId = transactionId;
+      if (notes) payment.notes = notes;
+      if (paidBy) payment.paidBy = new mongoose.Types.ObjectId(paidBy) as any;
+    }
+    
+    await payment.save({ session });
+    
+    // Send notification
+    try {
+      await createNotificationWithPreferences({
+        recipient: payment.tutor as any,
+        type: 'PAYMENT',
+        title: newStatus === PAYMENT_STATUS.PAID ? 'Payment Received' : 'Payment Status Updated',
+        message:
+          newStatus === PAYMENT_STATUS.PAID
+            ? `Your payment of INR ${payment.amount} has been marked as PAID.`
+            : `Your payment status changed to ${newStatus}.`,
+      });
+    } catch (e) {
+      logError(`Failed to create payment status notification: ${String(e)}`);
+    }
+
+    // Populate payment details
+    await payment.populate([
+      { path: 'finalClass' },
+      { path: 'attendance' },
+      { path: 'tutor', select: 'name email phone' },
+      { path: 'createdBy', select: 'name email' },
+      { path: 'paidBy', select: 'name email' },
+    ]);
+
+    // Log manager activity if payment is marked as paid
+    if (newStatus === PAYMENT_STATUS.PAID && paidBy) {
+      try {
+        await Manager.findOneAndUpdate(
+          { user: new mongoose.Types.ObjectId(paidBy) },
+          { $inc: { paymentsProcessed: 1, revenueGenerated: payment.amount || 0 } },
+          { session }
+        );
+        
+        await logManagerActivity(
+          paidBy,
+          MANAGER_ACTION_TYPE.UPDATE_PAYMENT_STATUS,
+          `Marked payment as PAID for tutor ${(payment as any).tutor?.name || ''}, amount ${payment.amount}`,
+          { 
+            entityType: 'Payment', 
+            entityId: String(payment._id), 
+            entityName: `Payment-${String(payment._id)}` 
+          },
+          { 
+            amount: payment.amount, 
+            paymentMethod, 
+            transactionId, 
+            oldStatus: current, 
+            newStatus 
+          }
+        );
+      } catch (e) {
+        logError(`Failed to log manager activity: ${String(e)}`);
+      }
+    }
+
+    await session.commitTransaction();
+    return payment;
+  } catch (error) {
+    await session.abortTransaction();
+    throw error;
+  } finally {
+    await session.endSession();
+  }
 };
 
 export const updatePayment = async (

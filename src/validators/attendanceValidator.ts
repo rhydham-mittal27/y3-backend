@@ -1,5 +1,5 @@
 import { body, param } from 'express-validator';
-import { ATTENDANCE_STATUS, STUDENT_ATTENDANCE_STATUS } from '../config/constants';
+import { STUDENT_ATTENDANCE_STATUS } from '../config/constants';
 
 export const createAttendanceValidation = [
   body('finalClassId').notEmpty().withMessage('Final class ID is required').isMongoId().withMessage('Invalid final class ID'),

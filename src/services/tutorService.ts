@@ -79,11 +79,33 @@ export const getAllTutors = async (
   return { tutors, total, page, limit };
 };
 
-export const getTutorById = async (tutorId: string) => {
-  const tutor = await Tutor.findById(tutorId).populate([
-    { path: 'user', select: 'name email phone role' },
-    { path: 'verifiedBy', select: 'name email phone role' },
-  ]);
+export const getTutorById = async (tutorIdOrTeacherId: string) => {
+  let tutor = null as any;
+
+  if (mongoose.isValidObjectId(tutorIdOrTeacherId)) {
+    // First, try standard lookup by internal Tutor _id
+    tutor = await Tutor.findById(tutorIdOrTeacherId).populate([
+      { path: 'user', select: 'name email phone role' },
+      { path: 'verifiedBy', select: 'name email phone role' },
+    ]);
+
+    // If not found, also allow treating the value as a User _id
+    if (!tutor) {
+      tutor = await Tutor.findOne({ user: new mongoose.Types.ObjectId(tutorIdOrTeacherId) }).populate([
+        { path: 'user', select: 'name email phone role' },
+        { path: 'verifiedBy', select: 'name email phone role' },
+      ]);
+    }
+  }
+
+  if (!tutor) {
+    // Fallback: lookup by public teacherId (e.g. TMBPLxyz12)
+    tutor = await Tutor.findOne({ teacherId: tutorIdOrTeacherId }).populate([
+      { path: 'user', select: 'name email phone role' },
+      { path: 'verifiedBy', select: 'name email phone role' },
+    ]);
+  }
+
   if (!tutor) throw new ErrorResponse('Tutor not found', 404);
   return tutor;
 };
@@ -399,7 +421,8 @@ export const updateVerificationStatus = async (
     if (newStatus === VERIFICATION_STATUS.VERIFIED) {
       await Manager.findOneAndUpdate({ user: new mongoose.Types.ObjectId(verifiedBy) }, { $inc: { tutorsVerified: 1 } });
     }
-    const verifiedByUser = await User.findById(verifiedBy).select('name');
+    // TODO: Use verifiedByUser for logging/display purposes
+    await User.findById(verifiedBy).select('name');
     await logManagerActivity(
       verifiedBy,
       MANAGER_ACTION_TYPE.VERIFY_TUTOR,
@@ -711,7 +734,8 @@ export const getTutorPerformanceMetrics = async (params: { tutorId: string; coor
   const classes = await FinalClass.find(classQuery).select('_id');
   if (coordinatorUserId && classes.length === 0) throw new ErrorResponse('Tutor not assigned to your classes', 403);
 
-  const classIds = classes.map((c) => c._id);
+  // TODO: Use classIds when implementing class-specific logic
+  // const classIds = classes.map((c) => c._id);
 
   // Compute total class hours across all final classes for this tutor (any status)
   const allTutorClasses = await FinalClass.find({

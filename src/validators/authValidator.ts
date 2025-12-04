@@ -18,8 +18,16 @@ export const registerValidation = [
   body('password')
     .notEmpty()
     .withMessage('Password is required')
-    .isLength({ min: 6 })
-    .withMessage('Password must be at least 6 characters'),
+    .isLength({ min: 8 })
+    .withMessage('Password must be at least 8 characters')
+    .matches(/[A-Z]/)
+    .withMessage('Password must contain at least one uppercase letter')
+    .matches(/[a-z]/)
+    .withMessage('Password must contain at least one lowercase letter')
+    .matches(/[0-9]/)
+    .withMessage('Password must contain at least one number')
+    .matches(/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/)
+    .withMessage('Password must contain at least one special character'),
   body('phone')
     .optional()
     .isMobilePhone('any')
@@ -37,4 +45,39 @@ export const loginValidation = [
 
 export const refreshTokenValidation = [
   body('refreshToken').notEmpty().withMessage('Refresh token is required'),
+];
+
+export const sendLoginOtpValidation = [
+  body('email')
+    .trim()
+    .notEmpty()
+    .withMessage('Email is required')
+    .isEmail()
+    .withMessage('Invalid email format')
+    .normalizeEmail(),
+];
+
+export const verifyLoginOtpValidation = [
+  body('email')
+    .trim()
+    .notEmpty()
+    .withMessage('Email is required')
+    .isEmail()
+    .withMessage('Invalid email format')
+    .normalizeEmail(),
+  body('otp')
+    .trim()
+    .notEmpty()
+    .withMessage('OTP is required')
+    .isLength({ min: 4, max: 8 })
+    .withMessage('OTP must be between 4 and 8 characters'),
+];
+
+export const parentLoginLookupValidation = [
+  body('className')
+    .trim()
+    .notEmpty()
+    .withMessage('Class name is required')
+    .isLength({ min: 2, max: 100 })
+    .withMessage('Class name must be 2-100 characters'),
 ];

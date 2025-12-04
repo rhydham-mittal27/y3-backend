@@ -1,5 +1,4 @@
 import mongoose, { Schema, Document, Model } from 'mongoose';
-import { FEEDBACK_RATING } from '../config/constants';
 
 export interface ITutorFeedbackDocument extends Document {
   _id: mongoose.Types.ObjectId;

@@ -98,7 +98,8 @@ export const updateDemoStatus = async (
   if (!currentStatus) throw new ErrorResponse('Demo status not set', 400);
 
   const isTutor = String(updatedByRole) === USER_ROLES.TUTOR;
-  const isManagerOrAdmin = [USER_ROLES.MANAGER, USER_ROLES.ADMIN].includes(updatedByRole as USER_ROLES);
+  // TODO: Use isManagerOrAdmin when implementing manager/admin specific logic
+  // const isManagerOrAdmin = [USER_ROLES.MANAGER, USER_ROLES.ADMIN].includes(updatedByRole as USER_ROLES);
 
   if (isTutor) {
     if (String(lead.assignedTutor) !== String(updatedBy)) {

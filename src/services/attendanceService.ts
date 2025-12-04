@@ -2,8 +2,6 @@ import mongoose from 'mongoose';
 import Attendance from '../models/Attendance';
 import FinalClass from '../models/FinalClass';
 import Coordinator from '../models/Coordinator';
-import User from '../models/User';
-import Notification from '../models/Notification';
 import ErrorResponse from '../utils/errorResponse';
 import { ATTENDANCE_STATUS, FINAL_CLASS_STATUS, STUDENT_ATTENDANCE_STATUS } from '../config/constants';
 import { createPayment } from './paymentService';
@@ -220,6 +218,28 @@ export const parentApprove = async (attendanceId: string, parentUserId: string) 
     }
     if (String(attendance.parent) !== String(parentUserId)) {
       throw new ErrorResponse('Not authorized to approve this attendance', 403);
+    }
+
+    // Do not allow approving sessions that are in the future
+    if (attendance.sessionDate) {
+      const sessionDate = new Date(attendance.sessionDate);
+      const today = new Date();
+      sessionDate.setHours(0, 0, 0, 0);
+      today.setHours(0, 0, 0, 0);
+      if (sessionDate.getTime() > today.getTime()) {
+        throw new ErrorResponse('Cannot approve attendance for a future session date', 400);
+      }
+    }
+
+    // Enforce that the class has completed all planned sessions before parent approvals
+    const cls = await FinalClass.findById(attendance.finalClass).select('totalSessions completedSessions');
+    if (!cls) {
+      throw new ErrorResponse('Class not found for attendance', 404);
+    }
+    const totalSessions = cls.totalSessions || 0;
+    const completedSessions = cls.completedSessions || 0;
+    if (totalSessions > 0 && completedSessions < totalSessions) {
+      throw new ErrorResponse('Attendance can only be verified after all planned sessions are completed for this class', 400);
     }
 
     attendance.status = ATTENDANCE_STATUS.PARENT_APPROVED as any;
@@ -443,7 +463,14 @@ export const getPendingApprovalsForCoordinator = async (coordinatorUserId: strin
 };
 
 export const getPendingApprovalsForParent = async (parentUserId: string) => {
-  const attendances = await Attendance.find({ parent: new mongoose.Types.ObjectId(parentUserId), status: ATTENDANCE_STATUS.COORDINATOR_APPROVED })
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const attendances = await Attendance.find({
+    parent: new mongoose.Types.ObjectId(parentUserId),
+    status: ATTENDANCE_STATUS.COORDINATOR_APPROVED,
+    sessionDate: { $lte: today },
+  })
     .sort({ sessionDate: 1 })
     .populate([
       { path: 'finalClass' },
@@ -451,7 +478,15 @@ export const getPendingApprovalsForParent = async (parentUserId: string) => {
       { path: 'coordinator', select: 'name email phone' },
       { path: 'parent', select: 'name email phone' },
     ]);
-  return attendances;
+  // Only show records where the related class has completed all planned sessions
+  return attendances.filter((a: any) => {
+    const cls: any = a.finalClass;
+    if (!cls) return false;
+    const totalSessions = cls.totalSessions || 0;
+    const completedSessions = cls.completedSessions || 0;
+    if (totalSessions <= 0) return true; // if not configured, do not block
+    return completedSessions >= totalSessions;
+  });
 };
 
 export default {

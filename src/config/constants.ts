@@ -4,6 +4,7 @@ export enum USER_ROLES {
   TUTOR = 'TUTOR',
   COORDINATOR = 'COORDINATOR',
   PARENT = 'PARENT',
+  STUDENT = 'STUDENT',
 }
 
 export enum CLASS_LEAD_STATUS {
@@ -61,6 +62,11 @@ export enum PAYMENT_METHOD {
   UPI = 'UPI',
   CHEQUE = 'CHEQUE',
   ONLINE = 'ONLINE',
+}
+
+export enum PAYMENT_TYPE {
+  FEES_COLLECTED = 'FEES_COLLECTED',
+  TUTOR_PAYOUT = 'TUTOR_PAYOUT',
 }
 
 export enum VERIFICATION_STATUS {

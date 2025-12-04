@@ -19,6 +19,7 @@ import {
   getTutorFeedbackController,
   getTutorPerformanceMetricsController,
   getCoordinatorTutorsController,
+  getPublicTutorReviewsController,
 } from '../controllers/tutorController';
 import {
   createTutorValidation,
@@ -40,6 +41,9 @@ import { uploadDocument } from '../middlewares/fileUpload';
 import { USER_ROLES } from '../config/constants';
 
 const router = Router();
+
+// Public read-only route for showing tutor reviews on public profiles (teacherId or internal id)
+router.get('/public/:teacherKey/reviews', getPublicTutorReviewsController);
 
 router.use(protect);
 
@@ -69,14 +73,14 @@ router.get(
 
 router.get(
   '/user/:userId',
-  authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN, USER_ROLES.TUTOR),
+  authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN, USER_ROLES.TUTOR, USER_ROLES.PARENT),
   userIdParamValidation,
   getTutorByUser
 );
 
 router.get(
   '/:id',
-  authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN, USER_ROLES.TUTOR),
+  authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN, USER_ROLES.TUTOR, USER_ROLES.PARENT),
   tutorIdValidation,
   getTutor
 );

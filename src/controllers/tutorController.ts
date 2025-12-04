@@ -119,6 +119,28 @@ export const getPendingVerifications = asyncHandler(async (_req: Request, res: R
   return res.json(successResponse(tutors));
 });
 
+export const getPublicTutorReviewsController = asyncHandler(async (req: Request, res: Response) => {
+  const teacherKey = req.params.teacherKey;
+  const page = parseInt(String(req.query.page || '1'), 10);
+  const limit = parseInt(String(req.query.limit || '5'), 10);
+  const tutor = await getTutorById(teacherKey);
+  const tutorId = String((tutor as any)._id);
+  const { feedback, total } = await getTutorFeedback({ tutorId, page, limit });
+  const mapped = (feedback as any[]).map((fb) => {
+    const finalClass = fb.finalClass as any;
+    const submittedBy = fb.submittedBy as any;
+    return {
+      id: String(fb._id),
+      studentName: finalClass?.studentName || submittedBy?.name || 'Student',
+      submitterRole: fb.submitterRole,
+      overallRating: fb.overallRating,
+      comments: fb.comments,
+      createdAt: fb.createdAt,
+    };
+  });
+  return res.json(paginatedResponse(mapped as any, page, limit, total));
+});
+
 export const deleteTutorProfileController = asyncHandler(async (req: Request, res: Response) => {
   const result = await deleteTutorProfileService(req.params.id);
   return res.json(successResponse(result, 'Tutor profile deleted successfully'));

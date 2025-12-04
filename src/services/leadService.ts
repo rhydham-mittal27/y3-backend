@@ -1,5 +1,5 @@
 import mongoose from 'mongoose';
-import ClassLead, { IClassLeadDocument } from '../models/ClassLead';
+import ClassLead from '../models/ClassLead';
 import ErrorResponse from '../utils/errorResponse';
 import {
   BOARD_TYPE,
@@ -13,8 +13,11 @@ import Manager from '../models/Manager';
 import { logManagerActivity } from './managerService';
 
 export const createClassLead = async (params: {
-  studentName: string;
+  studentType: 'SINGLE' | 'GROUP';
+  studentName?: string;
+  studentGender?: 'M' | 'F';
   parentName?: string;
+  parentEmail?: string;
   parentPhone?: string;
   grade: string;
   subject: string[];
@@ -31,7 +34,15 @@ export const createClassLead = async (params: {
   leadSource?: LEAD_SOURCE | string;
   paymentReceived?: boolean;
   paymentAmount?: number;
+  tutorFees?: number;
   notes?: string;
+  numberOfStudents?: number;
+  studentDetails?: Array<{
+    name: string;
+    gender: 'M' | 'F';
+    fees: number;
+    tutorFees: number;
+  }>;
   createdBy: string;
 }) => {
   const { createdBy, ...rest } = params;
@@ -116,6 +127,8 @@ export const updateClassLead = async (
     mode: TEACHING_MODE | string;
     location?: string;
     timing: string;
+    paymentAmount?: number;
+    tutorFees?: number;
     notes?: string;
   }>
 ) => {

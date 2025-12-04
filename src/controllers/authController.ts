@@ -2,7 +2,7 @@ import { validationResult } from 'express-validator';
 import asyncHandler from '../utils/asyncHandler';
 import { successResponse } from '../utils/responseFormatter';
 import ErrorResponse from '../utils/errorResponse';
-import { registerUser, loginUser, refreshAccessToken, logoutUser, changePassword } from '../services/authService';
+import { registerUser, loginUser, refreshAccessToken, logoutUser, changePassword, sendLoginOtp, verifyLoginOtp, getParentEmailByClassName } from '../services/authService';
 import { createManagerProfile } from '../services/managerService';
 import { createCoordinator } from '../services/coordinatorService';
 import { USER_ROLES } from '../config/constants';
@@ -43,6 +43,39 @@ export const login = asyncHandler(async (req, res) => {
   const { email, password } = req.body;
   const result = await loginUser(email, password);
   return res.status(200).json(successResponse(result, 'Login successful'));
+});
+
+export const sendLoginOtpHandler = asyncHandler(async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    throw new ErrorResponse(errors.array()[0]?.msg || 'Validation error', 400);
+  }
+
+  const { email } = req.body as { email: string };
+  const result = await sendLoginOtp(email);
+  return res.status(200).json(successResponse(result, 'OTP sent successfully'));
+});
+
+export const verifyLoginOtpHandler = asyncHandler(async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    throw new ErrorResponse(errors.array()[0]?.msg || 'Validation error', 400);
+  }
+
+  const { email, otp } = req.body as { email: string; otp: string };
+  const result = await verifyLoginOtp(email, otp);
+  return res.status(200).json(successResponse(result, 'Login successful'));
+});
+
+export const parentLoginLookupHandler = asyncHandler(async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    throw new ErrorResponse(errors.array()[0]?.msg || 'Validation error', 400);
+  }
+
+  const { className } = req.body as { className: string };
+  const result = await getParentEmailByClassName(className);
+  return res.status(200).json(successResponse(result, 'Parent email found'));
 });
 
 export const refreshToken = asyncHandler(async (req, res) => {

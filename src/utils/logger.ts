@@ -3,31 +3,59 @@ import path from 'path';
 
 const logDir = path.resolve(process.cwd(), 'backend', 'logs');
 
-const { combine, timestamp, printf, colorize, errors } = winston.format;
+const { combine, timestamp, printf, colorize, errors, json } = winston.format;
 
-const logFormat = printf(({ level, message, timestamp, stack }) => {
-  return `${timestamp} [${level}]: ${stack || message}`;
+// Simple log format for console
+const simpleLogFormat = printf(({ level, message, timestamp, stack, correlationId }) => {
+  const correlation = correlationId ? `[${correlationId}]` : '';
+  return `${timestamp} ${correlation} [${level}]: ${stack || message}`;
 });
+
+// JSON log format for files (structured logging)
+const jsonLogFormat = combine(
+  timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
+  errors({ stack: true }),
+  json()
+);
 
 const logger = winston.createLogger({
   level: process.env.LOG_LEVEL || 'info',
   format: combine(
     timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
     errors({ stack: true }),
-    logFormat
+    winston.format.metadata()
   ),
   transports: [
     new winston.transports.Console({
-      format: combine(colorize(), logFormat),
+      format: combine(colorize(), simpleLogFormat),
     }),
-    new winston.transports.File({ filename: path.join(logDir, 'error.log'), level: 'error' }),
-    new winston.transports.File({ filename: path.join(logDir, 'combined.log') }),
+    new winston.transports.File({ 
+      filename: path.join(logDir, 'error.log'), 
+      level: 'error',
+      format: jsonLogFormat,
+    }),
+    new winston.transports.File({ 
+      filename: path.join(logDir, 'combined.log'),
+      format: jsonLogFormat,
+    }),
   ],
 });
 
-export const logInfo = (message: string) => logger.info(message);
-export const logError = (message: string) => logger.error(message);
-export const logWarn = (message: string) => logger.warn(message);
-export const logDebug = (message: string) => logger.debug(message);
+// Enhanced logging functions with correlation ID support
+export const logInfo = (message: string, correlationId?: string, metadata?: Record<string, any>) => {
+  logger.info(message, { correlationId, ...metadata });
+};
+
+export const logError = (message: string, correlationId?: string, metadata?: Record<string, any>) => {
+  logger.error(message, { correlationId, ...metadata });
+};
+
+export const logWarn = (message: string, correlationId?: string, metadata?: Record<string, any>) => {
+  logger.warn(message, { correlationId, ...metadata });
+};
+
+export const logDebug = (message: string, correlationId?: string, metadata?: Record<string, any>) => {
+  logger.debug(message, { correlationId, ...metadata });
+};
 
 export default logger;

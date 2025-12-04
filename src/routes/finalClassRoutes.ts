@@ -11,6 +11,7 @@ import {
   getMyClassesController,
   getParentClassesController,
   createOneTimeRescheduleController,
+  parentRequestRescheduleController,
 } from '../controllers/finalClassController';
 import {
   convertToFinalClassValidation,
@@ -60,6 +61,12 @@ router.post(
   authorize(USER_ROLES.TUTOR),
   classIdValidation,
   createOneTimeRescheduleController
+);
+router.post(
+  '/:id/parent-reschedule',
+  authorize(USER_ROLES.PARENT),
+  classIdValidation,
+  parentRequestRescheduleController
 );
 router.put('/:id', authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN, USER_ROLES.COORDINATOR,USER_ROLES.TUTOR), updateFinalClassValidation, updateFinalClassDetails);
 router.patch('/:id/status', authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN), updateClassStatusValidation, updateClassStatus);

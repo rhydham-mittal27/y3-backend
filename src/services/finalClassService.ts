@@ -6,10 +6,16 @@ import Tutor from '../models/Tutor';
 import Coordinator from '../models/Coordinator';
 import User from '../models/User';
 import Notification from '../models/Notification';
+import Student from '../models/Student';
 import ErrorResponse from '../utils/errorResponse';
 import { CLASS_LEAD_STATUS, FINAL_CLASS_STATUS, MANAGER_ACTION_TYPE, ATTENDANCE_STATUS } from '../config/constants';
 import { logManagerActivity } from './managerService';
 import Manager from '../models/Manager';
+import { createAdvancePaymentForFinalClass } from './paymentService';
+import { generateStudentId } from '../utils/generateStudentId';
+import { generateStudentPassword } from '../utils/generatePassword';
+import { sendStudentCredentialsEmail } from './studentEmailService';
+import bcrypt from 'bcryptjs';
 
 const DAYS_ORDER = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY'];
 
@@ -111,6 +117,76 @@ export const convertLeadToFinalClass = async (params: {
         ? totalSessions
         : computeMonthlyTotalSessions(new Date(startDate), schedule);
 
+    // Generate student IDs and create student profiles
+    let studentId: string | undefined;
+    let studentGender: 'M' | 'F' | undefined;
+    const createdStudents: any[] = [];
+    
+    if (lead.studentType === 'SINGLE' && lead.studentGender && lead.grade) {
+      // Extract numeric grade from string (e.g., "Grade 10" -> 10)
+      const gradeNumber = parseInt(lead.grade.replace(/\D/g, ''));
+      if (!isNaN(gradeNumber) && gradeNumber > 0) {
+        studentGender = lead.studentGender;
+        studentId = generateStudentId({
+          gender: studentGender,
+          classGrade: gradeNumber
+        });
+      }
+    } else if (lead.studentType === 'GROUP' && lead.studentDetails && lead.grade) {
+      // Create individual student profiles for group classes
+      const gradeNumber = parseInt(lead.grade.replace(/\D/g, ''));
+      if (!isNaN(gradeNumber) && gradeNumber > 0) {
+        for (const studentDetail of lead.studentDetails) {
+          // Validate student detail has required gender
+          if (!studentDetail.gender || !['M', 'F'].includes(studentDetail.gender)) {
+            throw new Error(`Student ${studentDetail.name || 'Unknown'} has invalid or missing gender. Gender is required for student ID generation.`);
+          }
+          
+          const studentIdForGroup = generateStudentId({
+            gender: studentDetail.gender,
+            classGrade: gradeNumber
+          });
+          
+          // Generate and hash password
+          const plainPassword = generateStudentPassword();
+          const salt = await bcrypt.genSalt(10);
+          const hashedPassword = await bcrypt.hash(plainPassword, salt);
+          
+          const newStudent = new Student({
+            studentId: studentIdForGroup,
+            name: studentDetail.name,
+            gender: studentDetail.gender,
+            grade: lead.grade,
+            finalClass: new mongoose.Types.ObjectId(), // Will be set after FinalClass creation
+            classLead: new mongoose.Types.ObjectId(classLeadId),
+            password: hashedPassword,
+            isPasswordChanged: false,
+          });
+          
+          // TODO: Send password to parent/student via email/SMS
+          console.log(`Student ID: ${studentIdForGroup}, Password: ${plainPassword}`);
+          
+          // Send credentials email to parent
+          if (lead.parentEmail) {
+            try {
+              await sendStudentCredentialsEmail({
+                parentEmail: lead.parentEmail,
+                studentName: studentDetail.name,
+                className: className || `Class ${lead.grade}`,
+                studentId: studentIdForGroup,
+                password: plainPassword
+              });
+            } catch (emailError) {
+              console.error('Failed to send student credentials email:', emailError);
+              // Continue with student creation even if email fails
+            }
+          }
+          
+          createdStudents.push(newStudent);
+        }
+      }
+    }
+
     const created = new FinalClass({
       className,
       classLead: new mongoose.Types.ObjectId(classLeadId),
@@ -122,7 +198,9 @@ export const convertLeadToFinalClass = async (params: {
       totalSessions: autoTotalSessions,
       ratePerSession: typeof ratePerSession === 'number' ? ratePerSession : 0,
       completedSessions: 0,
-      studentName: lead.studentName,
+      studentName: lead.studentType === 'SINGLE' ? lead.studentName : `Group Class (${lead.studentDetails?.length || 0} students)`,
+      studentGender,
+      studentId,
       subject: lead.subject,
       grade: lead.grade,
       board: String(lead.board),
@@ -134,6 +212,24 @@ export const convertLeadToFinalClass = async (params: {
     });
 
     await created.save({ session });
+
+    // Save student profiles for group classes
+    if (createdStudents.length > 0) {
+      // Update finalClass reference for each student
+      for (const student of createdStudents) {
+        student.finalClass = created._id;
+      }
+      
+      // Save all student profiles
+      await Student.insertMany(createdStudents, { session });
+    }
+
+    // Attempt to create an advance payment for this class using the lead's paymentAmount as fixed advance fee
+    try {
+      await createAdvancePaymentForFinalClass(String(created._id), convertedBy);
+    } catch (e) {
+      // Do not block class creation if advance payment fails; this can be handled manually
+    }
 
     await Coordinator.findByIdAndUpdate(
       coordinator._id,
@@ -478,6 +574,15 @@ export const getClassesByParent = async (parentUserId: string, status?: FINAL_CL
   return classes;
 };
 
+export const getStudentsByFinalClass = async (finalClassId: string) => {
+  if (!mongoose.isValidObjectId(finalClassId)) {
+    return [];
+  }
+  const students = await Student.find({ finalClass: new mongoose.Types.ObjectId(finalClassId) })
+    .sort({ name: 1 });
+  return students;
+};
+
 export default {
   convertLeadToFinalClass,
   getAllFinalClasses,
@@ -489,4 +594,5 @@ export default {
   getClassesByTutor,
   getClassesByParent,
   computeTutorMonthlyStats,
+  getStudentsByFinalClass,
 };
