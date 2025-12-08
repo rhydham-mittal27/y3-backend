@@ -7,7 +7,8 @@ import {
   getStudentClasses,
   getStudentAttendance,
   getStudentTests,
-  getStudentNotes
+  getStudentNotes,
+  getStudentPayments
 } from '../controllers/studentController';
 import protect from '../middlewares/auth';
 import protectStudent from '../middlewares/studentAuth';
@@ -27,6 +28,7 @@ router.get('/student/classes', protectStudent, authorize(USER_ROLES.STUDENT), ge
 router.get('/student/attendance', protectStudent, authorize(USER_ROLES.STUDENT), getStudentAttendance);
 router.get('/student/tests', protectStudent, authorize(USER_ROLES.STUDENT), getStudentTests);
 router.get('/student/notes', protectStudent, authorize(USER_ROLES.STUDENT), getStudentNotes);
+router.get('/student/payments', protectStudent, authorize(USER_ROLES.STUDENT), getStudentPayments);
 
 export default router;
 

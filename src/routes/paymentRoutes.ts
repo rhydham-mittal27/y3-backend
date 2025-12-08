@@ -78,7 +78,7 @@ router.put('/:id', authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN), updatePaymen
 router.delete('/:id', authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN), paymentIdValidation, deletePaymentRecord);
 router.patch(
   '/:id/status', 
-  authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN, USER_ROLES.PARENT), 
+  authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN, USER_ROLES.PARENT, USER_ROLES.STUDENT), 
   updatePaymentStatusValidation, 
   updatePaymentStatusController
 );

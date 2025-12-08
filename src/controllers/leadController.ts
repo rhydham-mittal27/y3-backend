@@ -23,6 +23,7 @@ export const createLead = asyncHandler(async (req: AuthRequest, res) => {
   const {
     studentType,
     studentName,
+    studentGender,
     parentName,
     parentEmail,
     parentPhone,
@@ -48,9 +49,13 @@ export const createLead = asyncHandler(async (req: AuthRequest, res) => {
   } = req.body;
   const createdBy = req.user!.id;
 
+  const normalizedStudentGender =
+    studentType === 'GROUP' || !studentGender ? undefined : studentGender;
+
   const lead = await createClassLead({
     studentType,
     studentName,
+    studentGender: normalizedStudentGender,
     parentName,
     parentEmail,
     parentPhone,

@@ -21,6 +21,9 @@ export interface IStudentDetail {
   gender: 'M' | 'F';
   fees: number;
   tutorFees: number;
+  parentName?: string;
+  parentEmail?: string;
+  parentPhone?: string;
 }
 
 export interface IClassLeadDocument extends Document {
@@ -43,6 +46,8 @@ export interface IClassLeadDocument extends Document {
   status: CLASS_LEAD_STATUS | string;
   classesPerMonth?: number;
   classDurationHours?: number;
+  paymentAmount?: number;
+  tutorFees?: number;
   preferredTutorGender?: PREFERRED_TUTOR_GENDER | string;
   leadSource?: LEAD_SOURCE | string;
   paymentReceived?: boolean;
@@ -84,6 +89,18 @@ const StudentDetailSchema = new Schema<IStudentDetail>({
     type: Number,
     required: true,
     min: [0, 'Tutor fees cannot be negative']
+  },
+  parentName: { type: String, trim: true },
+  parentEmail: {
+    type: String,
+    trim: true,
+    lowercase: true,
+    match: [/^\S+@\S+\.\S+$/, 'Please use a valid email address'],
+  },
+  parentPhone: {
+    type: String,
+    trim: true,
+    match: [/^[0-9]{10}$/, 'Please enter a valid 10-digit phone number'],
   },
 }, { _id: false });
 
@@ -181,6 +198,8 @@ const ClassLeadSchema: Schema<IClassLeadDocument> = new Schema<IClassLeadDocumen
     },
     classesPerMonth: { type: Number },
     classDurationHours: { type: Number },
+    paymentAmount: { type: Number, min: 0 },
+    tutorFees: { type: Number, min: 0 },
     preferredTutorGender: { type: String, enum: Object.values(PREFERRED_TUTOR_GENDER) },
     leadSource: { type: String, enum: Object.values(LEAD_SOURCE) },
     paymentReceived: { type: Boolean, default: false },

@@ -6,7 +6,7 @@ export interface IFinalClassDocument extends Document {
   className: string;
   classLead: mongoose.Types.ObjectId;
   tutor: mongoose.Types.ObjectId;
-  coordinator: mongoose.Types.ObjectId;
+  coordinator?: mongoose.Types.ObjectId;
   parent?: mongoose.Types.ObjectId;
   startDate: Date;
   endDate?: Date;
@@ -41,7 +41,7 @@ const FinalClassSchema: Schema<IFinalClassDocument> = new Schema<IFinalClassDocu
     className: { type: String, required: true, unique: true },
     classLead: { type: Schema.Types.ObjectId, ref: 'ClassLead', required: true, unique: true },
     tutor: { type: Schema.Types.ObjectId, ref: 'User', required: true },
-    coordinator: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+    coordinator: { type: Schema.Types.ObjectId, ref: 'User' },
     parent: { type: Schema.Types.ObjectId, ref: 'User' },
     startDate: { type: Date, required: true },
     endDate: { type: Date },

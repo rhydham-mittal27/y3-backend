@@ -3,7 +3,7 @@ import { FINAL_CLASS_STATUS } from '../config/constants';
 
 export const convertToFinalClassValidation = [
   param('leadId').isMongoId().withMessage('Invalid lead ID'),
-  body('coordinatorUserId').notEmpty().withMessage('Coordinator user ID is required').isMongoId().withMessage('Invalid coordinator user ID'),
+  body('coordinatorUserId').optional().isMongoId().withMessage('Invalid coordinator user ID'),
   body('parentUserId').optional().isMongoId().withMessage('Invalid parent user ID'),
   body('startDate').notEmpty().withMessage('Start date is required').isISO8601().withMessage('Invalid date format'),
   body('schedule').optional().isObject().withMessage('Schedule must be an object'),
@@ -23,6 +23,7 @@ export const updateFinalClassValidation = [
   body('ratePerSession').optional().isFloat({ min: 0 }).withMessage('Rate per session must be non-negative number'),
   body('endDate').optional().isISO8601(),
   body('notes').optional().trim().isLength({ max: 1000 }),
+  body('coordinatorUserId').optional().isMongoId().withMessage('Invalid coordinator user ID'),
 ];
 
 export const updateClassStatusValidation = [

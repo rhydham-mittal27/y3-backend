@@ -2,6 +2,7 @@ import asyncHandler from '../utils/asyncHandler';
 import ErrorResponse from '../utils/errorResponse';
 import { verifyAccessToken } from '../utils/jwtUtils';
 import User from '../models/User';
+import Student from '../models/Student';
 import { AuthRequest } from '../types';
 
 export const protect = asyncHandler(async (req: AuthRequest, _res, next) => {
@@ -13,20 +14,39 @@ export const protect = asyncHandler(async (req: AuthRequest, _res, next) => {
   const token = authHeader.split(' ')[1];
   try {
     const decoded = verifyAccessToken(token);
+    // First, try to authenticate as a regular User
     const user = await User.findById(decoded.userId).select('-password -refreshToken');
-    if (!user || user.isActive === false) {
+
+    if (user && user.isActive !== false) {
+      req.user = {
+        id: (user as any).id as string,
+        name: user.name,
+        email: user.email,
+        role: user.role as string,
+        phone: user.phone,
+        isActive: user.isActive,
+        createdAt: user.createdAt,
+        updatedAt: user.updatedAt,
+      };
+      next();
+      return;
+    }
+
+    // If no active User found, try authenticating as a Student
+    const student = await Student.findById(decoded.userId).select('-password');
+    if (!student) {
       throw new ErrorResponse('Not authorized', 401);
     }
 
     req.user = {
-      id: (user as any).id as string,
-      name: user.name,
-      email: user.email,
-      role: user.role as string,
-      phone: user.phone,
-      isActive: user.isActive,
-      createdAt: user.createdAt,
-      updatedAt: user.updatedAt,
+      id: (student as any)._id.toString(),
+      name: student.name,
+      email: student.studentId,
+      role: 'STUDENT',
+      phone: '',
+      isActive: true,
+      createdAt: student.createdAt,
+      updatedAt: student.updatedAt,
     };
 
     next();

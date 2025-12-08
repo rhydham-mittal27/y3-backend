@@ -2,6 +2,9 @@ import asyncHandler from '../utils/asyncHandler';
 import { successResponse, paginatedResponse } from '../utils/responseFormatter';
 import { AuthRequest } from '../types';
 import { getParentDashboardStats, getClassesByParent, getAnnouncementsForParent } from '../services/studentService';
+import { listNotesForStudent } from '../services/noteService';
+import { getPaymentsByClass } from '../services/paymentService';
+import Student from '../models/Student';
 
 // Parent controllers (existing)
 export const getDashboardStats = asyncHandler(async (req: AuthRequest, res) => {
@@ -45,31 +48,79 @@ export const getMyAnnouncements = asyncHandler(async (req: AuthRequest, res) => 
 });
 
 // Student controllers (new)
-export const getStudentDashboardStats = asyncHandler(async (_req: AuthRequest, res) => {
+export const getStudentDashboardStats = asyncHandler(async (req: AuthRequest, res) => {
   // Mock student dashboard stats - replace with real implementation
   // TODO: Use _req.user!.id when implementing real functionality
-  const stats = {
-    classes: {
-      total: 2,
-      active: 2,
-    },
-    attendance: {
-      percentage: 90,
-      present: 18,
-      absent: 1,
-      late: 1,
-    },
-    tests: {
-      total: 3,
-      pending: 1,
-      completed: 2,
-    },
-    notes: {
-      total: 4,
-      recent: 2,
-    },
+
+  const studentUserId = req.user!.id;
+
+  const Student = require('../models/Student').default;
+  const FinalClass = require('../models/FinalClass').default;
+  const Attendance = require('../models/Attendance').default;
+  const Test = require('../models/Test').default;
+
+  const student = await Student.findById(studentUserId);
+  if (!student) {
+    const emptyStats = {
+      classes: { total: 0, active: 0 },
+      attendance: { percentage: 0, present: 0, absent: 0, late: 0 },
+      tests: { total: 0, pending: 0, completed: 0 },
+      notes: { total: 0, recent: 0 },
+    };
+    return res.json(successResponse(emptyStats));
+  }
+
+  const finalClassId = student.finalClass;
+  const cls = await FinalClass.findById(finalClassId).select('status');
+
+  const classes = {
+    total: cls ? 1 : 0,
+    active: cls && String((cls as any).status) === 'ACTIVE' ? 1 : 0,
   };
-  
+
+  // Attendance summary for this student's class
+  let attendance = { percentage: 0, present: 0, absent: 0, late: 0 };
+  if (cls) {
+    const records = await Attendance.find({ finalClass: finalClassId }).select('studentAttendanceStatus');
+    const total = records.length;
+    let present = 0;
+    let absent = 0;
+    let late = 0;
+    records.forEach((r: any) => {
+      const status = (r.studentAttendanceStatus || '').toString().toUpperCase();
+      if (status === 'PRESENT') present += 1;
+      else if (status === 'ABSENT') absent += 1;
+      else if (status === 'LATE') late += 1;
+    });
+    const percentage = total > 0 ? Math.round((present / total) * 100) : 0;
+    attendance = { percentage, present, absent, late };
+  }
+
+  // Tests summary for this student's class
+  let tests = { total: 0, pending: 0, completed: 0 };
+  if (cls) {
+    const testsRaw = await Test.find({ finalClass: finalClassId }).select('status');
+    let total = testsRaw.length;
+    let pending = 0;
+    let completed = 0;
+    testsRaw.forEach((t: any) => {
+      const status = (t.status || '').toString().toUpperCase();
+      if (status === 'SCHEDULED') pending += 1;
+      if (status === 'COMPLETED' || status === 'REPORT_SUBMITTED') completed += 1;
+    });
+    tests = { total, pending, completed };
+  }
+
+  // Notes - placeholder counts for now (can be wired to real notes later)
+  const notes = { total: 0, recent: 0 };
+
+  const stats = {
+    classes,
+    attendance,
+    tests,
+    notes,
+  };
+
   return res.json(successResponse(stats));
 });
 
@@ -134,28 +185,99 @@ export const getStudentClasses = asyncHandler(async (req: AuthRequest, res) => {
   return res.status(200).json(paginatedResponse(paginatedClasses, page, limit, total));
 });
 
-export const getStudentAttendance = asyncHandler(async (_req: AuthRequest, res) => {
+export const getStudentAttendance = asyncHandler(async (req: AuthRequest, res) => {
   // Mock attendance data - replace with real implementation
   // TODO: Use _req.user!.id, _req.query.month, _req.query.page, _req.query.limit when implementing real functionality
-  const attendanceData = [
+
+  const studentUserId = req.user!.id;
+  const monthFilter = (req.query.month as string) || undefined; // Expecting format like '2024-12'
+
+  const Student = require('../models/Student').default;
+  const Attendance = require('../models/Attendance').default;
+  const FinalClass = require('../models/FinalClass').default;
+
+  const student = await Student.findById(studentUserId);
+  if (!student) {
+    return res.json(successResponse([]));
+  }
+
+  const finalClassId = student.finalClass;
+  const finalClass = await FinalClass.findById(finalClassId).select('subject');
+
+  const match: any = { finalClass: finalClassId };
+
+  if (monthFilter) {
+    const [yearStr, monthStr] = monthFilter.split('-');
+    const year = parseInt(yearStr, 10);
+    const month = parseInt(monthStr, 10) - 1;
+    if (!isNaN(year) && !isNaN(month)) {
+      const start = new Date(Date.UTC(year, month, 1, 0, 0, 0));
+      const end = new Date(Date.UTC(year, month + 1, 1, 0, 0, 0));
+      match.sessionDate = { $gte: start, $lt: end };
+    }
+  }
+
+  const attendances = await Attendance.find(match).sort({ sessionDate: -1 });
+
+  if (!attendances.length) {
+    return res.json(successResponse([]));
+  }
+
+  const subjectLabel = finalClass
+    ? Array.isArray((finalClass as any).subject)
+      ? (finalClass as any).subject.join(', ')
+      : (finalClass as any).subject
+    : 'Class';
+
+  const grouped: Record<
+    string,
     {
-      month: 'December 2024',
-      stats: {
-        total: 20,
-        present: 18,
-        absent: 1,
-        late: 1,
-        percentage: 90,
-      },
-      records: [
-        { date: '2024-12-01', status: 'present', subject: 'Mathematics' },
-        { date: '2024-12-02', status: 'present', subject: 'Science' },
-        { date: '2024-12-03', status: 'late', subject: 'Mathematics' },
-        { date: '2024-12-04', status: 'present', subject: 'Science' },
-        { date: '2024-12-05', status: 'absent', subject: 'Mathematics' },
-      ],
+      month: string;
+      stats: { total: number; present: number; absent: number; late: number; percentage: number };
+      records: { date: string; status: string; subject: string }[];
+    }
+  > = {};
+
+  attendances.forEach((att: any) => {
+    const d = new Date(att.sessionDate);
+    const monthLabel = d.toLocaleString('default', { month: 'long', year: 'numeric' });
+    const key = `${d.getFullYear()}-${d.getMonth() + 1}`;
+
+    if (!grouped[key]) {
+      grouped[key] = {
+        month: monthLabel,
+        stats: { total: 0, present: 0, absent: 0, late: 0, percentage: 0 },
+        records: [],
+      };
+    }
+
+    const bucket = grouped[key];
+    const statusRaw = (att.studentAttendanceStatus || 'PRESENT').toString().toUpperCase();
+    const status = statusRaw === 'PRESENT' ? 'present' : statusRaw === 'ABSENT' ? 'absent' : statusRaw === 'LATE' ? 'late' : 'present';
+
+    bucket.stats.total += 1;
+    if (status === 'present') bucket.stats.present += 1;
+    if (status === 'absent') bucket.stats.absent += 1;
+    if (status === 'late') bucket.stats.late += 1;
+
+    bucket.records.push({
+      date: d.toISOString().slice(0, 10),
+      status,
+      subject: subjectLabel,
+    });
+  });
+
+  const attendanceData = Object.values(grouped).map((g) => ({
+    month: g.month,
+    stats: {
+      total: g.stats.total,
+      present: g.stats.present,
+      absent: g.stats.absent,
+      late: g.stats.late,
+      percentage: g.stats.total > 0 ? Math.round((g.stats.present / g.stats.total) * 100) : 0,
     },
-  ];
+    records: g.records,
+  }));
 
   return res.json(successResponse(attendanceData));
 });
@@ -166,39 +288,54 @@ export const getStudentTests = asyncHandler(async (req: AuthRequest, res) => {
   const page = parseInt((req.query.page as string) || '1', 10);
   const limit = parseInt((req.query.limit as string) || '10', 10);
 
-  // Mock tests data - replace with real implementation
-  const tests = [
-    {
-      id: 1,
-      title: 'Mathematics Chapter 5 Test',
-      subject: 'Mathematics',
-      type: 'Test',
-      date: '2024-12-10',
-      time: '10:00 AM',
-      duration: '45 minutes',
-      status: 'upcoming',
-      totalMarks: 100,
-      description: 'Chapter 5: Fractions and Decimals',
-    },
-    {
-      id: 2,
-      title: 'Science Lab Report',
-      subject: 'Science',
-      type: 'Assignment',
-      date: '2024-12-08',
-      time: '11:59 PM',
-      duration: '2 hours',
-      status: 'submitted',
-      totalMarks: 50,
-      obtainedMarks: 45,
-      description: 'Lab report on plant growth experiment',
-    },
-  ];
+  const studentUserId = req.user!.id;
 
-  const total = tests.length;
+  const Student = require('../models/Student').default;
+  const Test = require('../models/Test').default;
+  const FinalClass = require('../models/FinalClass').default;
+
+  const student = await Student.findById(studentUserId);
+  if (!student) {
+    return res.status(200).json(paginatedResponse([], page, limit, 0));
+  }
+
+  const finalClassId = student.finalClass;
+  const finalClass = await FinalClass.findById(finalClassId).select('subject grade');
+
+  const subjectLabel = finalClass
+    ? Array.isArray((finalClass as any).subject)
+      ? (finalClass as any).subject.join(', ')
+      : (finalClass as any).subject
+    : 'Class Test';
+
+  const testsRaw = await Test.find({ finalClass: finalClassId }).sort({ testDate: 1 });
+
+  const mappedTests = testsRaw.map((t: any) => {
+    const date = t.testDate ? new Date(t.testDate) : null;
+    const statusRaw = (t.status || '').toString().toUpperCase();
+    let status: string = 'upcoming';
+    if (statusRaw === 'COMPLETED' || statusRaw === 'REPORT_SUBMITTED') status = 'completed';
+    else if (statusRaw === 'CANCELLED') status = 'cancelled';
+
+    return {
+      id: String(t._id),
+      title: `${subjectLabel} Test`,
+      subject: subjectLabel,
+      type: 'Test',
+      date: date ? date.toISOString().slice(0, 10) : '',
+      time: t.testTime || '',
+      duration: '',
+      status,
+      totalMarks: undefined,
+      obtainedMarks: undefined,
+      description: t.notes || 'Class test',
+    };
+  });
+
+  const total = mappedTests.length;
   const start = (page - 1) * limit;
   const end = page * limit;
-  const paginatedTests = tests.slice(start, end);
+  const paginatedTests = mappedTests.slice(start, end);
 
   return res.status(200).json(paginatedResponse(paginatedTests, page, limit, total));
 });
@@ -209,38 +346,41 @@ export const getStudentNotes = asyncHandler(async (req: AuthRequest, res) => {
   const page = parseInt((req.query.page as string) || '1', 10);
   const limit = parseInt((req.query.limit as string) || '10', 10);
 
-  // Mock notes data - replace with real implementation
-  const notes = [
-    {
-      id: 1,
-      title: 'Mathematics Chapter 5 Notes',
-      subject: 'Mathematics',
-      type: 'pdf',
-      size: '2.5 MB',
-      uploadDate: '2024-12-01',
-      description: 'Complete notes for Chapter 5: Fractions and Decimals',
-      downloadUrl: '#',
-      previewUrl: '#',
-    },
-    {
-      id: 2,
-      title: 'Science Lab Video Tutorial',
-      subject: 'Science',
-      type: 'video',
-      size: '45 MB',
-      uploadDate: '2024-12-02',
-      description: 'Video tutorial for plant growth experiment',
-      downloadUrl: '#',
-      previewUrl: '#',
-    },
-  ];
+  const studentUserId = req.user!.id;
+  const parentIdRaw = (req.query.parentId as string) || '';
+  const parentId = parentIdRaw && parentIdRaw.trim().length > 0 ? parentIdRaw.trim() : null;
 
-  const total = notes.length;
+  const all = await listNotesForStudent(studentUserId, parentId);
+
+  const total = all.length;
   const start = (page - 1) * limit;
   const end = page * limit;
-  const paginatedNotes = notes.slice(start, end);
+  const paginatedNotes = all.slice(start, end);
 
   return res.status(200).json(paginatedResponse(paginatedNotes, page, limit, total));
+});
+
+export const getStudentPayments = asyncHandler(async (req: AuthRequest, res) => {
+  const page = parseInt((req.query.page as string) || '1', 10);
+  const limit = parseInt((req.query.limit as string) || '10', 10);
+
+  const studentUserId = req.user!.id;
+  const student = await Student.findById(studentUserId).select('finalClass');
+  if (!student || !student.finalClass) {
+    return res.status(200).json(paginatedResponse([], page, limit, 0));
+  }
+
+  const { payments } = await getPaymentsByClass(String(student.finalClass));
+
+  const total = payments.length;
+  const start = (page - 1) * limit;
+  const end = page * limit;
+  const paginated = payments.slice(start, end).map((p: any) => ({
+    id: String(p._id),
+    ...p.toObject(),
+  }));
+
+  return res.status(200).json(paginatedResponse(paginated, page, limit, total));
 });
 
 export default {

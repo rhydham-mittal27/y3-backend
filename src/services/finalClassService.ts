@@ -8,12 +8,11 @@ import User from '../models/User';
 import Notification from '../models/Notification';
 import Student from '../models/Student';
 import ErrorResponse from '../utils/errorResponse';
-import { CLASS_LEAD_STATUS, FINAL_CLASS_STATUS, MANAGER_ACTION_TYPE, ATTENDANCE_STATUS } from '../config/constants';
+import { CLASS_LEAD_STATUS, FINAL_CLASS_STATUS, MANAGER_ACTION_TYPE, ATTENDANCE_STATUS, USER_ROLES } from '../config/constants';
 import { logManagerActivity } from './managerService';
 import Manager from '../models/Manager';
 import { createAdvancePaymentForFinalClass } from './paymentService';
 import { generateStudentId } from '../utils/generateStudentId';
-import { generateStudentPassword } from '../utils/generatePassword';
 import { sendStudentCredentialsEmail } from './studentEmailService';
 import bcrypt from 'bcryptjs';
 
@@ -70,18 +69,17 @@ export const convertLeadToFinalClass = async (params: {
     const existing = await FinalClass.findOne({ classLead: classLeadId }).session(session);
     if (existing) throw new ErrorResponse('Final class already exists for this lead', 409);
 
+    // Coordinator is now optional - will be assigned later
     let coordinatorUserIdToUse = coordinatorUserId;
-    if (!coordinatorUserIdToUse) {
-      const anyCoordinator = await Coordinator.findOne({ isActive: true }).session(session);
-      if (!anyCoordinator) throw new ErrorResponse('Coordinator not found', 404);
-      coordinatorUserIdToUse = String(anyCoordinator.user);
+    let coordinator: any = null;
+    
+    if (coordinatorUserIdToUse) {
+      coordinator = await Coordinator.findOne({ user: coordinatorUserIdToUse }).session(session);
+      if (!coordinator) throw new ErrorResponse('Coordinator not found', 404);
+      if (!coordinator.isActive) throw new ErrorResponse('Coordinator is not active', 400);
+      const availableCapacity = (coordinator.maxClassCapacity || 0) - (coordinator.activeClassesCount || 0);
+      if (availableCapacity <= 0) throw new ErrorResponse('Coordinator has reached maximum capacity', 400);
     }
-
-    const coordinator = await Coordinator.findOne({ user: coordinatorUserIdToUse }).session(session);
-    if (!coordinator) throw new ErrorResponse('Coordinator not found', 404);
-    if (!coordinator.isActive) throw new ErrorResponse('Coordinator is not active', 400);
-    const availableCapacity = (coordinator.maxClassCapacity || 0) - (coordinator.activeClassesCount || 0);
-    if (availableCapacity <= 0) throw new ErrorResponse('Coordinator has reached maximum capacity', 400);
 
     const tutorProfile = await Tutor.findOne({ user: lead.assignedTutor }).session(session);
     if (!tutorProfile) throw new ErrorResponse('Tutor profile not found', 404);
@@ -121,6 +119,8 @@ export const convertLeadToFinalClass = async (params: {
     let studentId: string | undefined;
     let studentGender: 'M' | 'F' | undefined;
     const createdStudents: any[] = [];
+    // For group classes, track parent users created per email so we don't duplicate
+    const parentUsersByEmail: Record<string, mongoose.Types.ObjectId> = {};
     
     if (lead.studentType === 'SINGLE' && lead.studentGender && lead.grade) {
       // Extract numeric grade from string (e.g., "Grade 10" -> 10)
@@ -129,8 +129,58 @@ export const convertLeadToFinalClass = async (params: {
         studentGender = lead.studentGender;
         studentId = generateStudentId({
           gender: studentGender,
-          classGrade: gradeNumber
+          classGrade: gradeNumber,
         });
+
+        // Create a Student profile with initial password = studentId
+        if (studentId) {
+          const plainPassword = studentId;
+          const salt = await bcrypt.genSalt(10);
+          const hashedPassword = await bcrypt.hash(plainPassword, salt);
+
+          const singleStudent = new Student({
+            studentId,
+            name: lead.studentName,
+            gender: studentGender,
+            grade: lead.grade,
+            finalClass: new mongoose.Types.ObjectId(),
+            classLead: new mongoose.Types.ObjectId(classLeadId),
+            password: hashedPassword,
+            isPasswordChanged: false,
+          });
+
+          createdStudents.push(singleStudent);
+
+          if (lead.parentEmail) {
+            try {
+              await sendStudentCredentialsEmail({
+                parentEmail: lead.parentEmail,
+                studentName: lead.studentName,
+                className: className || `Class ${lead.grade}`,
+                studentId,
+                password: plainPassword,
+              });
+            } catch (emailError) {
+              console.error('Failed to send student credentials email for single student:', emailError);
+            }
+          }
+        }
+
+        // Auto-create/link parent user for single-student leads
+        if (!parentUserObjectId && lead.parentEmail && studentId) {
+          const normalizedEmail = String(lead.parentEmail).toLowerCase().trim();
+          let parentUser = await User.findOne({ email: normalizedEmail }).session(session);
+          if (!parentUser) {
+            parentUser = new User({
+              name: (lead as any).parentName || `Parent of ${lead.studentName}`,
+              email: normalizedEmail,
+              role: USER_ROLES.PARENT,
+              password: studentId,
+            } as any);
+            await parentUser.save({ session });
+          }
+          parentUserObjectId = parentUser._id;
+        }
       }
     } else if (lead.studentType === 'GROUP' && lead.studentDetails && lead.grade) {
       // Create individual student profiles for group classes
@@ -144,11 +194,11 @@ export const convertLeadToFinalClass = async (params: {
           
           const studentIdForGroup = generateStudentId({
             gender: studentDetail.gender,
-            classGrade: gradeNumber
+            classGrade: gradeNumber,
           });
           
-          // Generate and hash password
-          const plainPassword = generateStudentPassword();
+          // Initial password for students = their studentId
+          const plainPassword = studentIdForGroup;
           const salt = await bcrypt.genSalt(10);
           const hashedPassword = await bcrypt.hash(plainPassword, salt);
           
@@ -165,16 +215,36 @@ export const convertLeadToFinalClass = async (params: {
           
           // TODO: Send password to parent/student via email/SMS
           console.log(`Student ID: ${studentIdForGroup}, Password: ${plainPassword}`);
-          
-          // Send credentials email to parent
-          if (lead.parentEmail) {
+
+          // Send credentials email to individual parent if available, otherwise fall back to lead.parentEmail
+          const targetParentEmail = studentDetail.parentEmail || lead.parentEmail;
+          if (targetParentEmail) {
+            // Ensure a PARENT user exists for this email, using this student's ID as initial password
+            const normalizedEmail = String(targetParentEmail).toLowerCase().trim();
+            let parentUserIdForEmail = parentUsersByEmail[normalizedEmail];
+            if (!parentUserIdForEmail) {
+              let parentUser = await User.findOne({ email: normalizedEmail }).session(session);
+              if (!parentUser) {
+                parentUser = new User({
+                  name: (studentDetail as any).parentName || `Parent of ${studentDetail.name}`,
+                  email: normalizedEmail,
+                  role: USER_ROLES.PARENT,
+                  password: studentIdForGroup,
+                } as any);
+                await parentUser.save({ session });
+              }
+              parentUserIdForEmail = parentUser._id;
+              parentUsersByEmail[normalizedEmail] = parentUserIdForEmail;
+            }
+
+            // Send credentials email to individual parent if available, otherwise fall back to lead.parentEmail
             try {
               await sendStudentCredentialsEmail({
-                parentEmail: lead.parentEmail,
+                parentEmail: targetParentEmail,
                 studentName: studentDetail.name,
                 className: className || `Class ${lead.grade}`,
                 studentId: studentIdForGroup,
-                password: plainPassword
+                password: plainPassword,
               });
             } catch (emailError) {
               console.error('Failed to send student credentials email:', emailError);
@@ -187,11 +257,18 @@ export const convertLeadToFinalClass = async (params: {
       }
     }
 
+    // If no explicit parentUserId was provided but we have created parent users for a group,
+    // attach the first one as the primary parent on the FinalClass.
+    if (!parentUserObjectId && Object.keys(parentUsersByEmail).length > 0) {
+      const firstEmail = Object.keys(parentUsersByEmail)[0];
+      parentUserObjectId = parentUsersByEmail[firstEmail];
+    }
+
     const created = new FinalClass({
       className,
       classLead: new mongoose.Types.ObjectId(classLeadId),
       tutor: lead.assignedTutor as any,
-      coordinator: new mongoose.Types.ObjectId(coordinatorUserIdToUse),
+      coordinator: coordinatorUserIdToUse ? new mongoose.Types.ObjectId(coordinatorUserIdToUse) : undefined,
       parent: parentUserObjectId,
       startDate: new Date(startDate),
       schedule,
@@ -225,20 +302,27 @@ export const convertLeadToFinalClass = async (params: {
     }
 
     // Attempt to create an advance payment for this class using the lead's paymentAmount as fixed advance fee
+    let advancePaymentCreated = false;
     try {
-      await createAdvancePaymentForFinalClass(String(created._id), convertedBy);
+      const payment = await createAdvancePaymentForFinalClass(String(created._id), convertedBy);
+      if (payment) {
+        advancePaymentCreated = true;
+      }
     } catch (e) {
       // Do not block class creation if advance payment fails; this can be handled manually
     }
 
-    await Coordinator.findByIdAndUpdate(
-      coordinator._id,
-      {
-        $inc: { activeClassesCount: 1, totalClassesHandled: 1 },
-        $push: { assignedClasses: created._id },
-      },
-      { session }
-    );
+    // Update coordinator stats if coordinator is assigned
+    if (coordinator) {
+      await Coordinator.findByIdAndUpdate(
+        coordinator._id,
+        {
+          $inc: { activeClassesCount: 1, totalClassesHandled: 1 },
+          $push: { assignedClasses: created._id },
+        },
+        { session }
+      );
+    }
 
     await Tutor.findByIdAndUpdate(
       tutorProfile._id,
@@ -247,25 +331,28 @@ export const convertLeadToFinalClass = async (params: {
     );
 
     // Notifications
-    await Notification.insertMany(
-      [
-        {
-          recipient: lead.assignedTutor,
-          type: 'GENERAL',
-          title: 'New Class Assigned',
-          message: `You have been assigned a new class for student ${lead.studentName}.`,
-          relatedClassLead: lead._id,
-        },
-        {
-          recipient: coordinator.user,
-          type: 'GENERAL',
-          title: 'Class Conversion Completed',
-          message: `A converted class has been assigned under your coordination for ${lead.studentName}.`,
-          relatedClassLead: lead._id,
-        },
-      ],
-      { session, ordered: true }
-    );
+    const notifications: any[] = [
+      {
+        recipient: lead.assignedTutor,
+        type: 'GENERAL',
+        title: 'New Class Assigned',
+        message: `You have been assigned a new class for student ${lead.studentName}.`,
+        relatedClassLead: lead._id,
+      },
+    ];
+    
+    // Add coordinator notification only if coordinator is assigned
+    if (coordinator) {
+      notifications.push({
+        recipient: coordinator.user,
+        type: 'GENERAL',
+        title: 'Class Conversion Completed',
+        message: `A converted class has been assigned under your coordination for ${lead.studentName}.`,
+        relatedClassLead: lead._id,
+      });
+    }
+    
+    await Notification.insertMany(notifications, { session, ordered: true });
 
     await session.commitTransaction();
 
@@ -287,7 +374,9 @@ export const convertLeadToFinalClass = async (params: {
         { classLeadId, tutorId: String(lead.assignedTutor), coordinatorId: coordinatorUserIdToUse, startDate }
       );
     } catch {}
-    return created;
+
+    const createdObj = created.toObject();
+    return { ...createdObj, advancePaymentCreated };
   } catch (err) {
     await session.abortTransaction();
     throw err;
@@ -304,12 +393,19 @@ export const getAllFinalClasses = async (args: {
   tutorId?: string;
   sortBy?: string;
   sortOrder?: 'asc' | 'desc';
+  noCoordinator?: boolean;
 }) => {
-  const { page, limit, status, coordinatorId, tutorId, sortBy, sortOrder } = args;
+  const { page, limit, status, coordinatorId, tutorId, sortBy, sortOrder, noCoordinator } = args;
   const query: any = {};
   if (status) query.status = status;
   if (coordinatorId) query.coordinator = new mongoose.Types.ObjectId(coordinatorId);
   if (tutorId) query.tutor = new mongoose.Types.ObjectId(tutorId);
+  if (noCoordinator) {
+    query.$or = [
+      { coordinator: { $exists: false } },
+      { coordinator: null },
+    ];
+  }
 
   const skip = (page - 1) * limit;
   const sortField = sortBy || 'createdAt';
@@ -348,12 +444,26 @@ export const getFinalClassById = async (classId: string) => {
 
 export const updateFinalClass = async (
   classId: string,
-  updateData: Partial<{ schedule: { daysOfWeek?: string[]; timeSlot?: string }; totalSessions: number; endDate?: Date; notes?: string }>
+  updateData: Partial<{
+    schedule: { daysOfWeek?: string[]; timeSlot?: string };
+    totalSessions: number;
+    endDate?: Date;
+    notes?: string;
+    coordinatorUserId?: string;
+  }>
 ) => {
   const cls = await FinalClass.findById(classId);
   if (!cls) throw new ErrorResponse('Final class not found', 404);
   if (cls.status !== FINAL_CLASS_STATUS.ACTIVE) {
     throw new ErrorResponse('Cannot update completed/cancelled class', 400);
+  }
+  if (updateData.coordinatorUserId) {
+    const coordinator = await Coordinator.findOne({ user: updateData.coordinatorUserId });
+    if (!coordinator) throw new ErrorResponse('Coordinator not found', 404);
+    if (!coordinator.isActive) throw new ErrorResponse('Coordinator is not active', 400);
+    const availableCapacity = (coordinator.maxClassCapacity || 0) - (coordinator.activeClassesCount || 0);
+    if (availableCapacity <= 0) throw new ErrorResponse('Coordinator has reached maximum capacity', 400);
+    (cls as any).coordinator = new mongoose.Types.ObjectId(updateData.coordinatorUserId);
   }
   if (updateData.schedule && !('totalSessions' in updateData)) {
     const mergedSchedule: { daysOfWeek?: string[]; timeSlot?: string } = {
@@ -363,7 +473,9 @@ export const updateFinalClass = async (
     cls.totalSessions = computeMonthlyTotalSessions(cls.startDate, mergedSchedule);
     (cls as any).schedule = mergedSchedule;
   } else {
-    Object.assign(cls, updateData);
+    // Exclude coordinatorUserId helper field from direct assignment
+    const { coordinatorUserId, ...rest } = updateData as any;
+    Object.assign(cls, rest);
   }
   await cls.save();
   await cls.populate([

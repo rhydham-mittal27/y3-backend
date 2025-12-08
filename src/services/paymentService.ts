@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import Payment from '../models/Payment';
 import Attendance from '../models/Attendance';
 import FinalClass from '../models/FinalClass';
+import Student from '../models/Student';
 import ErrorResponse from '../utils/errorResponse';
 import { PAYMENT_STATUS, PAYMENT_METHOD, ATTENDANCE_STATUS, MANAGER_ACTION_TYPE } from '../config/constants';
 import { logError } from '../utils/logger';
@@ -68,7 +69,25 @@ export const createAdvancePaymentForFinalClass = async (finalClassId: string, cr
 
   const cls: any = finalClass as any;
   const lead: any = cls.classLead;
-  const amount = lead?.paymentAmount;
+  let amount = lead?.paymentAmount;
+
+  // Fallback: use tutorFees if paymentAmount is not set
+  if (!amount || amount <= 0) {
+    if (lead?.tutorFees && lead.tutorFees > 0) {
+      amount = lead.tutorFees;
+    }
+  }
+
+  // Fallback for group leads: sum tutorFees from studentDetails
+  if ((!amount || amount <= 0) && Array.isArray(lead?.studentDetails) && lead.studentDetails.length > 0) {
+    const totalTutorFees = (lead.studentDetails as any[]).reduce(
+      (sum: number, s: any) => sum + (Number(s.tutorFees) || 0),
+      0
+    );
+    if (totalTutorFees > 0) {
+      amount = totalTutorFees;
+    }
+  }
 
   if (!amount || amount <= 0) {
     throw new ErrorResponse('Advance payment amount not set for this class lead', 400);
@@ -229,6 +248,14 @@ export const updatePaymentStatus = async (
 
       // @ts-ignore - Ignore TypeScript error for student.parent access
       if (finalClass?.student?.parent?.toString() !== currentUser.id) {
+        throw new ErrorResponse('Not authorized to update this payment', 403);
+      }
+    }
+
+    // Check if the current user is a student trying to update the payment
+    if (currentUser?.role === 'student') {
+      const student = await Student.findById(currentUser.id).session(session);
+      if (!student || String(student.finalClass) !== String(payment.finalClass)) {
         throw new ErrorResponse('Not authorized to update this payment', 403);
       }
     }

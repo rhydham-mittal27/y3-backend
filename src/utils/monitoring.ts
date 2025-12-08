@@ -4,7 +4,7 @@
  */
 
 import { Request, Response } from 'express';
-import { logError, logInfo, logWarn } from './logger';
+import { logWarn } from './logger';
 import { getCorrelationIdFromRequest } from '../middlewares/correlationId';
 
 interface PerformanceMetrics {
@@ -24,6 +24,20 @@ interface ErrorMetrics {
   timestamp: Date;
   correlationId?: string;
   stack?: string;
+}
+
+interface PerformanceStats {
+  totalRequests: number;
+  averageResponseTime: number;
+  slowestEndpoints: Array<{ endpoint: string; method: string; avgDuration: number }>;
+  requestCounts: Record<string, number>;
+}
+
+interface ErrorStats {
+  totalErrors: number;
+  errorRate: number;
+  mostCommonErrors: Array<{ endpoint: string; method: string; count: number }>;
+  recentErrors: ErrorMetrics[];
 }
 
 class MonitoringService {
@@ -100,12 +114,7 @@ class MonitoringService {
   /**
    * Get performance statistics
    */
-  getPerformanceStats(): {
-    totalRequests: number;
-    averageResponseTime: number;
-    slowestEndpoints: Array<{ endpoint: string; method: string; avgDuration: number }>;
-    requestCounts: Record<string, number>;
-  } {
+  getPerformanceStats(): PerformanceStats {
     if (this.performanceMetrics.length === 0) {
       return {
         totalRequests: 0,
@@ -157,12 +166,7 @@ class MonitoringService {
   /**
    * Get error statistics
    */
-  getErrorStats(): {
-    totalErrors: number;
-    errorRate: number;
-    mostCommonErrors: Array<{ endpoint: string; method: string; count: number }>;
-    recentErrors: ErrorMetrics[];
-  } {
+  getErrorStats(): ErrorStats {
     const totalRequests = this.performanceMetrics.length;
     const totalErrors = this.errorMetrics.length;
     const errorRate = totalRequests > 0 ? (totalErrors / totalRequests) * 100 : 0;
@@ -197,8 +201,8 @@ class MonitoringService {
   getHealthMetrics(): {
     uptime: number;
     memory: NodeJS.MemoryUsage;
-    performance: ReturnType<typeof this.getPerformanceStats>;
-    errors: ReturnType<typeof this.getErrorStats>;
+    performance: PerformanceStats;
+    errors: ErrorStats;
   } {
     return {
       uptime: process.uptime(),

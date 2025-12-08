@@ -50,6 +50,8 @@ try {
 
 const app = express();
 
+const isRateLimitingEnabled = process.env.DISABLE_RATE_LIMITING !== 'true';
+
 // Connect Database
 connectDB();
 
@@ -78,7 +80,9 @@ app.use(monitoringMiddleware);
 app.use(sanitizeInput);
 
 // Rate limiting - apply general limiter to all routes
-app.use(generalLimiter);
+if (isRateLimitingEnabled) {
+  app.use(generalLimiter);
+}
 
 // Static file serving for uploads
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
@@ -123,29 +127,57 @@ app.get('/api/metrics', getHealthMetrics);
 
 // Routes with rate limiting
 // Authentication routes - strict rate limiting
-app.use('/api/auth', authLimiter, authRoutes);
+if (isRateLimitingEnabled) {
+  app.use('/api/auth', authLimiter, authRoutes);
+} else {
+  app.use('/api/auth', authRoutes);
+}
 
 // Write operations - moderate rate limiting
-app.use('/api/leads', writeLimiter, leadRoutes);
-app.use('/api/announcements', writeLimiter, announcementRoutes);
-app.use('/api/notifications', writeLimiter, notificationRoutes);
-app.use('/api/demos', writeLimiter, demoRoutes);
-app.use('/api/coordinators', writeLimiter, coordinatorRoutes);
-app.use('/api/final-classes', writeLimiter, finalClassRoutes);
-app.use('/api/attendance', writeLimiter, attendanceRoutes);
-app.use('/api/payments', writeLimiter, paymentRoutes);
-app.use('/api/tutors', writeLimiter, tutorRoutes);
-app.use('/api/managers', writeLimiter, managerRoutes);
-app.use('/api/admin', writeLimiter, adminRoutes);
-app.use('/api/tests', writeLimiter, testRoutes);
-app.use('/api/v1/tutor-leads', writeLimiter, tutorLeadRoutes);
-app.use('/api/students', writeLimiter, studentRoutes);
-app.use('/api/student-auth', authLimiter, studentAuthRoutes);
-app.use('/api/settings', writeLimiter, settingsRoutes);
-app.use('/api/notes', writeLimiter, noteRoutes);
+if (isRateLimitingEnabled) {
+  app.use('/api/leads', writeLimiter, leadRoutes);
+  app.use('/api/announcements', writeLimiter, announcementRoutes);
+  app.use('/api/notifications', writeLimiter, notificationRoutes);
+  app.use('/api/demos', writeLimiter, demoRoutes);
+  app.use('/api/coordinators', writeLimiter, coordinatorRoutes);
+  app.use('/api/final-classes', writeLimiter, finalClassRoutes);
+  app.use('/api/attendance', writeLimiter, attendanceRoutes);
+  app.use('/api/payments', writeLimiter, paymentRoutes);
+  app.use('/api/tutors', writeLimiter, tutorRoutes);
+  app.use('/api/managers', writeLimiter, managerRoutes);
+  app.use('/api/admin', writeLimiter, adminRoutes);
+  app.use('/api/tests', writeLimiter, testRoutes);
+  app.use('/api/v1/tutor-leads', writeLimiter, tutorLeadRoutes);
+  app.use('/api/students', writeLimiter, studentRoutes);
+  app.use('/api/student-auth', authLimiter, studentAuthRoutes);
+  app.use('/api/settings', writeLimiter, settingsRoutes);
+  app.use('/api/notes', writeLimiter, noteRoutes);
+} else {
+  app.use('/api/leads', leadRoutes);
+  app.use('/api/announcements', announcementRoutes);
+  app.use('/api/notifications', notificationRoutes);
+  app.use('/api/demos', demoRoutes);
+  app.use('/api/coordinators', coordinatorRoutes);
+  app.use('/api/final-classes', finalClassRoutes);
+  app.use('/api/attendance', attendanceRoutes);
+  app.use('/api/payments', paymentRoutes);
+  app.use('/api/tutors', tutorRoutes);
+  app.use('/api/managers', managerRoutes);
+  app.use('/api/admin', adminRoutes);
+  app.use('/api/tests', testRoutes);
+  app.use('/api/v1/tutor-leads', tutorLeadRoutes);
+  app.use('/api/students', studentRoutes);
+  app.use('/api/student-auth', studentAuthRoutes);
+  app.use('/api/settings', settingsRoutes);
+  app.use('/api/notes', noteRoutes);
+}
 
 // Read operations - lenient rate limiting
-app.use('/api/dashboard', readLimiter, dashboardRoutes);
+if (isRateLimitingEnabled) {
+  app.use('/api/dashboard', readLimiter, dashboardRoutes);
+} else {
+  app.use('/api/dashboard', dashboardRoutes);
+}
 
 // Not Found Middleware
 app.use(notFound);

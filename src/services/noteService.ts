@@ -1,11 +1,44 @@
 import mongoose from 'mongoose';
 import Note from '../models/Note';
 import FinalClass from '../models/FinalClass';
+import Student from '../models/Student';
 import ErrorResponse from '../utils/errorResponse';
 import cloudinary, { CLOUDINARY_FOLDER } from '../config/cloudinary';
 
 export const listNotes = async (ownerId: string, parentId?: string | null) => {
   const query: any = { owner: new mongoose.Types.ObjectId(ownerId) };
+  if (parentId) {
+    query.parent = new mongoose.Types.ObjectId(parentId);
+  } else {
+    query.parent = null;
+  }
+
+  const notes = await Note.find(query).sort({ type: -1, name: 1 }).lean();
+
+  return notes.map((n: any) => ({
+    id: String(n._id),
+    name: n.name,
+    type: n.type,
+    mimeType: n.mimeType,
+    grade: n.grade,
+    url: n.url,
+  }));
+};
+
+export const listNotesForStudent = async (studentUserId: string, parentId?: string | null) => {
+  if (!mongoose.isValidObjectId(studentUserId)) {
+    return [];
+  }
+
+  const student = await Student.findById(studentUserId).select('grade').lean();
+  if (!student || !student.grade) {
+    return [];
+  }
+
+  const query: any = {
+    grade: student.grade,
+  };
+
   if (parentId) {
     query.parent = new mongoose.Types.ObjectId(parentId);
   } else {

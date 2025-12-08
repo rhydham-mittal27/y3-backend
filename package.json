@@ -15,7 +15,9 @@
     "backup:db": "ts-node scripts/backupDatabase.ts",
     "seed:mass": "ts-node src/scripts/massSeed.ts",
     "seed:large": "ts-node src/scripts/seedLargeDemo.ts",
-    "seed:admin": "ts-node src/scripts/seedAdmin.ts"
+    "seed:admin": "ts-node src/scripts/seedAdmin.ts",
+    "seed:coordinators": "ts-node src/scripts/seedCoordinators.ts",
+    "seed:advance-payments": "ts-node src/scripts/seedAdvancePaymentsForExistingClasses.ts"
   },
   "dependencies": {
     "@faker-js/faker": "^10.1.0",
