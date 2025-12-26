@@ -37,6 +37,7 @@ import {
 } from '../validators/tutorValidator';
 import protect from '../middlewares/auth';
 import authorize from '../middlewares/authorize';
+import { requireManagerPermissions } from '../middlewares/managerPermissions';
 import { uploadDocument } from '../middlewares/fileUpload';
 import { USER_ROLES } from '../config/constants';
 
@@ -61,6 +62,7 @@ router.get('/my-profile', authorize(USER_ROLES.TUTOR), getMyProfile);
 router.get(
   '/pending-verifications',
   authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN),
+  requireManagerPermissions('canVerifyTutors'),
   getPendingVerifications
 );
 
@@ -123,6 +125,7 @@ router.delete(
 router.patch(
   '/:id/verification-status',
   authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN),
+  requireManagerPermissions('canVerifyTutors'),
   updateVerificationStatusValidation,
   updateVerificationStatusController
 );

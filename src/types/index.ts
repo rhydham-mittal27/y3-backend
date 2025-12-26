@@ -160,6 +160,7 @@ export interface ITutor {
   experienceHours: number;
   subjects: string[];
   qualifications?: string[];
+  extracurricularActivities?: string[];
   ratings: number;
   totalRatings: number;
   classesAssigned: number;

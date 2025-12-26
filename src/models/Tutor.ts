@@ -17,6 +17,7 @@ export interface ITutorDocument extends Document {
   experienceHours: number;
   subjects: string[];
   qualifications?: string[];
+  extracurricularActivities?: string[];
   ratings: number;
   totalRatings: number;
   classesAssigned: number;
@@ -91,6 +92,7 @@ const TutorSchema: Schema<ITutorDocument> = new Schema<ITutorDocument>(
     experienceHours: { type: Number, required: true, default: 0 },
     subjects: { type: [String], required: true },
     qualifications: { type: [String] },
+    extracurricularActivities: { type: [String], default: [] },
     ratings: { type: Number, default: 0, min: 0, max: 5 },
     totalRatings: { type: Number, default: 0 },
     classesAssigned: { type: Number, default: 0 },

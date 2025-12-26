@@ -7,6 +7,7 @@ import { ATTENDANCE_STATUS, FINAL_CLASS_STATUS, STUDENT_ATTENDANCE_STATUS } from
 import { createPayment } from './paymentService';
 import logger from '../utils/logger';
 import { createNotificationWithPreferences } from './notificationService';
+import { upsertAttendanceSheet, submitAttendanceSheet } from './attendanceSheetService';
 
 export const createAttendance = async (params: {
   finalClassId: string;
@@ -89,7 +90,36 @@ export const createAttendance = async (params: {
   });
 
   // Since attendance is auto-approved in the new flow, increment completed sessions for this class
-  await FinalClass.findByIdAndUpdate(cls._id, { $inc: { completedSessions: 1 } });
+  const updatedClass = await FinalClass.findByIdAndUpdate(
+    cls._id,
+    { $inc: { completedSessions: 1 } },
+    { new: true }
+  );
+
+  // If this attendance completes all planned sessions for the class, auto-generate and submit
+  // a monthly attendance sheet for the month of this session.
+  try {
+    const totalSessions = (updatedClass as any)?.totalSessions || cls.totalSessions || 0;
+    const completedSessions = (updatedClass as any)?.completedSessions || (cls.completedSessions || 0) + 1;
+    if (totalSessions > 0 && completedSessions >= totalSessions) {
+      const sessionDt = new Date(sessionDate);
+      const month = sessionDt.getMonth() + 1;
+      const year = sessionDt.getFullYear();
+
+      const sheet = await upsertAttendanceSheet({
+        finalClassId,
+        month,
+        year,
+        createdByUserId: submittedBy,
+      });
+
+      if (sheet && (sheet as any)._id) {
+        await submitAttendanceSheet(String((sheet as any)._id), submittedBy);
+      }
+    }
+  } catch (e) {
+    logger.error(`Failed to auto-generate/submit attendance sheet for class ${finalClassId}: ${String(e)}`);
+  }
 
   await attendance.populate([
     { path: 'finalClass' },

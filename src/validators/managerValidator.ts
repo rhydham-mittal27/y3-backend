@@ -3,13 +3,21 @@ import { MANAGER_ACTION_TYPE } from '../config/constants';
 
 export const createManagerValidation = [
   body('userId').notEmpty().withMessage('User ID is required').isMongoId().withMessage('Invalid user ID'),
-  body('department').optional().trim().isLength({ min: 2, max: 100 }).withMessage('Department must be 2-100 characters'),
+  body('permissions').optional().isObject().withMessage('Permissions must be an object'),
+  body('permissions.canViewSiteLeads').optional().isBoolean(),
+  body('permissions.canVerifyTutors').optional().isBoolean(),
+  body('permissions.canCreateLeads').optional().isBoolean(),
+  body('permissions.canManagePayments').optional().isBoolean(),
 ];
 
 export const updateManagerValidation = [
   param('id').isMongoId().withMessage('Invalid manager ID'),
-  body('department').optional().trim().isLength({ min: 2, max: 100 }),
   body('isActive').optional().isBoolean().withMessage('isActive must be boolean'),
+  body('permissions').optional().isObject().withMessage('Permissions must be an object'),
+  body('permissions.canViewSiteLeads').optional().isBoolean(),
+  body('permissions.canVerifyTutors').optional().isBoolean(),
+  body('permissions.canCreateLeads').optional().isBoolean(),
+  body('permissions.canManagePayments').optional().isBoolean(),
 ];
 
 export const managerIdValidation = [param('id').isMongoId().withMessage('Invalid manager ID')];

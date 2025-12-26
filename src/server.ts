@@ -1,5 +1,6 @@
 import dotenv from 'dotenv';
 import express from 'express';
+
 import helmet from 'helmet';
 import cors from 'cors';
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -17,14 +18,19 @@ import mongoose from 'mongoose';
 import path from 'path';
 import { logInfo } from './utils/logger';
 import { getHealthMetrics } from './utils/monitoring';
+import swaggerUi from 'swagger-ui-express';
+import { swaggerSpec } from './config/swagger';
+
 import authRoutes from './routes/authRoutes';
 import leadRoutes from './routes/leadRoutes';
+import publicLeadRoutes from './routes/publicLeadRoutes';
 import announcementRoutes from './routes/announcementRoutes';
 import notificationRoutes from './routes/notificationRoutes';
 import demoRoutes from './routes/demoRoutes';
 import coordinatorRoutes from './routes/coordinatorRoutes';
 import finalClassRoutes from './routes/finalClassRoutes';
 import attendanceRoutes from './routes/attendanceRoutes';
+import attendanceSheetRoutes from './routes/attendanceSheetRoutes';
 import paymentRoutes from './routes/paymentRoutes';
 import tutorRoutes from './routes/tutorRoutes';
 import dashboardRoutes from './routes/dashboardRoutes';
@@ -36,6 +42,8 @@ import studentRoutes from './routes/studentRoutes';
 import studentAuthRoutes from './routes/studentAuth';
 import settingsRoutes from './routes/settingsRoutes';
 import noteRoutes from './routes/noteRoutes';
+import subjectRoutes from './routes/subjectRoutes';
+import optionRoutes from './routes/optionRoutes';
 
 // Load environment variables
 dotenv.config();
@@ -125,6 +133,15 @@ app.get('/api/health', async (_req, res) => {
 // Monitoring metrics endpoint
 app.get('/api/metrics', getHealthMetrics);
 
+// Swagger API documentation
+if (process.env.NODE_ENV !== 'production' || process.env.ENABLE_SWAGGER === 'true') {
+  app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+  app.get('/api/docs-json', async (_req, res) => {
+    res.setHeader('Content-Type', 'application/json');
+    return res.send(swaggerSpec);
+  });
+}
+
 // Routes with rate limiting
 // Authentication routes - strict rate limiting
 if (isRateLimitingEnabled) {
@@ -136,12 +153,14 @@ if (isRateLimitingEnabled) {
 // Write operations - moderate rate limiting
 if (isRateLimitingEnabled) {
   app.use('/api/leads', writeLimiter, leadRoutes);
+  app.use('/api/public/leads', writeLimiter, publicLeadRoutes);
   app.use('/api/announcements', writeLimiter, announcementRoutes);
   app.use('/api/notifications', writeLimiter, notificationRoutes);
   app.use('/api/demos', writeLimiter, demoRoutes);
   app.use('/api/coordinators', writeLimiter, coordinatorRoutes);
   app.use('/api/final-classes', writeLimiter, finalClassRoutes);
   app.use('/api/attendance', writeLimiter, attendanceRoutes);
+  app.use('/api/attendance-sheets', writeLimiter, attendanceSheetRoutes);
   app.use('/api/payments', writeLimiter, paymentRoutes);
   app.use('/api/tutors', writeLimiter, tutorRoutes);
   app.use('/api/managers', writeLimiter, managerRoutes);
@@ -152,14 +171,18 @@ if (isRateLimitingEnabled) {
   app.use('/api/student-auth', authLimiter, studentAuthRoutes);
   app.use('/api/settings', writeLimiter, settingsRoutes);
   app.use('/api/notes', writeLimiter, noteRoutes);
+  app.use('/api/subjects', writeLimiter, subjectRoutes);
+  app.use('/api/options', writeLimiter, optionRoutes);
 } else {
   app.use('/api/leads', leadRoutes);
+  app.use('/api/public/leads', publicLeadRoutes);
   app.use('/api/announcements', announcementRoutes);
   app.use('/api/notifications', notificationRoutes);
   app.use('/api/demos', demoRoutes);
   app.use('/api/coordinators', coordinatorRoutes);
   app.use('/api/final-classes', finalClassRoutes);
   app.use('/api/attendance', attendanceRoutes);
+  app.use('/api/attendance-sheets', attendanceSheetRoutes);
   app.use('/api/payments', paymentRoutes);
   app.use('/api/tutors', tutorRoutes);
   app.use('/api/managers', managerRoutes);
@@ -170,6 +193,8 @@ if (isRateLimitingEnabled) {
   app.use('/api/student-auth', studentAuthRoutes);
   app.use('/api/settings', settingsRoutes);
   app.use('/api/notes', noteRoutes);
+  app.use('/api/subjects', subjectRoutes);
+  app.use('/api/options', optionRoutes);
 }
 
 // Read operations - lenient rate limiting

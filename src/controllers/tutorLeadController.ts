@@ -28,8 +28,8 @@ export const createTutorLeadRegistrationController = asyncHandler(async (req: Re
     subjects,
     city,
     preferredAreas,
-    pincode,
     password,
+    extracurricularActivities,
   } = req.body as {
     fullName: string;
     gender?: string;
@@ -40,8 +40,8 @@ export const createTutorLeadRegistrationController = asyncHandler(async (req: Re
     subjects: string[];
     city: string;
     preferredAreas: string[];
-    pincode?: string;
     password: string;
+    extracurricularActivities?: string[];
   };
 
   // Basic validation
@@ -75,7 +75,6 @@ export const createTutorLeadRegistrationController = asyncHandler(async (req: Re
   if (Array.isArray(preferredAreas)) preferredAreas.forEach((a: string) => {
     if (a && a.trim()) preferredLocations.push(a.trim());
   });
-  if (pincode) preferredLocations.push(String(pincode));
 
   // Determine teacherId: prefer client's provided teacherId, otherwise generate server-side.
   let teacherIdToSave = (req.body && (req.body as any).teacherId) ? String((req.body as any).teacherId).trim() : '';
@@ -109,6 +108,9 @@ export const createTutorLeadRegistrationController = asyncHandler(async (req: Re
     qualifications: qualification ? [qualification] : [],
     preferredLocations,
   };
+  if (Array.isArray(extracurricularActivities) && extracurricularActivities.length) {
+    tutorPayload.extracurricularActivities = extracurricularActivities.map(String);
+  }
   if (teacherIdToSave) tutorPayload.teacherId = teacherIdToSave;
 
   const tutor = await Tutor.create(tutorPayload);

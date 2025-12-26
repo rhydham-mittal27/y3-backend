@@ -21,8 +21,16 @@ import {
 export const createManagerProfileController = asyncHandler(async (req: AuthRequest, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) throw new ErrorResponse(errors.array()[0].msg, 400);
-  const { userId, department } = req.body as { userId: string; department?: string };
-  const manager = await createManagerProfile(userId, department);
+  const { userId, permissions } = req.body as {
+    userId: string;
+    permissions?: {
+      canViewSiteLeads?: boolean;
+      canVerifyTutors?: boolean;
+      canCreateLeads?: boolean;
+      canManagePayments?: boolean;
+    };
+  };
+  const manager = await createManagerProfile(userId, permissions);
   return res.status(201).json(successResponse(manager, 'Manager profile created successfully'));
 });
 
@@ -58,7 +66,15 @@ export const updateManagerProfileController = asyncHandler(async (req: AuthReque
   const errors = validationResult(req);
   if (!errors.isEmpty()) throw new ErrorResponse(errors.array()[0].msg, 400);
   const managerId = req.params.id as string;
-  const updateData = req.body as Partial<{ department: string; isActive: boolean }>;
+  const updateData = req.body as Partial<{
+    isActive: boolean;
+    permissions: {
+      canViewSiteLeads?: boolean;
+      canVerifyTutors?: boolean;
+      canCreateLeads?: boolean;
+      canManagePayments?: boolean;
+    };
+  }>;
   const manager = await updateManagerProfile(managerId, updateData);
   return res.json(successResponse(manager, 'Manager profile updated successfully'));
 });

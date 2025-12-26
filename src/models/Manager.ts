@@ -18,6 +18,12 @@ export interface IManagerDocument extends Document {
   updatedAt: Date;
   conversionRate?: number;
   averageRevenuePerClass?: number;
+  permissions?: {
+    canViewSiteLeads?: boolean;
+    canVerifyTutors?: boolean;
+    canCreateLeads?: boolean;
+    canManagePayments?: boolean;
+  };
   settings?: {
     dashboardPreferences?: {
       defaultView?: 'overview' | 'leads' | 'classes' | 'revenue';
@@ -57,6 +63,15 @@ const ManagerSchema: Schema<IManagerDocument> = new Schema<IManagerDocument>(
     department: { type: String },
     isActive: { type: Boolean, default: true },
     lastActivityAt: { type: Date },
+    permissions: {
+      type: {
+        canViewSiteLeads: { type: Boolean, default: true },
+        canVerifyTutors: { type: Boolean, default: true },
+        canCreateLeads: { type: Boolean, default: true },
+        canManagePayments: { type: Boolean, default: true },
+      },
+      default: {},
+    },
     settings: {
       type: {
         dashboardPreferences: {

@@ -307,9 +307,20 @@ export const uploadDocument = async (
     resourceType: uploadResult.resource_type,
   } as any;
   try {
+    const previousStatus = tutor.verificationStatus as VERIFICATION_STATUS;
+
     tutor.documents.push(doc);
-    if (tutor.documents.length === 1 && tutor.verificationStatus === VERIFICATION_STATUS.PENDING) {
+
+    // If this is the first ever document and tutor was pending, move to UNDER_REVIEW
+    if (tutor.documents.length === 1 && previousStatus === VERIFICATION_STATUS.PENDING) {
       tutor.verificationStatus = VERIFICATION_STATUS.UNDER_REVIEW;
+    }
+
+    // If verification was previously rejected, any new upload should trigger re-review
+    if (previousStatus === VERIFICATION_STATUS.REJECTED) {
+      tutor.verificationStatus = VERIFICATION_STATUS.UNDER_REVIEW;
+      tutor.verifiedBy = undefined as any;
+      tutor.verifiedAt = undefined;
     }
 
     await tutor.save();

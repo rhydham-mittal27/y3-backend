@@ -11,7 +11,15 @@ import ErrorResponse from '../utils/errorResponse';
 import dashboardService from './dashboardService';
 import { CLASS_LEAD_STATUS, MANAGER_ACTION_TYPE, PAYMENT_STATUS, USER_ROLES } from '../config/constants';
 
-export const createManagerProfile = async (userId: string, department?: string) => {
+export const createManagerProfile = async (
+  userId: string,
+  permissions?: {
+    canViewSiteLeads?: boolean;
+    canVerifyTutors?: boolean;
+    canCreateLeads?: boolean;
+    canManagePayments?: boolean;
+  }
+) => {
   const user = await User.findById(userId);
   if (!user) throw new ErrorResponse('User not found', 404);
   if (String(user.role) !== USER_ROLES.MANAGER) throw new ErrorResponse('User is not a MANAGER', 400);
@@ -19,7 +27,11 @@ export const createManagerProfile = async (userId: string, department?: string) 
   const existing = await Manager.findOne({ user: userId });
   if (existing) throw new ErrorResponse('Manager profile already exists', 409);
 
-  const mgr = await Manager.create({ user: new mongoose.Types.ObjectId(userId), department, joiningDate: new Date() });
+  const mgr = await Manager.create({
+    user: new mongoose.Types.ObjectId(userId),
+    joiningDate: new Date(),
+    permissions,
+  });
   await mgr.populate({ path: 'user', select: 'name email role phone' });
   return mgr;
 };
@@ -66,7 +78,15 @@ export const getManagerByUserId = async (userId: string) => {
 
 export const updateManagerProfile = async (
   managerId: string,
-  updateData: Partial<{ department: string; isActive: boolean }>
+  updateData: Partial<{
+    isActive: boolean;
+    permissions: {
+      canViewSiteLeads?: boolean;
+      canVerifyTutors?: boolean;
+      canCreateLeads?: boolean;
+      canManagePayments?: boolean;
+    };
+  }>
 ) => {
   const mgr = await Manager.findById(managerId);
   if (!mgr) throw new ErrorResponse('Manager not found', 404);
