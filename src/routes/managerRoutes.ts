@@ -15,6 +15,9 @@ import {
   getMyActivityLog,
   deleteManagerProfileController,
   getManagerTodoListController,
+  uploadManagerDocumentsController,
+  uploadManagerDocumentController,
+  getEligibleManagerUsersController,
 } from '../controllers/managerController';
 import {
   createManagerValidation,
@@ -28,27 +31,30 @@ import {
 import protect from '../middlewares/auth';
 import authorize from '../middlewares/authorize';
 import { USER_ROLES } from '../config/constants';
-import { getEligibleUsers } from '../controllers/coordinatorController';
+
+import { uploadDocument } from '../middlewares/fileUpload';
 
 const router = Router();
 
 router.use(protect);
 
 router.post('/', authorize(USER_ROLES.ADMIN), createManagerValidation, createManagerProfileController);
-router.get('/', authorize(USER_ROLES.ADMIN), getManagers);
-router.get('/my-profile', authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN), getMyProfile);
+router.get('/', authorize(USER_ROLES.ADMIN, USER_ROLES.MANAGER, USER_ROLES.COORDINATOR), getManagers);
+router.get('/my-profile', authorize(USER_ROLES.MANAGER), getMyProfile);
 router.get('/my-metrics', authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN), metricsQueryValidation, getMyMetrics);
-router.get('/my-activity-log', authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN), activityLogValidation, getMyActivityLog);
-router.get('/todo-list/:id', authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN), managerIdValidation, getManagerTodoListController);
+router.get('/my-activity-log', authorize(USER_ROLES.MANAGER), activityLogValidation, getMyActivityLog);
+router.get('/todo-list', authorize(USER_ROLES.MANAGER), getManagerTodoListController);
 router.get('/user/:userId', authorize(USER_ROLES.ADMIN, USER_ROLES.MANAGER), userIdParamValidation, getManagerByUser);
+router.post('/upload-documents', authorize(USER_ROLES.MANAGER), uploadManagerDocumentsController);
+router.post('/upload-document', authorize(USER_ROLES.MANAGER), uploadDocument, uploadManagerDocumentController);
 // Specific alias before generic ':id' routes to avoid CastError
-router.get('/eligible-users', authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN), getEligibleUsers);
+router.get('/eligible-users', authorize(USER_ROLES.ADMIN), getEligibleManagerUsersController);
 router.get('/:id', authorize(USER_ROLES.ADMIN, USER_ROLES.MANAGER), managerIdValidation, getManager);
 router.get('/:id/metrics', authorize(USER_ROLES.ADMIN, USER_ROLES.MANAGER), managerIdValidation, metricsQueryValidation, getManagerMetricsController);
 router.get('/:id/performance-history', authorize(USER_ROLES.ADMIN, USER_ROLES.MANAGER), performanceHistoryValidation, getManagerPerformanceHistoryController);
 router.get('/:id/activity-log', authorize(USER_ROLES.ADMIN, USER_ROLES.MANAGER), activityLogValidation, getManagerActivityLogController);
 router.get('/:id/contribution', authorize(USER_ROLES.ADMIN, USER_ROLES.MANAGER), managerIdValidation, metricsQueryValidation, getManagerContributionController);
-router.put('/:id', authorize(USER_ROLES.ADMIN), updateManagerValidation, updateManagerProfileController);
+router.put('/:id', authorize(USER_ROLES.ADMIN, USER_ROLES.MANAGER), updateManagerValidation, updateManagerProfileController);
 router.patch('/:managerId/settings', authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN), updateManagerSettingsController);
 router.delete('/:id', authorize(USER_ROLES.ADMIN), managerIdValidation, deleteManagerProfileController);
 

@@ -16,6 +16,8 @@ import {
   downloadPaymentReceipt,
   getMyPaymentsForParent,
   generateAdvancePaymentForClass,
+  getFilterOptions,
+  createManualPaymentRecord,
 } from '../controllers/paymentController';
 import {
   createPaymentValidation,
@@ -25,6 +27,7 @@ import {
   tutorIdParamValidation,
   classIdParamValidation,
   sendPaymentReminderValidation,
+  createManualPaymentValidation,
 } from '../validators/paymentValidator';
 import protect from '../middlewares/auth';
 import authorize from '../middlewares/authorize';
@@ -41,6 +44,14 @@ router.post(
   requireManagerPermissions('canManagePayments'),
   createPaymentValidation,
   createPaymentRecord
+);
+
+router.post(
+  '/manual',
+  authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN),
+  requireManagerPermissions('canManagePayments'),
+  createManualPaymentValidation,
+  createManualPaymentRecord
 );
 
 router.get(
@@ -62,6 +73,14 @@ router.get(
   requireManagerPermissions('canManagePayments'),
   exportPaymentsCSV
 );
+
+router.get(
+  '/filters',
+  authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN),
+  requireManagerPermissions('canManagePayments'),
+  getFilterOptions
+);
+
 router.get(
   '/export/pdf',
   authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN),

@@ -14,6 +14,15 @@ export const getNotesController = asyncHandler(async (req: AuthRequest, res: Res
   return res.json(successResponse(items));
 });
 
+export const getTutorNotesController = asyncHandler(async (req: AuthRequest, res: Response) => {
+  const ownerId = String(req.user!.id);
+  const parentIdRaw = (req.query.parentId as string) || '';
+  const parentId = parentIdRaw && parentIdRaw.trim().length > 0 ? parentIdRaw.trim() : null;
+  const items = await listNotes(ownerId, parentId);
+  return res.json(successResponse(items));
+});
+
+
 export const getParentNotesController = asyncHandler(async (req: AuthRequest, res: Response) => {
   const parentUserId = String(req.user!.id);
   const parentIdRaw = (req.query.parentId as string) || '';

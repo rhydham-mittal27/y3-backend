@@ -22,6 +22,20 @@ export interface IAttendanceDocument extends Document {
   rejectedAt?: Date;
   rejectionReason?: string;
   notes?: string;
+  teachingHours?: number;
+  absentReason?: string;
+  resources: Array<{
+    name: string;
+    url: string;
+    type: 'QUESTION' | 'REPORT' | 'WORKSHEET';
+  }>;
+  swotAnalysis?: {
+    strengths: string;
+    weaknesses: string;
+    opportunities: string;
+    threats: string;
+  };
+  studentImprovementScore?: number;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -51,6 +65,25 @@ const AttendanceSchema: Schema<IAttendanceDocument> = new Schema<IAttendanceDocu
     rejectedAt: { type: Date },
     rejectionReason: { type: String, maxlength: 500 },
     notes: { type: String, maxlength: 1000 },
+    teachingHours: { type: Number, default: 0 },
+    absentReason: { type: String, maxlength: 500 },
+    resources: {
+      type: [
+        {
+          name: { type: String, required: true },
+          url: { type: String, required: true },
+          type: { type: String, enum: ['QUESTION', 'REPORT', 'WORKSHEET'], required: true },
+        },
+      ],
+      default: [],
+    },
+    swotAnalysis: {
+      strengths: { type: String, default: '' },
+      weaknesses: { type: String, default: '' },
+      opportunities: { type: String, default: '' },
+      threats: { type: String, default: '' },
+    },
+    studentImprovementScore: { type: Number, min: 0, max: 100, default: 0 },
   },
   { timestamps: true }
 );

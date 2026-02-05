@@ -3,6 +3,8 @@ import Attendance from '../models/Attendance';
 import FinalClass from '../models/FinalClass';
 import AttendanceSheet from '../models/AttendanceSheet';
 import ErrorResponse from '../utils/errorResponse';
+import { ATTENDANCE_STATUS } from '../config/constants';
+import { createPaymentForSheet } from './paymentService';
 
 export const upsertAttendanceSheet = async (params: {
   finalClassId: string;
@@ -43,7 +45,7 @@ export const upsertAttendanceSheet = async (params: {
   const presentCount = attendances.filter((a: any) => String(a.studentAttendanceStatus) === 'PRESENT').length;
   const absentCount = attendances.filter((a: any) => String(a.studentAttendanceStatus) === 'ABSENT').length;
 
-  const totalSessionsPlanned = finalClass.totalSessions || 0;
+  const totalSessionsPlanned = finalClass.classesPerMonth || finalClass.totalSessions || 0;
 
   const periodLabel = `${year}-${String(month).padStart(2, '0')}`;
 
@@ -116,10 +118,24 @@ export const getCoordinatorPendingSheets = async (coordinatorUserId: string) => 
   return attendances;
 };
 
-export const approveAttendanceSheet = async (sheetId: string, coordinatorUserId: string) => {
+export const getAllPendingSheets = async () => {
+  const sheets = await AttendanceSheet.find({
+    status: 'PENDING',
+  })
+    .sort({ year: -1, month: -1 })
+    .populate([
+      { path: 'finalClass' },
+      { path: 'coordinator', select: 'name email' },
+    ]);
+
+  return sheets;
+};
+
+export const approveAttendanceSheet = async (sheetId: string, coordinatorUserId: string, isAdmin: boolean = false) => {
   const sheet = await AttendanceSheet.findById(sheetId);
   if (!sheet) throw new ErrorResponse('Attendance sheet not found', 404);
-  if (String(sheet.coordinator) !== String(coordinatorUserId)) {
+  
+  if (!isAdmin && String(sheet.coordinator) !== String(coordinatorUserId)) {
     throw new ErrorResponse('Not authorized to approve this sheet', 403);
   }
   if (sheet.status !== 'PENDING') {
@@ -130,13 +146,40 @@ export const approveAttendanceSheet = async (sheetId: string, coordinatorUserId:
   sheet.approvedBy = new mongoose.Types.ObjectId(coordinatorUserId);
   sheet.approvedAt = new Date();
   await sheet.save();
+
+  // Update all individual attendances status to PARENT_APPROVED so they are considered for payout
+  try {
+    if (sheet.attendanceIds && sheet.attendanceIds.length > 0) {
+      await Attendance.updateMany(
+        { _id: { $in: sheet.attendanceIds } },
+        { 
+          $set: { 
+            status: ATTENDANCE_STATUS.PARENT_APPROVED,
+            coordinatorApprovedBy: new mongoose.Types.ObjectId(coordinatorUserId),
+            coordinatorApprovedAt: new Date()
+          } 
+        }
+      );
+    }
+  } catch (e) {
+    console.error(`Failed to update individual attendances for sheet ${sheetId}: ${String(e)}`);
+  }
+
+  // Create consolidated payment for this sheet
+  try {
+    await createPaymentForSheet(String(sheet._id), coordinatorUserId);
+  } catch (e) {
+    console.error(`Failed to create payment for attendance sheet ${sheetId}: ${String(e)}`);
+  }
+
   return sheet;
 };
 
-export const rejectAttendanceSheet = async (sheetId: string, coordinatorUserId: string, reason: string) => {
+export const rejectAttendanceSheet = async (sheetId: string, coordinatorUserId: string, reason: string, isAdmin: boolean = false) => {
   const sheet = await AttendanceSheet.findById(sheetId);
   if (!sheet) throw new ErrorResponse('Attendance sheet not found', 404);
-  if (String(sheet.coordinator) !== String(coordinatorUserId)) {
+  
+  if (!isAdmin && String(sheet.coordinator) !== String(coordinatorUserId)) {
     throw new ErrorResponse('Not authorized to reject this sheet', 403);
   }
   if (sheet.status !== 'PENDING') {
@@ -155,6 +198,7 @@ export default {
   upsertAttendanceSheet,
   submitAttendanceSheet,
   getCoordinatorPendingSheets,
+  getAllPendingSheets,
   approveAttendanceSheet,
   rejectAttendanceSheet,
 };

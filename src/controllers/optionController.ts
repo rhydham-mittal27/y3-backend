@@ -4,13 +4,14 @@ import { createOption, deleteOption, getOptionsByType, updateOption, getDistinct
 
 export const getOptionsController = asyncHandler(async (req: Request, res: Response) => {
   const { type } = req.params;
-  const options = await getOptionsByType(String(type), true);
+  const { parent } = req.query; // Support parent filtering
+  const options = await getOptionsByType(String(type), true, parent ? String(parent) : undefined);
   return res.status(200).json({ success: true, data: options });
 });
 
 export const createOptionController = asyncHandler(async (req: Request, res: Response, _next: NextFunction) => {
-  const { type, label, value, sortOrder } = req.body || {};
-  const option = await createOption({ type, label, value, sortOrder });
+  const { type, label, value, sortOrder, parent, metadata } = req.body || {};
+  const option = await createOption({ type, label, value, sortOrder, parent, metadata });
   return res.status(201).json({ success: true, data: option });
 });
 

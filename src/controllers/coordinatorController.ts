@@ -38,6 +38,11 @@ export const getCoordinators = asyncHandler(async (req: AuthRequest, res) => {
   const hasCapacity = typeof req.query.hasCapacity !== 'undefined' ? req.query.hasCapacity === 'true' : undefined;
   const sortBy = (req.query.sortBy as string) || undefined;
   const sortOrder = (req.query.sortOrder as 'asc' | 'desc') || undefined;
+  const name = (req.query.name as string) || undefined;
+  const email = (req.query.email as string) || undefined;
+  const phone = (req.query.phone as string) || undefined;
+  const specialization = (req.query.specialization as string) || undefined;
+  const search = (req.query.search as string) || undefined;
 
   const { coordinators, total } = await getAllCoordinators({
     page,
@@ -46,6 +51,11 @@ export const getCoordinators = asyncHandler(async (req: AuthRequest, res) => {
     hasCapacity,
     sortBy,
     sortOrder,
+    name,
+    email,
+    phone,
+    specialization,
+    search,
   });
 
   return res.json(paginatedResponse(coordinators, page, limit, total));
@@ -137,13 +147,14 @@ export const getPaymentSummary = asyncHandler(async (req: AuthRequest, res) => {
   const classId = (req.query.classId as string) || undefined;
   const fromDateStr = (req.query.fromDate as string) || undefined;
   const toDateStr = (req.query.toDate as string) || undefined;
+  const paymentType = (req.query.paymentType as string) || undefined;
   const sortBy = (req.query.sortBy as string) || undefined;
   const sortOrder = (req.query.sortOrder as 'asc' | 'desc') || undefined;
 
   const fromDate = fromDateStr ? new Date(fromDateStr) : undefined;
   const toDate = toDateStr ? new Date(toDateStr) : undefined;
 
-  const result = await getCoordinatorPaymentSummary(userId, { page, limit, status, classId, fromDate, toDate, sortBy, sortOrder });
+  const result = await getCoordinatorPaymentSummary(userId, { page, limit, status, classId, paymentType, fromDate, toDate, sortBy, sortOrder });
 
   return res.json({
     success: true,

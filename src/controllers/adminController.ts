@@ -23,6 +23,8 @@ import {
   bulkDeleteRecords,
   createUserWithRole,
   bulkCreateUsers,
+  getApprovalLists,
+  getAdvancedAnalytics,
 } from '../services/adminService';
 
 export const createAdminProfileController = asyncHandler(async (req: AuthRequest, res: Response) => {
@@ -106,7 +108,9 @@ export const getSystemAnalytics = asyncHandler(async (req: AuthRequest, res: Res
   if (fromDate) { fromDate.setHours(0,0,0,0); }
   if (toDate) { toDate.setHours(23,59,59,999); }
 
-  const analytics = await getSystemWideAnalytics(fromDate, toDate);
+  const city = (req.query.city as string) || undefined;
+
+  const analytics = await getSystemWideAnalytics(fromDate, toDate, city);
   return res.json(successResponse(analytics, 'System analytics retrieved successfully'));
 });
 
@@ -368,6 +372,11 @@ export const bulkCreateUsersController = asyncHandler(async (req: AuthRequest, r
   return res.status(201).json(successResponse(result, 'Bulk user creation completed'));
 });
 
+export const getApprovalListsController = asyncHandler(async (_req: AuthRequest, res: Response) => {
+  const approvals = await getApprovalLists();
+  return res.json(successResponse(approvals, 'Approval lists retrieved successfully'));
+});
+
 export default {
   createAdminProfileController,
   getAdmins,
@@ -385,6 +394,15 @@ export default {
   bulkDeleteRecordsController,
   createUserController,
   bulkCreateUsersController,
+  getApprovalListsController,
   exportAnalyticsCSVController,
   exportAnalyticsPDFController,
+};
+export const getAdvancedAnalyticsController = async (_req: any, res: any) => {
+  try {
+    const analytics = await getAdvancedAnalytics();
+    res.status(200).json({ success: true, data: analytics });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
 };

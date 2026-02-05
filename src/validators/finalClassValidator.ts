@@ -24,6 +24,7 @@ export const updateFinalClassValidation = [
   body('endDate').optional().isISO8601(),
   body('notes').optional().trim().isLength({ max: 1000 }),
   body('coordinatorUserId').optional().isMongoId().withMessage('Invalid coordinator user ID'),
+  body('testPerMonth').optional().isInt({ min: 0 }).withMessage('Tests per month must be a non-negative integer'),
 ];
 
 export const updateClassStatusValidation = [

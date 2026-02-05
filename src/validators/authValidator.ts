@@ -17,17 +17,7 @@ export const registerValidation = [
     .normalizeEmail(),
   body('password')
     .notEmpty()
-    .withMessage('Password is required')
-    .isLength({ min: 8 })
-    .withMessage('Password must be at least 8 characters')
-    .matches(/[A-Z]/)
-    .withMessage('Password must contain at least one uppercase letter')
-    .matches(/[a-z]/)
-    .withMessage('Password must contain at least one lowercase letter')
-    .matches(/[0-9]/)
-    .withMessage('Password must contain at least one number')
-    .matches(/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/)
-    .withMessage('Password must contain at least one special character'),
+    .withMessage('Password is required'),
   body('phone')
     .optional()
     .isMobilePhone('any')
@@ -80,4 +70,11 @@ export const parentLoginLookupValidation = [
     .withMessage('Class name is required')
     .isLength({ min: 2, max: 100 })
     .withMessage('Class name must be 2-100 characters'),
+];
+
+export const verifyChangePasswordOtpValidation = [
+  body('otp').trim().notEmpty().withMessage('OTP is required'),
+  body('newPassword')
+    .notEmpty()
+    .withMessage('New password is required'),
 ];

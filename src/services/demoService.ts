@@ -110,6 +110,25 @@ export const updateDemoStatus = async (
     }
   }
 
+  // Validate that demo can only be marked after scheduled time
+  if ([DEMO_STATUS.COMPLETED, DEMO_STATUS.APPROVED, DEMO_STATUS.REJECTED].includes(newStatus)) {
+    const demoDate = (lead.demoDetails as any)?.demoDate;
+    const demoTime = (lead.demoDetails as any)?.demoTime;
+    
+    if (demoDate && demoTime) {
+      // Parse the demo date and time
+      const scheduledDate = new Date(demoDate);
+      const [hours, minutes] = demoTime.split(':').map(Number);
+      scheduledDate.setHours(hours, minutes, 0, 0);
+      
+      const now = new Date();
+      
+      if (now < scheduledDate) {
+        throw new ErrorResponse('Demo can only be marked after the scheduled time has passed', 400);
+      }
+    }
+  }
+
   if (currentStatus === DEMO_STATUS.SCHEDULED && newStatus !== DEMO_STATUS.COMPLETED)
     throw new ErrorResponse('Invalid status transition', 400);
   if (currentStatus === DEMO_STATUS.COMPLETED && ![DEMO_STATUS.APPROVED, DEMO_STATUS.REJECTED].includes(newStatus))

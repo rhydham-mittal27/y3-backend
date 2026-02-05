@@ -1,4 +1,5 @@
 import { Response } from 'express';
+import { USER_ROLES } from '../config/constants';
 import asyncHandler from '../utils/asyncHandler';
 import { successResponse } from '../utils/responseFormatter';
 import ErrorResponse from '../utils/errorResponse';
@@ -7,6 +8,7 @@ import {
   upsertAttendanceSheet,
   submitAttendanceSheet,
   getCoordinatorPendingSheets,
+  getAllPendingSheets,
   approveAttendanceSheet,
   rejectAttendanceSheet,
 } from '../services/attendanceSheetService';
@@ -39,9 +41,15 @@ export const getCoordinatorPendingSheetsController = asyncHandler(async (req: Au
   return res.json(successResponse(sheets));
 });
 
+export const getAllPendingSheetsController = asyncHandler(async (_req: AuthRequest, res: Response) => {
+  const sheets = await getAllPendingSheets();
+  return res.json(successResponse(sheets));
+});
+
 export const approveAttendanceSheetController = asyncHandler(async (req: AuthRequest, res: Response) => {
   const { id } = req.params as any;
-  const sheet = await approveAttendanceSheet(id, req.user!.id);
+  const isAdmin = req.user!.role === USER_ROLES.ADMIN;
+  const sheet = await approveAttendanceSheet(id, req.user!.id, isAdmin);
   return res.json(successResponse(sheet, 'Attendance sheet approved'));
 });
 
@@ -51,7 +59,8 @@ export const rejectAttendanceSheetController = asyncHandler(async (req: AuthRequ
   if (!rejectionReason || String(rejectionReason).trim().length === 0) {
     throw new ErrorResponse('rejectionReason is required', 400);
   }
-  const sheet = await rejectAttendanceSheet(id, req.user!.id, rejectionReason);
+  const isAdmin = req.user!.role === USER_ROLES.ADMIN;
+  const sheet = await rejectAttendanceSheet(id, req.user!.id, rejectionReason, isAdmin);
   return res.json(successResponse(sheet, 'Attendance sheet rejected'));
 });
 
@@ -59,6 +68,7 @@ export default {
   upsertAttendanceSheetController,
   submitAttendanceSheetController,
   getCoordinatorPendingSheetsController,
+  getAllPendingSheetsController,
   approveAttendanceSheetController,
   rejectAttendanceSheetController,
 };

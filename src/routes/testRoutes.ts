@@ -12,6 +12,8 @@ import {
   getCoordinatorTests,
   exportTestReportPDF,
   getMyTestsForParent,
+  uploadTestPaperController,
+  uploadTestAnswerSheetController,
 } from '../controllers/testController';
 import {
   scheduleTestValidation,
@@ -24,13 +26,19 @@ import {
 } from '../validators/testValidator';
 import protect from '../middlewares/auth';
 import authorize from '../middlewares/authorize';
+import { uploadDocument } from '../middlewares/fileUpload';
 import { USER_ROLES } from '../config/constants';
 
 const router = Router();
 
 router.use(protect);
 
-router.post('/', authorize(USER_ROLES.COORDINATOR, USER_ROLES.MANAGER, USER_ROLES.ADMIN), scheduleTestValidation, scheduleTestController);
+router.post(
+  '/',
+  authorize(USER_ROLES.COORDINATOR, USER_ROLES.MANAGER, USER_ROLES.ADMIN, USER_ROLES.TUTOR),
+  scheduleTestValidation,
+  scheduleTestController
+);
 
 router.get('/', authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN, USER_ROLES.COORDINATOR, USER_ROLES.TUTOR), getTests);
 
@@ -61,6 +69,22 @@ router.delete('/:id', authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN, USER_ROLES
 router.patch('/:id/status', authorize(USER_ROLES.COORDINATOR, USER_ROLES.TUTOR, USER_ROLES.MANAGER, USER_ROLES.ADMIN), updateTestStatusValidation, updateTestStatusController);
 
 router.patch('/:id/report', authorize(USER_ROLES.TUTOR), submitTestReportValidation, submitTestReportController);
+
+router.post(
+  '/:id/paper',
+  authorize(USER_ROLES.TUTOR, USER_ROLES.COORDINATOR, USER_ROLES.MANAGER, USER_ROLES.ADMIN),
+  uploadDocument,
+  testIdValidation,
+  uploadTestPaperController
+);
+
+router.post(
+  '/:id/report-file',
+  authorize(USER_ROLES.TUTOR, USER_ROLES.COORDINATOR),
+  uploadDocument,
+  testIdValidation,
+  uploadTestAnswerSheetController
+);
 
 router.patch('/:id/cancel', authorize(USER_ROLES.COORDINATOR, USER_ROLES.MANAGER, USER_ROLES.ADMIN), cancelTestValidation, cancelTestController);
 

@@ -1,7 +1,7 @@
 import mongoose, { Schema, Document, Model } from 'mongoose';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
-import { USER_ROLES } from '../config/constants';
+import { USER_ROLES, TEACHING_MODE } from '../config/constants';
 
 export interface IUserDocument extends Document {
   _id: mongoose.Types.ObjectId;
@@ -9,8 +9,12 @@ export interface IUserDocument extends Document {
   email: string;
   password: string;
   phone?: string;
+  gender?: 'MALE' | 'FEMALE' | 'OTHER';
+  city?: string;
+  preferredMode?: string;
   role: USER_ROLES | string;
   isActive: boolean;
+  acceptedTerms: boolean;
   refreshToken?: string | null;
   preferences?: mongoose.Types.ObjectId;
   devices?: {
@@ -50,14 +54,21 @@ const UserSchema: Schema<IUserDocument> = new Schema<IUserDocument>(
       trim: true,
       match: [/^\S+@\S+\.\S+$/, 'Please add a valid email'],
     },
-    password: { type: String, required: true, minlength: 6, select: false },
+    password: { type: String, required: true, select: false },
     phone: { type: String },
+    gender: {
+      type: String,
+      enum: ['MALE', 'FEMALE', 'OTHER'],
+    },
+    city: { type: String, trim: true },
+    preferredMode: { type: String, enum: Object.values(TEACHING_MODE) },
     role: {
       type: String,
       enum: Object.values(USER_ROLES),
       default: USER_ROLES.MANAGER,
     },
     isActive: { type: Boolean, default: true },
+    acceptedTerms: { type: Boolean, default: false },
     refreshToken: { type: String, select: false },
     preferences: { type: Schema.Types.ObjectId, ref: 'UserPreferences' },
     devices: [
@@ -73,7 +84,7 @@ const UserSchema: Schema<IUserDocument> = new Schema<IUserDocument>(
     lastLoginAt: { type: Date },
     lastLoginDevice: { type: String },
   },
-  { timestamps: true }
+  { timestamps: true, toJSON: { virtuals: true }, toObject: { virtuals: true } }
 );
 
 UserSchema.index({ 'devices.fcmToken': 1 });

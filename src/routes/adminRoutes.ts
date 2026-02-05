@@ -18,6 +18,8 @@ import {
   bulkDeleteRecordsController,
   createUserController,
   bulkCreateUsersController,
+  getApprovalListsController,
+  getAdvancedAnalyticsController,
 } from '../controllers/adminController';
 import {
   createAdminValidation,
@@ -53,6 +55,7 @@ router.get('/user/:userId', authorize(USER_ROLES.ADMIN), userIdParamValidation, 
 router.get('/analytics', authorize(USER_ROLES.ADMIN), analyticsQueryValidation, getSystemAnalytics);
 router.get('/analytics/export/csv', authorize(USER_ROLES.ADMIN), exportAnalyticsValidation, exportAnalyticsCSVController);
 router.get('/analytics/export/pdf', authorize(USER_ROLES.ADMIN), exportAnalyticsValidation, exportAnalyticsPDFController);
+router.get('/approvals', authorize(USER_ROLES.ADMIN, USER_ROLES.MANAGER), getApprovalListsController);
 
 // User Management Routes
 router.post('/users', authorize(USER_ROLES.ADMIN), createUserValidation, createUserController);
@@ -64,6 +67,8 @@ router.put('/bulk/managers', authorize(USER_ROLES.ADMIN), bulkUpdateManagersVali
 router.put('/bulk/coordinators', authorize(USER_ROLES.ADMIN), bulkUpdateCoordinatorsValidation, bulkUpdateCoordinatorsController);
 router.put('/bulk/payments', authorize(USER_ROLES.ADMIN), bulkUpdatePaymentsValidation, bulkUpdatePaymentsController);
 router.delete('/bulk/records', authorize(USER_ROLES.ADMIN), bulkDeleteRecordsValidation, bulkDeleteRecordsController);
+
+router.get('/advanced-analytics', authorize(USER_ROLES.ADMIN), getAdvancedAnalyticsController);
 
 // Generic ID routes (placed last)
 router.get('/:id', authorize(USER_ROLES.ADMIN), adminIdValidation, getAdmin);

@@ -11,6 +11,7 @@ import {
   getAnnouncementByLeadId,
   expressInterest,
   getInterestedTutors,
+  getRecommendedTutorsForLead,
   deactivateAnnouncement,
 } from '../services/announcementService';
 import {
@@ -93,6 +94,14 @@ export const expressInterestInAnnouncement = asyncHandler(async (req: AuthReques
 export const getInterestedTutorsForAnnouncement = asyncHandler(async (req, res) => {
   const { id } = req.params as { id: string };
   const data = await getInterestedTutors(id);
+  return res.status(200).json(successResponse(data));
+});
+
+export const getRecommendedTutorsForLeadController = asyncHandler(async (req, res) => {
+  const { id: announcementId } = req.params as { id: string };
+  const announcement = await getAnnouncementById(announcementId);
+  const leadId = (announcement.classLead as any)?._id || announcement.classLead;
+  const data = await getRecommendedTutorsForLead(String(leadId));
   return res.status(200).json(successResponse(data));
 });
 

@@ -3,15 +3,19 @@ import Tutor from '../models/Tutor';
 import User from '../models/User';
 import Notification from '../models/Notification';
 import ErrorResponse from '../utils/errorResponse';
-import { DOCUMENT_TYPES, USER_ROLES, VERIFICATION_STATUS, MANAGER_ACTION_TYPE, TUTOR_TIER, FINAL_CLASS_STATUS, TEST_STATUS } from '../config/constants';
-import cloudinary, { CLOUDINARY_FOLDER } from '../config/cloudinary';
+import { DOCUMENT_TYPES, USER_ROLES, VERIFICATION_STATUS, MANAGER_ACTION_TYPE, TUTOR_TIER, FINAL_CLASS_STATUS, TEST_STATUS, ATTENDANCE_STATUS } from '../config/constants';
+import { uploadFileToS3, deleteFileFromS3 } from '../services/s3Service';
+import { S3_CONFIG } from '../config/s3';
 import { logManagerActivity } from './managerService';
 import Manager from '../models/Manager';
 import TutorFeedback from '../models/TutorFeedback';
 import Attendance from '../models/Attendance';
 import FinalClass from '../models/FinalClass';
 import Test from '../models/Test';
+import Payment from '../models/Payment';
+import DemoHistory from '../models/DemoHistory';
 import { createNotificationWithPreferences } from './notificationService';
+import { PAYMENT_STATUS, DEMO_STATUS } from '../config/constants';
 
 export const createTutorProfile = async (
   userId: string,
@@ -39,7 +43,7 @@ export const createTutorProfile = async (
   });
 
   await tutor.populate([
-    { path: 'user', select: 'name email role phone' },
+    { path: 'user', select: 'name email role phone gender city preferredMode' },
     { path: 'verifiedBy', select: 'name email role phone' },
   ]);
   return tutor;
@@ -52,12 +56,66 @@ export const getAllTutors = async (
   isAvailable?: boolean,
   subjects?: string[],
   sortBy?: string,
-  sortOrder: 'asc' | 'desc' = 'desc'
+  sortOrder: 'asc' | 'desc' = 'desc',
+  search?: string,
+  teacherId?: string,
+  name?: string,
+  email?: string,
+  phone?: string,
+  preferredMode?: string,
+  verifiedBy?: string
 ) => {
   const query: any = {};
   if (verificationStatus) query.verificationStatus = verificationStatus;
   if (typeof isAvailable === 'boolean') query.isAvailable = isAvailable;
   if (subjects && subjects.length) query.subjects = { $in: subjects };
+  if (teacherId) query.teacherId = { $regex: teacherId, $options: 'i' };
+  if (preferredMode) query.preferredMode = preferredMode;
+  if (verifiedBy && mongoose.isValidObjectId(verifiedBy)) query.verifiedBy = new mongoose.Types.ObjectId(verifiedBy);
+
+  // For name, email, phone we need to filter based on the populated user field
+  // This is best done with an aggregation or by finding userIds first
+  let userQuery: any = {};
+  if (name) userQuery.name = { $regex: name, $options: 'i' };
+  if (email) userQuery.email = { $regex: email, $options: 'i' };
+  if (phone) userQuery.phone = { $regex: phone, $options: 'i' };
+  if (search) {
+    userQuery.$or = [
+      { name: { $regex: search, $options: 'i' } },
+      { email: { $regex: search, $options: 'i' } },
+      { phone: { $regex: search, $options: 'i' } },
+    ];
+  }
+
+  if (Object.keys(userQuery).length > 0) {
+    const users = await User.find(userQuery).select('_id');
+    const userIds = users.map(u => u._id);
+    if (query.user) {
+        // If query.user already exists (unlikely in this flow), intersect
+        query.user = { $in: userIds };
+    } else {
+        query.user = { $in: userIds };
+    }
+  }
+
+  if (search && !query.teacherId) {
+    // If general search is provided and teacherId hasn't been specifically queried
+    // We can also search teacherId in the main query if it wasn't filtered by user above
+    if (!query.user) {
+        query.$or = [
+            { teacherId: { $regex: search, $options: 'i' } }
+        ];
+    } else {
+        // Tricky with $or and other filters, but simple approach:
+        // Already filtered by user above. If we want to add teacherId to that global search:
+        const userIdArray = query.user.$in;
+        delete query.user;
+        query.$or = [
+            { user: { $in: userIdArray } },
+            { teacherId: { $regex: search, $options: 'i' } }
+        ];
+    }
+  }
 
   const skip = (page - 1) * limit;
   const sort: any = {};
@@ -70,7 +128,7 @@ export const getAllTutors = async (
       .limit(limit)
       .sort(sort)
       .populate([
-        { path: 'user', select: 'name email phone role' },
+        { path: 'user', select: 'name email phone role gender city preferredMode' },
         { path: 'verifiedBy', select: 'name email phone role' },
       ]),
     Tutor.countDocuments(query),
@@ -85,14 +143,14 @@ export const getTutorById = async (tutorIdOrTeacherId: string) => {
   if (mongoose.isValidObjectId(tutorIdOrTeacherId)) {
     // First, try standard lookup by internal Tutor _id
     tutor = await Tutor.findById(tutorIdOrTeacherId).populate([
-      { path: 'user', select: 'name email phone role' },
-      { path: 'verifiedBy', select: 'name email phone role' },
+      { path: 'user', select: '_id name email phone role gender city preferredMode' },
+      { path: 'verifiedBy', select: '_id name email phone role' },
     ]);
 
     // If not found, also allow treating the value as a User _id
     if (!tutor) {
       tutor = await Tutor.findOne({ user: new mongoose.Types.ObjectId(tutorIdOrTeacherId) }).populate([
-        { path: 'user', select: 'name email phone role' },
+        { path: 'user', select: 'name email phone role gender city preferredMode' },
         { path: 'verifiedBy', select: 'name email phone role' },
       ]);
     }
@@ -101,7 +159,7 @@ export const getTutorById = async (tutorIdOrTeacherId: string) => {
   if (!tutor) {
     // Fallback: lookup by public teacherId (e.g. TMBPLxyz12)
     tutor = await Tutor.findOne({ teacherId: tutorIdOrTeacherId }).populate([
-      { path: 'user', select: 'name email phone role' },
+      { path: 'user', select: 'name email phone role gender city preferredMode' },
       { path: 'verifiedBy', select: 'name email phone role' },
     ]);
   }
@@ -112,7 +170,7 @@ export const getTutorById = async (tutorIdOrTeacherId: string) => {
 
 export const getTutorByUserId = async (userId: string) => {
   const tutor = await Tutor.findOne({ user: userId }).populate([
-    { path: 'user', select: 'name email phone role' },
+    { path: 'user', select: 'name email phone role gender city preferredMode' },
     { path: 'verifiedBy', select: 'name email phone role' },
   ]);
   if (!tutor) throw new ErrorResponse('Tutor not found', 404);
@@ -178,6 +236,40 @@ export const getTutorByUserId = async (userId: string) => {
   return tutor;
 };
 
+export const getPublicTutorProfile = async (teacherId: string) => {
+  const tutor = await Tutor.findOne({ teacherId }).populate([
+    { path: 'user', select: 'name' },
+  ]);
+
+  if (!tutor) throw new ErrorResponse('Tutor not found', 404);
+
+  // Return only safe fields
+  return {
+    _id: tutor._id,
+    teacherId: tutor.teacherId,
+    user: tutor.user,
+    experienceHours: tutor.experienceHours,
+    subjects: tutor.subjects,
+    qualifications: tutor.qualifications,
+    extracurricularActivities: tutor.extracurricularActivities,
+    ratings: tutor.ratings,
+    totalRatings: tutor.totalRatings,
+    classesAssigned: tutor.classesAssigned,
+    classesCompleted: tutor.classesCompleted,
+    isAvailable: tutor.isAvailable,
+    preferredMode: tutor.preferredMode,
+    preferredLocations: tutor.preferredLocations,
+    preferredCities: tutor.preferredCities,
+    tier: tutor.tier,
+    documents: (tutor.documents || []).filter(d => d.documentType === 'PROFILE_PHOTO' || d.verifiedAt),
+    createdAt: tutor.createdAt,
+    approvalRatio: tutor.approvalRatio,
+    bio: tutor.bio,
+    languagesKnown: tutor.languagesKnown,
+    skills: tutor.skills,
+  };
+};
+
 export const updateTutorProfile = async (
   tutorId: string,
   updateData: Partial<{
@@ -195,11 +287,174 @@ export const updateTutorProfile = async (
   Object.assign(tutor, updateData);
   await tutor.save();
   await tutor.populate([
-    { path: 'user', select: 'name email phone role' },
+    { path: 'user', select: 'name email phone role gender city preferredMode' },
     { path: 'verifiedBy', select: 'name email phone role' },
   ]);
   return tutor;
 };
+
+export const getMyProfileForEdit = async (userId: string) => {
+  const user = await User.findById(userId);
+  if (!user) throw new ErrorResponse('User not found', 404);
+
+  const tutor = await Tutor.findOne({ user: userId });
+  
+  // Extract city and areas from preferredLocations
+  let city = '';
+  const preferredAreas: string[] = [];
+  
+  if (tutor?.preferredLocations && tutor.preferredLocations.length > 0) {
+    // First location is typically the city
+    city = tutor.preferredLocations[0];
+    // Rest are areas
+    if (tutor.preferredLocations.length > 1) {
+      preferredAreas.push(...tutor.preferredLocations.slice(1));
+    }
+  }
+
+  // Convert experienceHours to dropdown-compatible format
+  let experience = '';
+  if (tutor?.experienceHours) {
+    const totalMonths = Math.floor(tutor.experienceHours / 30);
+    const years = Math.floor(totalMonths / 12);
+    
+    if (years >= 10) {
+      experience = '10+ Years';
+    } else if (years >= 5) {
+      experience = '5-10 Years';
+    } else if (years >= 3) {
+      experience = '3-5 Years';
+    } else if (years >= 1) {
+      experience = '1-2 Years';
+    } else {
+      experience = 'Fresher';
+    }
+  }
+
+  return {
+    fullName: user.name || '',
+    gender: (user as any).gender || 'MALE',
+    phoneNumber: user.phone || '',
+    email: user.email || '',
+    qualification: tutor?.qualifications?.[0] || '',
+    experience,
+    subjects: tutor?.subjects || [],
+    extracurricularActivities: tutor?.extracurricularActivities || [],
+    city,
+    preferredAreas,
+    preferredMode: tutor?.preferredMode || 'OFFLINE',
+    permanentAddress: tutor?.permanentAddress || '',
+    residentialAddress: tutor?.residentialAddress || '',
+    alternatePhone: tutor?.alternatePhone || '',
+    bio: tutor?.bio || '',
+    languagesKnown: tutor?.languagesKnown || [],
+    skills: tutor?.skills || [],
+  };
+};
+
+function parseExperience(experience: string | undefined): { hours: number; years: number } {
+  if (!experience) return { hours: 0, years: 0 };
+  const num = Number((experience.match(/\d+/)?.[0] ?? '0'));
+  if (!isFinite(num) || num <= 0) return { hours: 0, years: 0 };
+
+  if (/year/i.test(experience)) {
+    return {
+      hours: num * 12 * 30, // approximate hours
+      years: num
+    };
+  }
+  if (/month/i.test(experience)) {
+    return {
+      hours: num * 30,
+      years: Math.round((num / 12) * 10) / 10 // rounded to 1 decimal
+    };
+  }
+  return { hours: num, years: 0 };
+}
+
+export const updateMyProfile = async (userId: string, updateData: {
+  fullName?: string;
+  phoneNumber?: string;
+  gender?: string;
+  qualification?: string;
+  experience?: string;
+  subjects?: string[];
+  extracurricularActivities?: string[];
+  city?: string;
+  preferredAreas?: string[];
+  preferredMode?: string;
+  permanentAddress?: string;
+  residentialAddress?: string;
+  alternatePhone?: string;
+  bio?: string;
+  languagesKnown?: string[];
+  skills?: string[];
+}) => {
+  const user = await User.findById(userId);
+  if (!user) throw new ErrorResponse('User not found', 404);
+
+  let tutor = await Tutor.findOne({ user: userId });
+  
+  // Update user fields
+  if (updateData.fullName) user.name = updateData.fullName;
+  if (updateData.phoneNumber) user.phone = updateData.phoneNumber;
+  if (updateData.gender) user.gender = updateData.gender as any;
+  if (updateData.city) user.city = updateData.city;
+  if (updateData.preferredMode) user.preferredMode = updateData.preferredMode;
+  await user.save();
+
+  // Prepare tutor data
+  const { hours: experienceHours, years: yearsOfExperience } = parseExperience(updateData.experience);
+  const preferredLocations: string[] = [];
+  const preferredCities: string[] = [];
+  
+  if (updateData.city) {
+    preferredLocations.push(updateData.city);
+    preferredCities.push(updateData.city);
+  }
+  if (Array.isArray(updateData.preferredAreas)) {
+    updateData.preferredAreas.forEach((a: string) => {
+      if (a && a.trim()) preferredLocations.push(a.trim());
+    });
+  }
+
+  const tutorUpdateData: any = {
+    experienceHours,
+    subjects: updateData.subjects || [],
+    qualifications: updateData.qualification ? [updateData.qualification] : [],
+    preferredLocations,
+    preferredCities,
+    preferredMode: updateData.preferredMode,
+    extracurricularActivities: updateData.extracurricularActivities || [],
+    permanentAddress: updateData.permanentAddress,
+    residentialAddress: updateData.residentialAddress,
+    alternatePhone: updateData.alternatePhone,
+    yearsOfExperience,
+    bio: updateData.bio,
+    languagesKnown: updateData.languagesKnown,
+    skills: updateData.skills,
+  };
+
+  if (tutor) {
+    // Update existing tutor
+    Object.assign(tutor, tutorUpdateData);
+    await tutor.save();
+  } else {
+    // Create new tutor profile if it doesn't exist
+    tutor = await Tutor.create({
+      user: userId,
+      ...tutorUpdateData,
+    });
+  }
+
+  await tutor.populate([
+    { path: 'user', select: 'name email phone role gender city preferredMode' },
+    { path: 'verifiedBy', select: 'name email phone role' },
+  ]);
+  
+  return tutor;
+};
+
 
 export const updateTutorSettings = async (
   tutorId: string,
@@ -237,7 +492,7 @@ export const updateTutorSettings = async (
   } as any;
 
   await tutor.save();
-  await tutor.populate([{ path: 'user', select: 'name email phone role' }]);
+  await tutor.populate([{ path: 'user', select: 'name email phone role gender city preferredMode' }]);
   return tutor;
 };
 
@@ -257,9 +512,11 @@ export const uploadDocument = async (
     throw new ErrorResponse('Invalid document type', 400);
   }
 
-  // Upload buffer to Cloudinary
+  // Upload buffer to S3
   const buffer: Buffer | undefined = file?.buffer;
   const originalname: string = file?.originalname || 'document';
+  const mimetype: string = file?.mimetype || 'application/octet-stream';
+  
   if (!buffer) {
     console.error('[uploadDocument] Invalid file upload - missing buffer', {
       tutorId,
@@ -270,26 +527,21 @@ export const uploadDocument = async (
     throw new ErrorResponse('Invalid file upload', 400);
   }
 
-  let uploadResult: any;
+  let uploadResult: { key: string; url: string; bucket: string };
   try {
-    uploadResult = await new Promise((resolve, reject) => {
-      const stream = cloudinary.uploader.upload_stream(
-        {
-          folder: CLOUDINARY_FOLDER,
-          resource_type: 'auto',
-          filename_override: originalname,
-          use_filename: true,
-          unique_filename: true,
-        },
-        (error: any, result: any) => {
-          if (error) return reject(error);
-          return resolve(result);
-        }
-      );
-      stream.end(buffer);
+    uploadResult = await uploadFileToS3(
+      buffer,
+      originalname,
+      mimetype,
+      S3_CONFIG.FOLDERS.DOCUMENTS
+    );
+    console.log('[uploadDocument] S3 upload successful', {
+      tutorId,
+      documentType,
+      s3Key: uploadResult.key,
     });
   } catch (err: any) {
-    console.error('[uploadDocument] Cloudinary upload failed', {
+    console.error('[uploadDocument] S3 upload failed', {
       tutorId,
       documentType,
       originalname,
@@ -301,10 +553,10 @@ export const uploadDocument = async (
 
   const doc = {
     documentType,
-    documentUrl: uploadResult.secure_url,
+    documentUrl: uploadResult.url,
     uploadedAt: new Date(),
-    publicId: uploadResult.public_id,
-    resourceType: uploadResult.resource_type,
+    s3Key: uploadResult.key,
+    s3Bucket: uploadResult.bucket,
   } as any;
   try {
     const previousStatus = tutor.verificationStatus as VERIFICATION_STATUS;
@@ -333,7 +585,7 @@ export const uploadDocument = async (
     throw new ErrorResponse('Failed to save tutor document', 500);
   }
   await tutor.populate([
-    { path: 'user', select: 'name email phone role' },
+    { path: 'user', select: 'name email phone role gender city preferredMode' },
     { path: 'verifiedBy', select: 'name email phone role' },
   ]);
   return tutor;
@@ -347,16 +599,19 @@ export const deleteDocument = async (tutorId: string, documentIndex: number) => 
   }
 
   const doc: any = tutor.documents[documentIndex];
-  if (doc?.publicId) {
+  if (doc?.s3Key) {
     try {
-      await cloudinary.uploader.destroy(doc.publicId, { resource_type: (doc.resourceType as any) || 'image' });
-    } catch {}
+      await deleteFileFromS3(doc.s3Key);
+      console.log('[deleteDocument] S3 file deleted', { tutorId, s3Key: doc.s3Key });
+    } catch (err: any) {
+      console.error('[deleteDocument] S3 delete failed', { tutorId, s3Key: doc.s3Key, error: err?.message });
+    }
   }
 
   tutor.documents.splice(documentIndex, 1);
   await tutor.save();
   await tutor.populate([
-    { path: 'user', select: 'name email phone role' },
+    { path: 'user', select: 'name email phone role gender city preferredMode' },
     { path: 'verifiedBy', select: 'name email phone role' },
   ]);
   return tutor;
@@ -366,10 +621,15 @@ export const updateVerificationStatus = async (
   tutorId: string,
   newStatus: VERIFICATION_STATUS,
   verificationNotes: string | undefined,
-  verifiedBy: string
+  verifiedBy: string,
+  whatsappCommunityJoined?: boolean
 ) => {
   const tutor = await Tutor.findById(tutorId);
   if (!tutor) throw new ErrorResponse('Tutor not found', 404);
+
+  if (typeof whatsappCommunityJoined === 'boolean') {
+    tutor.whatsappCommunityJoined = whatsappCommunityJoined;
+  }
 
   const current = tutor.verificationStatus as VERIFICATION_STATUS;
   const valid = (from: VERIFICATION_STATUS, to: VERIFICATION_STATUS) => {
@@ -424,7 +684,7 @@ export const updateVerificationStatus = async (
   } as any);
 
   await tutor.populate([
-    { path: 'user', select: 'name email phone role' },
+    { path: 'user', select: 'name email phone role gender city preferredMode' },
     { path: 'verifiedBy', select: 'name email phone role' },
   ]);
 
@@ -459,7 +719,7 @@ export const getTutorsByVerificationStatus = async (
       .limit(limit)
       .sort({ createdAt: -1 })
       .populate([
-        { path: 'user', select: 'name email phone role' },
+        { path: 'user', select: 'name email phone role gender city preferredMode' },
         { path: 'verifiedBy', select: 'name email phone role' },
       ]),
     Tutor.countDocuments(query),
@@ -474,7 +734,7 @@ export const getTutorsForVerification = async () => {
     documents: { $ne: [] },
   })
     .sort({ updatedAt: 1 })
-    .populate([{ path: 'user', select: 'name email phone role' }]);
+    .populate([{ path: 'user', select: 'name email phone role gender city preferredMode' }]);
 
   return tutors;
 };
@@ -489,9 +749,9 @@ export const deleteTutorProfile = async (tutorId: string) => {
 
   if (Array.isArray(tutor.documents)) {
     for (const d of tutor.documents as any[]) {
-      if (d?.publicId) {
+      if (d?.s3Key) {
         try {
-          await cloudinary.uploader.destroy(d.publicId, { resource_type: (d.resourceType as any) || 'image' });
+          await deleteFileFromS3(d.s3Key);
         } catch {}
       }
     }
@@ -862,4 +1122,237 @@ export const getTutorsByCoordinator = async (params: {
   const tutorsWithMetrics = tutors;
 
   return { tutors: tutorsWithMetrics as any, total, page, limit };
+};
+
+export const getPendingTierChanges = async () => {
+  const tutors = await Tutor.find({
+    pendingTierChange: { $exists: true, $ne: null },
+  })
+    .sort({ 'pendingTierChange.requestedAt': 1 })
+    .populate([
+      { path: 'user', select: 'name email phone' },
+      { path: 'pendingTierChange.requestedBy', select: 'name email' },
+    ]);
+
+  return tutors;
+};
+
+export const updateTutorExperienceAndTier = async (tutorUserId: string | mongoose.Types.ObjectId) => {
+  const tutor = await Tutor.findOne({ user: tutorUserId });
+  if (!tutor) return;
+
+  const objectId = new mongoose.Types.ObjectId(String(tutorUserId));
+
+  // 1. Calculate total experience hours
+  const allTutorClasses = await FinalClass.find({
+    $or: [{ tutor: objectId }, { tutorUser: objectId }],
+  })
+    .select('classLead')
+    .populate({ path: 'classLead', select: 'classDurationHours' });
+
+  const classIdMap = new Map<string, any>();
+  const classIds: mongoose.Types.ObjectId[] = [];
+  for (const cls of allTutorClasses as any[]) {
+    const id = cls._id as mongoose.Types.ObjectId;
+    classIds.push(id);
+    classIdMap.set(String(id), cls);
+  }
+
+  let totalClassHours = 0;
+  if (classIds.length > 0) {
+    const attendanceCounts = await Attendance.aggregate([
+      {
+        $match: {
+          tutor: objectId,
+          finalClass: { $in: classIds },
+          status: { $in: [ATTENDANCE_STATUS.APPROVED, ATTENDANCE_STATUS.PARENT_APPROVED, ATTENDANCE_STATUS.COORDINATOR_APPROVED] }
+        },
+      },
+      {
+        $group: {
+          _id: '$finalClass',
+          count: { $sum: 1 },
+        },
+      },
+    ]);
+
+    for (const row of attendanceCounts as any[]) {
+      const cls = classIdMap.get(String(row._id));
+      if (!cls) continue;
+      const duration = (cls.classLead as any)?.classDurationHours || 0;
+      const count = row.count || 0;
+      if (duration > 0 && count > 0) {
+        totalClassHours += duration * count;
+      }
+    }
+  }
+
+  // 2. Determine Tier
+  // Default: Tier 3 (BRONZE)
+  // > 300: Tier 2 (SILVER)
+  // > 1000: Tier 1 (GOLD)
+  let newTier = TUTOR_TIER.BRONZE;
+  if (totalClassHours >= 1000) {
+    newTier = TUTOR_TIER.GOLD;
+  } else if (totalClassHours >= 300) {
+    newTier = TUTOR_TIER.SILVER;
+  }
+
+  // 3. Update if changed
+  let updated = false;
+  if (tutor.experienceHours !== totalClassHours) {
+    tutor.experienceHours = totalClassHours;
+    updated = true;
+  }
+
+  if (tutor.tier !== newTier) {
+    tutor.tier = newTier;
+    tutor.tierUpdatedAt = new Date();
+    // Auto-system update, no tierUpdatedBy
+    updated = true;
+
+    // Notify
+    try {
+      await Notification.create({
+        user: tutor.user,
+        type: 'TIER_CHANGE',
+        title: 'Tier Upgraded!',
+        message: `Congratulations! Your tier has been upgraded to ${newTier} based on your teaching hours (${totalClassHours} hrs).`,
+      } as any);
+    } catch { }
+  }
+
+  if (updated) {
+    await tutor.save();
+  }
+
+  return tutor;
+};
+
+export const getDistinctSubjects = async () => {
+  const subjects = await Tutor.distinct('subjects');
+  // Clean up and sort
+  const uniqueSubjects = Array.from(new Set(subjects.flat()))
+    .filter(Boolean)
+    .sort();
+  return uniqueSubjects;
+};
+
+export const getDistinctVerifiers = async () => {
+  const verifierIds = await Tutor.distinct('verifiedBy');
+  const validIds = verifierIds.filter(Boolean);
+  
+  if (validIds.length === 0) return [];
+  
+  const verifiers = await User.find({ _id: { $in: validIds } })
+    .select('name email')
+    .lean();
+    
+  return verifiers;
+};
+
+export const getTutorAdvancedAnalytics = async (tutorUserId: string) => {
+  const tutor = await Tutor.findOne({ user: tutorUserId });
+  if (!tutor) throw new ErrorResponse('Tutor profile not found', 404);
+
+  const now = new Date();
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+  const startOfWeek = new Date(now);
+  const day = now.getDay();
+  const diff = now.getDate() - day + (day === 0 ? -6 : 1); // Monday as start
+  startOfWeek.setDate(diff);
+  startOfWeek.setHours(0, 0, 0, 0);
+
+  const uid = new mongoose.Types.ObjectId(tutorUserId);
+
+  // 1. Sessions Analytics
+  const [completedWeek, completedMonth] = await Promise.all([
+    Attendance.countDocuments({
+      tutor: uid,
+      status: { $in: [ATTENDANCE_STATUS.APPROVED, ATTENDANCE_STATUS.PARENT_APPROVED, ATTENDANCE_STATUS.COORDINATOR_APPROVED] },
+      sessionDate: { $gte: startOfWeek },
+    }),
+    Attendance.countDocuments({
+      tutor: uid,
+      status: { $in: [ATTENDANCE_STATUS.APPROVED, ATTENDANCE_STATUS.PARENT_APPROVED, ATTENDANCE_STATUS.COORDINATOR_APPROVED] },
+      sessionDate: { $gte: startOfMonth },
+    }),
+  ]);
+
+  // 2. Earnings Analytics
+  const [earningsWeek, earningsMonth, totalEarnings] = await Promise.all([
+    Payment.aggregate([
+      { $match: { tutor: uid, status: PAYMENT_STATUS.PAID, paymentDate: { $gte: startOfWeek } } },
+      { $group: { _id: null, total: { $sum: '$amount' } } },
+    ]),
+    Payment.aggregate([
+      { $match: { tutor: uid, status: PAYMENT_STATUS.PAID, paymentDate: { $gte: startOfMonth } } },
+      { $group: { _id: null, total: { $sum: '$amount' } } },
+    ]),
+    Payment.aggregate([
+      { $match: { tutor: uid, status: PAYMENT_STATUS.PAID } },
+      { $group: { _id: null, total: { $sum: '$amount' } } },
+    ]),
+  ]);
+
+  // 3. New Classes Analytics (Converted this month)
+  const newClassesCount = await FinalClass.countDocuments({
+    $or: [{ tutor: uid }, { tutorUser: uid }],
+    convertedAt: { $gte: startOfMonth },
+  });
+
+  // 4. Demo Analytics
+  const demos = await DemoHistory.find({ tutor: uid });
+  const totalDemos = demos.length;
+  const approvedDemos = demos.filter(d => d.status === DEMO_STATUS.APPROVED).length;
+  const demoApprovalRate = totalDemos > 0 ? (approvedDemos / totalDemos) * 100 : 0;
+
+  // 5. Class-wise Earnings
+  const classWiseEarnings = await Payment.aggregate([
+    { $match: { tutor: uid, status: PAYMENT_STATUS.PAID } },
+    {
+      $group: {
+        _id: '$finalClass',
+        totalAmount: { $sum: '$amount' },
+        count: { $sum: 1 },
+      },
+    },
+    {
+      $lookup: {
+        from: 'finalclasses',
+        localField: '_id',
+        foreignField: '_id',
+        as: 'classDetails',
+      },
+    },
+    { $unwind: '$classDetails' },
+    {
+      $project: {
+        className: '$classDetails.className',
+        studentName: '$classDetails.studentName',
+        totalAmount: 1,
+        count: 1,
+      },
+    },
+    { $sort: { totalAmount: -1 } },
+  ]);
+
+  return {
+    sessions: {
+      completedThisWeek: completedWeek,
+      completedThisMonth: completedMonth,
+    },
+    earnings: {
+      thisWeek: earningsWeek[0]?.total || 0,
+      thisMonth: earningsMonth[0]?.total || 0,
+      total: totalEarnings[0]?.total || 0,
+    },
+    newClassesCount,
+    demos: {
+      total: totalDemos,
+      approved: approvedDemos,
+      approvalRate: Number(demoApprovalRate.toFixed(2)),
+    },
+    classWiseEarnings,
+  };
 };

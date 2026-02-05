@@ -1,0 +1,1 @@
+Total Payments: 662\nPaid Payments: 662\nPayments with paymentDate: 662\nFees Collected (Paid): 332\nTutor Payouts (Paid): 330\nPayments in last 365 days (by createdAt): 414\nPayments in last 365 days (by paymentDate): 421\n

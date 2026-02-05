@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import mongoose from 'mongoose';
 import { validationResult } from 'express-validator';
 import asyncHandler from '../utils/asyncHandler';
 import { successResponse, paginatedResponse } from '../utils/responseFormatter';
@@ -22,7 +23,11 @@ import {
   submitTutorFeedback,
   getTutorFeedback,
   getTutorPerformanceMetrics,
+  getTutorAdvancedAnalytics,
   getTutorsByCoordinator,
+  getPublicTutorProfile,
+  getMyProfileForEdit,
+  updateMyProfile,
 } from '../services/tutorService';
 
 export const createTutorProfileController = asyncHandler(async (req: Request, res: Response) => {
@@ -42,8 +47,31 @@ export const getTutors = asyncHandler(async (req: Request, res: Response) => {
   const subjects = req.query.subjects ? String(req.query.subjects).split(',').map((s) => s.trim()).filter(Boolean) : undefined;
   const sortBy = req.query.sortBy ? String(req.query.sortBy) : undefined;
   const sortOrder = (req.query.sortOrder === 'asc' ? 'asc' : 'desc') as 'asc' | 'desc';
+  
+  const search = req.query.search as string;
+  const teacherId = req.query.teacherId as string;
+  const name = req.query.name as string;
+  const email = req.query.email as string;
+  const phone = req.query.phone as string;
+  const preferredMode = req.query.preferredMode as string;
+  const verifiedBy = req.query.verifiedBy as string;
 
-  const { tutors, total } = await getAllTutors(page, limit, verificationStatus, isAvailable as any, subjects, sortBy, sortOrder);
+  const { tutors, total } = await getAllTutors(
+    page, 
+    limit, 
+    verificationStatus, 
+    isAvailable as any, 
+    subjects, 
+    sortBy, 
+    sortOrder,
+    search,
+    teacherId,
+    name,
+    email,
+    phone,
+    preferredMode,
+    verifiedBy
+  );
   return res.json(paginatedResponse(tutors as any, page, limit, total));
 });
 
@@ -60,6 +88,16 @@ export const getTutorByUser = asyncHandler(async (req: Request, res: Response) =
 export const getMyProfile = asyncHandler(async (req: AuthRequest, res: Response) => {
   const tutor = await getTutorByUserId(String(req.user!.id));
   return res.json(successResponse(tutor));
+});
+
+export const getMyProfileForEditController = asyncHandler(async (req: AuthRequest, res: Response) => {
+  const profileData = await getMyProfileForEdit(String(req.user!.id));
+  return res.json(successResponse(profileData));
+});
+
+export const updateMyProfileController = asyncHandler(async (req: AuthRequest, res: Response) => {
+  const tutor = await updateMyProfile(String(req.user!.id), req.body);
+  return res.json(successResponse(tutor, 'Profile updated successfully'));
 });
 
 export const updateTutorProfileController = asyncHandler(async (req: Request, res: Response) => {
@@ -101,8 +139,8 @@ export const updateVerificationStatusController = asyncHandler(async (req: AuthR
   const errors = validationResult(req);
   if (!errors.isEmpty()) throw new ErrorResponse(errors.array()[0].msg, 400);
 
-  const { status, verificationNotes } = req.body;
-  const tutor = await updateVerificationStatusService(req.params.id, status, verificationNotes, String(req.user!.id));
+  const { status, verificationNotes, whatsappCommunityJoined } = req.body;
+  const tutor = await updateVerificationStatusService(req.params.id, status, verificationNotes, String(req.user!.id), whatsappCommunityJoined);
   return res.json(successResponse(tutor, 'Verification status updated successfully'));
 });
 
@@ -139,6 +177,11 @@ export const getPublicTutorReviewsController = asyncHandler(async (req: Request,
     };
   });
   return res.json(paginatedResponse(mapped as any, page, limit, total));
+});
+
+export const getPublicTutorProfileController = asyncHandler(async (req: Request, res: Response) => {
+  const tutor = await getPublicTutorProfile(req.params.teacherId);
+  return res.json(successResponse(tutor));
 });
 
 export const deleteTutorProfileController = asyncHandler(async (req: Request, res: Response) => {
@@ -194,6 +237,14 @@ export const getTutorPerformanceMetricsController = asyncHandler(async (req: Aut
   const metrics = await getTutorPerformanceMetrics({ tutorId, coordinatorUserId });
   return res.json(successResponse(metrics));
 });
+export const getTutorAdvancedAnalyticsController = asyncHandler(async (req: AuthRequest, res: Response) => {
+    let tutorId = req.params.tutorId;
+    if (req.user && req.user.role === 'TUTOR') {
+        tutorId = String(req.user.id);
+    }
+    const analytics = await getTutorAdvancedAnalytics(tutorId);
+    return res.json(successResponse(analytics));
+});
 
 export const getCoordinatorTutorsController = asyncHandler(async (req: AuthRequest, res: Response) => {
   const coordinatorUserId = String(req.user!.id);
@@ -204,4 +255,65 @@ export const getCoordinatorTutorsController = asyncHandler(async (req: AuthReque
   const sortOrder = (req.query.sortOrder === 'asc' ? 'asc' : 'desc') as 'asc' | 'desc';
   const { tutors, total } = await getTutorsByCoordinator({ coordinatorUserId, page, limit, tier, sortBy, sortOrder });
   return res.json(paginatedResponse(tutors as any, page, limit, total));
+});
+
+export const getTutorStatsController = asyncHandler(async (req: Request, res: Response) => {
+  const tutorId = req.params.id;
+  const tutor = await getTutorById(tutorId);
+  if (!tutor) throw new ErrorResponse('Tutor not found', 404);
+
+  const userId = tutor.user.id || (tutor.user as any)._id;
+
+  // 1. One-time Reschedules (from FinalClass)
+  const FinalClass = require('../models/FinalClass').default;
+  const classes = await FinalClass.find({ tutor: userId });
+  const oneTimeReschedules = classes.reduce((sum: number, cls: any) => sum + (cls.oneTimeReschedules?.length || 0), 0);
+
+  // 2. Total Tutor Payouts
+  const Payment = require('../models/Payment').default;
+  const { PAYMENT_TYPE, PAYMENT_STATUS } = require('../config/constants');
+  const payouts = await Payment.aggregate([
+    {
+      $match: {
+        tutor: new mongoose.Types.ObjectId(String(userId)),
+        paymentType: PAYMENT_TYPE.TUTOR_PAYOUT,
+        status: PAYMENT_STATUS.PAID
+      }
+    },
+    {
+      $group: {
+        _id: null,
+        total: { $sum: '$amount' }
+      }
+    }
+  ]);
+  const totalPayouts = payouts.length > 0 ? payouts[0].total : 0;
+
+  // 3. Total Attendance Sheets Submitted
+  const Attendance = require('../models/Attendance').default;
+  const attendanceSheetsSubmitted = await Attendance.countDocuments({ tutor: userId });
+
+  // 4. Demos Scheduled
+  const ClassLead = require('../models/ClassLead').default;
+  const demosScheduled = await ClassLead.countDocuments({ demoTutor: userId });
+
+  return res.json(successResponse({
+    oneTimeReschedules,
+    totalPayouts,
+    attendanceSheetsSubmitted,
+    demosScheduled
+  }));
+});
+
+export const getSubjectsController = asyncHandler(async (_req: Request, res: Response) => {
+  // Use require here to avoid circular dependency issues if any, though explicit import is better if safe.
+  // Using the service directly as imported above.
+  const { getDistinctSubjects } = require('../services/tutorService'); 
+  const subjects = await getDistinctSubjects();
+  return res.json(successResponse(subjects));
+});
+export const getVerifiersController = asyncHandler(async (_req: Request, res: Response) => {
+  const { getDistinctVerifiers } = require('../services/tutorService'); 
+  const verifiers = await getDistinctVerifiers();
+  return res.json(successResponse(verifiers));
 });

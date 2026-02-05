@@ -2,6 +2,7 @@ import asyncHandler from '../utils/asyncHandler';
 import ErrorResponse from '../utils/errorResponse';
 import { verifyAccessToken } from '../utils/jwtUtils';
 import User from '../models/User';
+import * as mongoose from 'mongoose';
 import Student from '../models/Student';
 import { AuthRequest } from '../types';
 
@@ -18,13 +19,27 @@ export const protect = asyncHandler(async (req: AuthRequest, _res, next) => {
     const user = await User.findById(decoded.userId).select('-password -refreshToken');
 
     if (user && user.isActive !== false) {
+      let preferredMode: string | undefined;
+      let city: string | undefined;
+      if (user.role === 'TUTOR') {
+        const TutorModel = mongoose.model('Tutor');
+        const tutor = await TutorModel.findOne({ user: user._id });
+        if (tutor) {
+          preferredMode = (tutor as any).preferredMode;
+          city = (tutor as any).preferredLocations?.[0]; // Default city
+        }
+      }
+
       req.user = {
         id: (user as any).id as string,
         name: user.name,
         email: user.email,
         role: user.role as string,
-        phone: user.phone,
+        phone: user.phone || '',
         isActive: user.isActive,
+        acceptedTerms: user.acceptedTerms || false,
+        preferredMode,
+        city,
         createdAt: user.createdAt,
         updatedAt: user.updatedAt,
       };
@@ -45,6 +60,9 @@ export const protect = asyncHandler(async (req: AuthRequest, _res, next) => {
       role: 'STUDENT',
       phone: '',
       isActive: true,
+      acceptedTerms: true, // Students don't have TnC popup yet
+      preferredMode: undefined,
+      city: undefined,
       createdAt: student.createdAt,
       updatedAt: student.updatedAt,
     };

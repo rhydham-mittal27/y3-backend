@@ -5,6 +5,8 @@ import {
   getTutor,
   getTutorByUser,
   getMyProfile,
+  getMyProfileForEditController,
+  updateMyProfileController,
   updateTutorProfileController,
   updateTutorSettingsController,
   uploadDocumentController,
@@ -18,8 +20,10 @@ import {
   submitTutorFeedbackController,
   getTutorFeedbackController,
   getTutorPerformanceMetricsController,
+  getTutorAdvancedAnalyticsController,
   getCoordinatorTutorsController,
   getPublicTutorReviewsController,
+  getPublicTutorProfileController,
 } from '../controllers/tutorController';
 import {
   createTutorValidation,
@@ -46,6 +50,9 @@ const router = Router();
 // Public read-only route for showing tutor reviews on public profiles (teacherId or internal id)
 router.get('/public/:teacherKey/reviews', getPublicTutorReviewsController);
 
+// Public read-only route for showing tutor profile details by teacherId
+router.get('/public/:teacherId', getPublicTutorProfileController);
+
 router.use(protect);
 
 router.post(
@@ -55,9 +62,17 @@ router.post(
   createTutorProfileController
 );
 
+router.get('/subjects', authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN, USER_ROLES.TUTOR), require('../controllers/tutorController').getSubjectsController);
+
+router.get('/verifiers', authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN), require('../controllers/tutorController').getVerifiersController);
+
 router.get('/', authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN), getTutors);
 
 router.get('/my-profile', authorize(USER_ROLES.TUTOR), getMyProfile);
+
+router.get('/my-profile/for-edit', authorize(USER_ROLES.TUTOR), getMyProfileForEditController);
+
+router.put('/my-profile', authorize(USER_ROLES.TUTOR), updateMyProfileController);
 
 router.get(
   '/pending-verifications',
@@ -164,6 +179,19 @@ router.get(
   authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN, USER_ROLES.COORDINATOR, USER_ROLES.TUTOR),
   tutorIdParamValidation,
   getTutorPerformanceMetricsController
+);
+router.get(
+  '/:tutorId/advanced-analytics',
+  authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN, USER_ROLES.COORDINATOR, USER_ROLES.TUTOR),
+  tutorIdParamValidation,
+  getTutorAdvancedAnalyticsController
+);
+
+router.get(
+  '/:id/stats',
+  authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN),
+  tutorIdValidation,
+  require('../controllers/tutorController').getTutorStatsController
 );
 
 router.get(

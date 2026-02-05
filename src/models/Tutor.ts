@@ -34,6 +34,10 @@ export interface ITutorDocument extends Document {
   preferredMode?: TEACHING_MODE | string;
   preferredLocations?: string[];
   preferredCities?: string[];
+  permanentAddress?: string;
+  residentialAddress?: string;
+  alternatePhone?: string;
+  whatsappCommunityJoined: boolean;
   createdAt: Date;
   updatedAt: Date;
   approvalRatio?: number;
@@ -46,6 +50,11 @@ export interface ITutorDocument extends Document {
     requestedBy: mongoose.Types.ObjectId;
     reason?: string;
   };
+  bio?: string;
+  languagesKnown: string[];
+  skills: string[];
+  publicProfileEnabled: boolean;
+  yearsOfExperience: number;
   monthlyStats?: {
     month: string; // e.g. '2025-11'
     totalClasses: number;
@@ -67,6 +76,9 @@ export interface ITutorDocument extends Document {
       feedbackReceived?: boolean;
     };
   };
+  verificationFeeStatus?: 'PENDING' | 'PAID' | 'DEDUCT_FROM_FIRST_MONTH';
+  verificationFeePaymentProof?: string;
+  verificationFeePaymentDate?: Date;
 }
 
 const DocumentSchema = new Schema<IDocumentEmbedded>(
@@ -88,7 +100,7 @@ const DocumentSchema = new Schema<IDocumentEmbedded>(
 const TutorSchema: Schema<ITutorDocument> = new Schema<ITutorDocument>(
   {
     user: { type: Schema.Types.ObjectId, ref: 'User', required: true, unique: true },
-    teacherId: { type: String, unique: true, sparse: true, index: true },
+    teacherId: { type: String, unique: true, sparse: true },
     experienceHours: { type: Number, required: true, default: 0 },
     subjects: { type: [String], required: true },
     qualifications: { type: [String] },
@@ -109,6 +121,10 @@ const TutorSchema: Schema<ITutorDocument> = new Schema<ITutorDocument>(
     preferredMode: { type: String, enum: Object.values(TEACHING_MODE) },
     preferredLocations: { type: [String] },
     preferredCities: { type: [String] },
+    permanentAddress: { type: String },
+    residentialAddress: { type: String },
+    alternatePhone: { type: String },
+    whatsappCommunityJoined: { type: Boolean, default: false },
     settings: {
       type: {
         availabilityPreferences: {
@@ -133,6 +149,9 @@ const TutorSchema: Schema<ITutorDocument> = new Schema<ITutorDocument>(
       },
       default: {},
     },
+    verificationFeeStatus: { type: String, enum: ['PENDING', 'PAID', 'DEDUCT_FROM_FIRST_MONTH'], default: 'PENDING' },
+    verificationFeePaymentProof: { type: String },
+    verificationFeePaymentDate: { type: Date },
     tier: { type: String, enum: Object.values(TUTOR_TIER), default: TUTOR_TIER.BRONZE, required: true },
     tierUpdatedAt: { type: Date },
     tierUpdatedBy: { type: Schema.Types.ObjectId, ref: 'User' },
@@ -144,6 +163,11 @@ const TutorSchema: Schema<ITutorDocument> = new Schema<ITutorDocument>(
         reason: String,
       },
     },
+    bio: { type: String, trim: true },
+    languagesKnown: { type: [String], default: [] },
+    skills: { type: [String], default: [] },
+    publicProfileEnabled: { type: Boolean, default: false },
+    yearsOfExperience: { type: Number, default: 0 },
     monthlyStats: {
       month: { type: String },
       totalClasses: { type: Number, default: 0 },
@@ -161,7 +185,6 @@ TutorSchema.virtual('approvalRatio').get(function (this: ITutorDocument) {
 });
 
 // Indexes
-TutorSchema.index({ user: 1 }, { unique: true });
 TutorSchema.index({ verificationStatus: 1 });
 TutorSchema.index({ isAvailable: 1, subjects: 1 });
 TutorSchema.index({ ratings: -1 });

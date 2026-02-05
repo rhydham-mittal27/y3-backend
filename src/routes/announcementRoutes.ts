@@ -7,6 +7,7 @@ import {
   getAnnouncementByLead,
   expressInterestInAnnouncement,
   getInterestedTutorsForAnnouncement,
+  getRecommendedTutorsForLeadController,
   deactivateAnnouncementController,
 } from '../controllers/announcementController';
 import {
@@ -42,6 +43,7 @@ router.get('/lead/:leadId', authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN), lea
 router.get('/:id', authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN, USER_ROLES.TUTOR), announcementIdValidation, getAnnouncement);
 router.post('/:id/interest', authorize(USER_ROLES.TUTOR), expressInterestValidation, expressInterestInAnnouncement);
 router.get('/:id/interested-tutors', authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN), announcementIdValidation, getInterestedTutorsForAnnouncement);
+router.get('/:id/recommended-tutors', authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN), announcementIdValidation, getRecommendedTutorsForLeadController);
 router.patch('/:id/deactivate', authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN), announcementIdValidation, deactivateAnnouncementController);
 
 // Coordinator announcement routes

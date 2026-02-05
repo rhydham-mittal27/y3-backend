@@ -11,6 +11,9 @@ export interface INoteDocument extends Document {
   grade?: string; // e.g. "Class 6" for class-based sharing
   mimeType?: string;
   url?: string;
+  subject?: string;
+  chapter?: string;
+  classId?: mongoose.Types.ObjectId;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -24,6 +27,9 @@ const NoteSchema: Schema<INoteDocument> = new Schema(
     grade: { type: String, trim: true },
     mimeType: { type: String },
     url: { type: String },
+    subject: { type: String, trim: true },
+    chapter: { type: String, trim: true },
+    classId: { type: Schema.Types.ObjectId, ref: 'FinalClass', default: null },
   },
   { timestamps: true }
 );

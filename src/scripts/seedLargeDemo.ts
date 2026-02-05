@@ -84,7 +84,7 @@ async function main() {
   } as any);
 
   // Additional random tutors
-  for (let i = 0; i < TUTORS_PER_SEED - 1; i++) {
+  for (let _i = 0; _i < TUTORS_PER_SEED - 1; _i++) {
     const u = await createUser(USER_ROLES.TUTOR);
     tutors.push(u);
     await Tutor.create({
@@ -118,7 +118,7 @@ async function main() {
   const DAYS_OF_WEEK = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY'];
 
   for (const tutorUser of tutors) {
-    for (let c = 0; c < CLASSES_PER_TUTOR; c++) {
+    for (let _c = 0; _c < CLASSES_PER_TUTOR; _c++) {
       // Lead for this class
       const lead = await ClassLead.create({
         studentName: faker.person.firstName() + ' ' + faker.person.lastName(),
@@ -136,7 +136,7 @@ async function main() {
 
       // FinalClass for this lead/tutor
       const startDate = faker.date.recent({ days: 60 });
-      const className = `${lead.studentName}-${lead.grade}-${(lead.subject[0] || 'GEN')}-${String(lead._id).slice(-4)}`;
+      const className = `${lead.studentName}-${lead.grade}-${(lead.subject?.[0] || 'GEN')}-${String(lead._id).slice(-4)}`;
       const finalClass = await FinalClass.create({
         className,
         classLead: lead._id,

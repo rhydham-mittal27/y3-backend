@@ -18,6 +18,12 @@ export const updateManagerValidation = [
   body('permissions.canVerifyTutors').optional().isBoolean(),
   body('permissions.canCreateLeads').optional().isBoolean(),
   body('permissions.canManagePayments').optional().isBoolean(),
+  body('bio').optional().isString().trim(),
+  body('languagesKnown').optional().isArray(),
+  body('skills').optional().isArray(),
+  body('permanentAddress').optional().isString().trim(),
+  body('residentialAddress').optional().isString().trim(),
+  body('documents').optional().isArray(),
 ];
 
 export const managerIdValidation = [param('id').isMongoId().withMessage('Invalid manager ID')];

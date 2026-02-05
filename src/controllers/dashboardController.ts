@@ -17,6 +17,15 @@ import {
   getOverallStatistics,
   exportDashboardReport,
 } from '../services/dashboardService';
+import { USER_ROLES } from '../config/constants';
+
+const getManagerId = (req: Request): string | undefined => {
+  const user = (req as any).user;
+  if (user && user.role === USER_ROLES.MANAGER) {
+    return user.id;
+  }
+  return undefined;
+};
 
 export const getDateWiseLeadsChart = asyncHandler(async (req: Request, res: Response) => {
   const errors = validationResult(req);
@@ -25,26 +34,27 @@ export const getDateWiseLeadsChart = asyncHandler(async (req: Request, res: Resp
   const data = await getDateWiseClassLeads(
     fromDate ? new Date(fromDate) : undefined,
     toDate ? new Date(toDate) : undefined,
-    (groupBy as 'day' | 'week' | 'month') || 'day'
+    (groupBy as 'day' | 'week' | 'month') || 'day',
+    getManagerId(req)
   );
   return res.status(200).json(successResponse(data, 'Date-wise class leads data retrieved successfully'));
 });
 
 export const getLeadStatusDistribution = asyncHandler(async (req: Request, res: Response) => {
   const { fromDate, toDate } = req.query as any;
-  const data = await getClassLeadStatusDistribution(fromDate ? new Date(fromDate) : undefined, toDate ? new Date(toDate) : undefined);
+  const data = await getClassLeadStatusDistribution(fromDate ? new Date(fromDate) : undefined, toDate ? new Date(toDate) : undefined, getManagerId(req));
   return res.status(200).json(successResponse(data));
 });
 
 export const getConversionFunnelData = asyncHandler(async (req: Request, res: Response) => {
   const { fromDate, toDate } = req.query as any;
-  const data = await getConversionFunnel(fromDate ? new Date(fromDate) : undefined, toDate ? new Date(toDate) : undefined);
+  const data = await getConversionFunnel(fromDate ? new Date(fromDate) : undefined, toDate ? new Date(toDate) : undefined, getManagerId(req));
   return res.status(200).json(successResponse(data));
 });
 
 export const getFinalClassProgressData = asyncHandler(async (req: Request, res: Response) => {
   const { fromDate, toDate } = req.query as any;
-  const data = await getFinalClassProgress(fromDate ? new Date(fromDate) : undefined, toDate ? new Date(toDate) : undefined);
+  const data = await getFinalClassProgress(fromDate ? new Date(fromDate) : undefined, toDate ? new Date(toDate) : undefined, getManagerId(req));
   return res.status(200).json(successResponse(data));
 });
 
@@ -56,7 +66,8 @@ export const getTutorProgressReportData = asyncHandler(async (req: Request, res:
     sortBy,
     sortOrder,
     fromDate ? new Date(fromDate) : undefined,
-    toDate ? new Date(toDate) : undefined
+    toDate ? new Date(toDate) : undefined,
+    getManagerId(req)
   );
   return res.status(200).json(paginatedResponse(result.tutors, result.page, result.limit, result.total));
 });
@@ -66,12 +77,12 @@ export const getCumulativeGrowthChart = asyncHandler(async (req: Request, res: R
   if (!errors.isEmpty()) throw new ErrorResponse('Validation error', 400);
   const { fromDate, toDate, groupBy = 'day' } = req.query as any;
   if (!fromDate || !toDate) throw new ErrorResponse('From date and To date are required', 400);
-  const data = await getCumulativeClassGrowth(new Date(fromDate), new Date(toDate), (groupBy as 'day' | 'week' | 'month') || 'day');
+  const data = await getCumulativeClassGrowth(new Date(fromDate), new Date(toDate), (groupBy as 'day' | 'week' | 'month') || 'day', getManagerId(req));
   return res.status(200).json(successResponse(data));
 });
 
-export const getPendingApprovalsData = asyncHandler(async (_req: Request, res: Response) => {
-  const data = await getPendingApprovals();
+export const getPendingApprovalsData = asyncHandler(async (req: Request, res: Response) => {
+  const data = await getPendingApprovals(getManagerId(req));
   return res.status(200).json(successResponse(data));
 });
 
@@ -80,14 +91,15 @@ export const getRevenueAnalyticsData = asyncHandler(async (req: Request, res: Re
   const data = await getRevenueAnalytics(
     fromDate ? new Date(fromDate) : undefined,
     toDate ? new Date(toDate) : undefined,
-    (groupBy as 'day' | 'week' | 'month') || 'month'
+    (groupBy as 'day' | 'week' | 'month') || 'month',
+    getManagerId(req)
   );
   return res.status(200).json(successResponse(data));
 });
 
 export const getOverallStats = asyncHandler(async (req: Request, res: Response) => {
   const { fromDate, toDate } = req.query as any;
-  const data = await getOverallStatistics(fromDate ? new Date(fromDate) : undefined, toDate ? new Date(toDate) : undefined);
+  const data = await getOverallStatistics(fromDate ? new Date(fromDate) : undefined, toDate ? new Date(toDate) : undefined, undefined, getManagerId(req));
   return res.status(200).json(successResponse(data));
 });
 

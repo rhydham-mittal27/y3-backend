@@ -1,10 +1,16 @@
+import mongoose from 'mongoose';
 import asyncHandler from '../utils/asyncHandler';
 import { successResponse, paginatedResponse } from '../utils/responseFormatter';
 import { AuthRequest } from '../types';
+import ErrorResponse from '../utils/errorResponse';
 import { getParentDashboardStats, getClassesByParent, getAnnouncementsForParent } from '../services/studentService';
 import { listNotesForStudent } from '../services/noteService';
 import { getPaymentsByClass } from '../services/paymentService';
 import Student from '../models/Student';
+import FinalClass from '../models/FinalClass';
+import Payment from '../models/Payment';
+import Attendance from '../models/Attendance';
+import Test from '../models/Test';
 
 // Parent controllers (existing)
 export const getDashboardStats = asyncHandler(async (req: AuthRequest, res) => {
@@ -324,11 +330,17 @@ export const getStudentTests = asyncHandler(async (req: AuthRequest, res) => {
       type: 'Test',
       date: date ? date.toISOString().slice(0, 10) : '',
       time: t.testTime || '',
-      duration: '',
+      duration: typeof t.durationMinutes === 'number' && !Number.isNaN(t.durationMinutes)
+        ? `${t.durationMinutes} min`
+        : '',
       status,
-      totalMarks: undefined,
-      obtainedMarks: undefined,
+      totalMarks: typeof t.totalMarks === 'number' && !Number.isNaN(t.totalMarks) ? t.totalMarks : undefined,
+      obtainedMarks:
+        typeof t.obtainedMarks === 'number' && !Number.isNaN(t.obtainedMarks) ? t.obtainedMarks : undefined,
       description: t.notes || 'Class test',
+      paperUrl: t.paperUrl || undefined,
+      topicName: t.topicName || undefined,
+      answerSheetUrl: t.answerSheetUrl || undefined,
     };
   });
 
@@ -383,14 +395,77 @@ export const getStudentPayments = asyncHandler(async (req: AuthRequest, res) => 
   return res.status(200).json(paginatedResponse(paginated, page, limit, total));
 });
 
+export const getStudentProfile = asyncHandler(async (req: AuthRequest, res) => {
+  const id = req.params.id;
+  // Try finding by studentId string first, then by _id
+  let student = await Student.findOne({ studentId: id });
+  if (!student && mongoose.Types.ObjectId.isValid(id)) {
+    student = await Student.findById(id);
+  }
+
+  if (!student) {
+    throw new ErrorResponse('Student not found', 404);
+  }
+
+  const userRole = req.user?.role;
+  const isStaff = ['ADMIN', 'MANAGER', 'COORDINATOR'].includes(userRole || '');
+
+  if (isStaff) {
+    // Find classes where this student is enrolled
+    const classes = await FinalClass.find({
+      $or: [
+        { studentId: student.studentId },
+        { studentName: student.name }
+      ]
+    })
+    .populate('tutor', 'name email phone')
+    .populate('coordinator', 'name email')
+    .populate('classLead'); // Populate full classLead for demoDetails
+
+    // Get payment summary
+    const payments = await Payment.find({
+      $or: [
+        { studentId: student.studentId },
+        { studentName: student.name }
+      ]
+    }).sort({ month: -1 });
+
+    // Get attendance summary (stat only)
+    const attendanceStats = await Attendance.aggregate([
+      { $match: { 
+          $or: [
+            { studentId: student.studentId },
+            { studentName: student.name }
+          ]
+      }},
+      { $group: {
+          _id: '$studentAttendanceStatus',
+          count: { $sum: 1 }
+      }}
+    ]);
+
+    // Get tests
+    const classIds = classes.map(c => c._id);
+    const tests = await Test.find({ finalClass: { $in: classIds } }).sort({ testDate: -1 });
+
+    const enrichedStudent = student.toObject();
+    (enrichedStudent as any).classes = classes;
+    (enrichedStudent as any).payments = payments;
+    (enrichedStudent as any).attendanceStats = attendanceStats;
+    (enrichedStudent as any).tests = tests; // Add tests to response
+    return res.json(successResponse(enrichedStudent));
+  }
+
+  return res.json(successResponse(student));
+});
+
 export default {
   getDashboardStats,
   getMyClasses,
   getMyAnnouncements,
-  getStudentDashboardStats,
-  getStudentClasses,
   getStudentAttendance,
   getStudentTests,
   getStudentNotes,
+  getStudentProfile,
 };
 

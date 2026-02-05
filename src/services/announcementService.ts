@@ -22,8 +22,12 @@ export const createAnnouncement = async (classLeadId: string, postedBy: string) 
     throw new ErrorResponse('Announcement already exists for this class lead', 409);
   }
 
-  // Optional rule: only NEW or ANNOUNCED
-  if (![CLASS_LEAD_STATUS.NEW, CLASS_LEAD_STATUS.ANNOUNCED].includes(lead.status as any)) {
+  // Optional rule: allow announcing NEW, already ANNOUNCED, or REJECTED (after demo rejection)
+  if (![
+    CLASS_LEAD_STATUS.NEW,
+    CLASS_LEAD_STATUS.ANNOUNCED,
+    CLASS_LEAD_STATUS.REJECTED,
+  ].includes(lead.status as any)) {
     throw new ErrorResponse('Lead is not eligible for announcement', 400);
   }
 
@@ -33,7 +37,7 @@ export const createAnnouncement = async (classLeadId: string, postedBy: string) 
     postedAt: new Date(),
   });
 
-  if (lead.status === CLASS_LEAD_STATUS.NEW) {
+  if (lead.status === CLASS_LEAD_STATUS.NEW || lead.status === CLASS_LEAD_STATUS.REJECTED) {
     await ClassLead.findByIdAndUpdate(classLeadId, { $set: { status: CLASS_LEAD_STATUS.ANNOUNCED } });
   }
 
@@ -114,6 +118,23 @@ export const getTutorAvailableAnnouncements = async (params: {
     query.isActive = isActive;
   }
 
+  // Restrict to announcements posted in the current week
+  const now = new Date();
+  const startOfWeek = new Date(now);
+  startOfWeek.setHours(0, 0, 0, 0);
+  // Assuming week starts on Sunday; adjust if you prefer Monday (0 = Sunday, 1 = Monday, ...)
+  startOfWeek.setDate(startOfWeek.getDate() - startOfWeek.getDay());
+  query.postedAt = { $gte: startOfWeek };
+
+  // Exclude announcements whose classLead has already been converted to a FinalClass
+  const finalClasses = await FinalClass.find({}).select('classLead');
+  const convertedLeadIds = finalClasses
+    .map((fc: any) => fc.classLead)
+    .filter((id: any) => !!id);
+  if (convertedLeadIds.length > 0) {
+    query.classLead = { $nin: convertedLeadIds };
+  }
+
   // Load tutor profile to apply OFFLINE area filtering and ONLINE subject filtering
   // TODO: Use tutorDoc when implementing filtering logic
   await Tutor.findOne({ user: tutorUserId }).select('subjects preferredLocations');
@@ -183,29 +204,82 @@ export const expressInterest = async (announcementId: string, tutorUserId: strin
   return updatedAnnouncement;
 };
 
-export const getInterestedTutors = async (announcementId: string) => {
-  const announcement = await Announcement.findById(announcementId).populate({
-    path: 'interestedTutors.tutor',
-    select: 'name email phone role',
-  });
-  if (!announcement) throw new ErrorResponse('Announcement not found', 404);
+export const computeMatchPercentage = (cl: any, tutor: any): number => {
+  if (!cl || !tutor) return 0;
 
-  // interestedTutors.tutor may be populated User docs or ObjectIds; normalize to ObjectId array
-  const tutorUserIds = announcement.interestedTutors
-    .map((ti) => {
-      const t: any = ti.tutor as any;
-      const id = t?._id ? String(t._id) : String(t);
-      try { return new mongoose.Types.ObjectId(id); } catch { return null; }
-    })
-    .filter((x): x is mongoose.Types.ObjectId => !!x);
+  const normalize = (s: any) => String(s || '').trim().toLowerCase();
 
-  const tutors = await Tutor.find({ user: { $in: tutorUserIds } }).populate('user', 'name email phone');
+  // 1. Subject Match (40%)
+  const leadSubjects: string[] = (Array.isArray(cl.subject) ? cl.subject : cl.subject ? [String(cl.subject)] : []).map(normalize).filter(Boolean);
+  const tutorSubjects: string[] = (Array.isArray(tutor.subjects) ? tutor.subjects : []).map(normalize).filter(Boolean);
+  const preferredSubjects: string[] = (Array.isArray(tutor.settings?.preferredSubjects) ? tutor.settings.preferredSubjects : []).map(normalize).filter(Boolean);
+  const tutorAllSubjects = new Set<string>([...tutorSubjects, ...preferredSubjects]);
 
+  const subjectApplicable = leadSubjects.length > 0;
+  const matchingSubjects = leadSubjects.filter((s) => tutorAllSubjects.has(s));
+  const subjectMatchScore = subjectApplicable ? matchingSubjects.length / leadSubjects.length : 0;
+
+  // 2. Mode Match (20%)
+  const leadMode = normalize(cl.mode);
+  const tutorPreferredMode = normalize(tutor.preferredMode || tutor.settings?.teachingModePreference);
+  const modeApplicable = !!(leadMode && tutorPreferredMode);
+
+  let modeScore = 0;
+  if (modeApplicable) {
+    if (leadMode === tutorPreferredMode) {
+      modeScore = 1;
+    } else if (tutorPreferredMode === 'hybrid') {
+      modeScore = 0.75;
+    }
+  }
+
+  // 3. City Match (20%)
+  const leadCity = normalize(cl.city);
+  const tutorPreferredCities = (Array.isArray(tutor.preferredCities) ? tutor.preferredCities : []).map(normalize).filter(Boolean);
+  const cityApplicable = !!(leadCity && tutorPreferredCities.length > 0);
+  const cityMatch = cityApplicable && tutorPreferredCities.includes(leadCity);
+
+  // 4. Area Match (20%)
+  const leadArea = normalize(cl.area || cl.location);
+  const tutorPreferredLocations = (Array.isArray(tutor.preferredLocations) ? tutor.preferredLocations : []).map(normalize).filter(Boolean);
+  const areaApplicable = !!(leadArea && tutorPreferredLocations.length > 0);
+  const areaMatch = areaApplicable && tutorPreferredLocations.some((loc: string) => !!loc && loc === leadArea);
+
+  // Dynamic Weighting (Total 1.0)
+  const weights = { subject: 0.4, mode: 0.2, city: 0.2, area: 0.2 };
+  let totalWeight = 0;
+  let weightedScore = 0;
+
+  if (subjectApplicable) {
+    totalWeight += weights.subject;
+    weightedScore += subjectMatchScore * weights.subject;
+  }
+  if (modeApplicable) {
+    totalWeight += weights.mode;
+    weightedScore += modeScore * weights.mode;
+  }
+  if (cityApplicable) {
+    totalWeight += weights.city;
+    weightedScore += (cityMatch ? 1 : 0) * weights.city;
+  }
+  if (areaApplicable) {
+    totalWeight += weights.area;
+    weightedScore += (areaMatch ? 1 : 0) * weights.area;
+  }
+
+  if (totalWeight === 0) return 0;
+  
+  return Math.round((weightedScore / totalWeight) * 100);
+};
+
+const enrichTutorData = (tutors: any[], interestedTutorsRaw: any[], classLeadDoc?: any) => {
   const tutorMap = new Map<string, any>();
   tutors.forEach((t) => {
     const approvalRatio = t.demosTaken ? (t.demosApproved / t.demosTaken) * 100 : 0;
+    const matchPercentage = classLeadDoc ? computeMatchPercentage(classLeadDoc, t) : 0;
     const key = String((t.user as any)?._id || t.user);
     tutorMap.set(key, {
+      id: String(t._id),
       user: t.user,
       experienceHours: t.experienceHours,
       subjects: t.subjects,
@@ -216,19 +290,86 @@ export const getInterestedTutors = async (announcementId: string) => {
       approvalRatio,
       verificationStatus: t.verificationStatus,
       interestCount: t.interestCount,
+      teacherId: t.teacherId,
+      matchPercentage
     });
   });
 
-  const enriched = announcement.interestedTutors.map((ti) => {
+  return interestedTutorsRaw.map((ti) => {
     const key = String(((ti.tutor as any)?._id) || ti.tutor);
     const merged = tutorMap.get(key);
     return {
       ...(merged || {}),
       interestedAt: ti.interestedAt,
+      notes: ti.notes,
+    };
+  });
+};
+
+export const getInterestedTutors = async (announcementId: string) => {
+  const announcement = await Announcement.findById(announcementId)
+    .populate('classLead')
+    .populate({
+      path: 'interestedTutors.tutor',
+      select: 'name email phone role',
+    });
+  if (!announcement) throw new ErrorResponse('Announcement not found', 404);
+
+  const tutorUserIds = announcement.interestedTutors
+    .map((ti) => {
+      const t: any = ti.tutor as any;
+      const id = t?._id ? String(t._id) : String(t);
+      try { return new mongoose.Types.ObjectId(id); } catch { return null; }
+    })
+    .filter((x): x is mongoose.Types.ObjectId => !!x);
+
+  const tutors = await Tutor.find({ user: { $in: tutorUserIds } }).populate('user', 'name email phone');
+  const enriched = enrichTutorData(tutors, announcement.interestedTutors, announcement.classLead);
+  return enriched.sort((a, b) => (b.matchPercentage || 0) - (a.matchPercentage || 0));
+};
+
+export const getRecommendedTutorsForLead = async (classLeadId: string) => {
+  const lead = await ClassLead.findById(classLeadId);
+  if (!lead) throw new ErrorResponse('Class lead not found', 404);
+
+  const query: any = {
+    verificationStatus: 'VERIFIED',
+    isAvailable: true,
+  };
+
+  const tutors = await Tutor.find(query).limit(50).populate('user', 'name email phone');
+
+  // Exclude tutors who already expressed interest
+  const announcement = await Announcement.findOne({ classLead: classLeadId });
+  const interestedTutorUserIds = announcement ? announcement.interestedTutors.map((ti) => String(ti.tutor)) : [];
+
+  const filteredTutors = tutors.filter(t => !interestedTutorUserIds.includes(String(t.user?._id || t.user)));
+
+  // Enrich using the same helper logic
+  const enriched = filteredTutors.map(t => {
+    const approvalRatio = t.demosTaken ? (t.demosApproved / t.demosTaken) * 100 : 0;
+    const matchPercentage = computeMatchPercentage(lead, t);
+    
+    return {
+      id: String(t._id),
+      user: t.user,
+      experienceHours: t.experienceHours,
+      subjects: t.subjects,
+      ratings: t.ratings,
+      classesAssigned: t.classesAssigned,
+      demosTaken: t.demosTaken,
+      demosApproved: t.demosApproved,
+      approvalRatio,
+      verificationStatus: t.verificationStatus,
+      interestCount: t.interestCount,
+      isRecommendation: true,
+      teacherId: t.teacherId,
+      matchPercentage
     };
   });
 
-  return enriched;
+  // Sort by match percentage descending
+  return enriched.sort((a, b) => (b.matchPercentage || 0) - (a.matchPercentage || 0));
 };
 
 export const deactivateAnnouncement = async (announcementId: string) => {

@@ -4,13 +4,42 @@ import Attendance from '../models/Attendance';
 import FinalClass from '../models/FinalClass';
 import Student from '../models/Student';
 import ErrorResponse from '../utils/errorResponse';
-import { PAYMENT_STATUS, PAYMENT_METHOD, ATTENDANCE_STATUS, MANAGER_ACTION_TYPE } from '../config/constants';
+import { PAYMENT_STATUS, PAYMENT_METHOD, PAYMENT_TYPE, ATTENDANCE_STATUS, MANAGER_ACTION_TYPE } from '../config/constants';
 import { logError } from '../utils/logger';
 import { logManagerActivity } from './managerService';
 import Manager from '../models/Manager';
 import { createNotificationWithPreferences } from './notificationService';
 
 const DEFAULT_DUE_DAYS = 7;
+
+export const createManualPayment = async (data: {
+  tutor?: string;
+  amount: number;
+  paymentType: PAYMENT_TYPE;
+  finalClass?: string;
+  dueDate: Date;
+  notes?: string;
+  createdBy: string;
+  currency?: string;
+}) => {
+  const payment = await Payment.create({
+    tutor: data.tutor ? new mongoose.Types.ObjectId(data.tutor) : undefined,
+    amount: data.amount,
+    paymentType: data.paymentType,
+    finalClass: data.finalClass ? new mongoose.Types.ObjectId(data.finalClass) : undefined,
+    dueDate: new Date(data.dueDate),
+    notes: data.notes,
+    createdBy: new mongoose.Types.ObjectId(data.createdBy),
+    status: PAYMENT_STATUS.PENDING,
+    currency: data.currency || 'INR',
+  });
+
+  return await payment.populate([
+    { path: 'finalClass' },
+    { path: 'tutor', select: 'name email phone' },
+    { path: 'createdBy', select: 'name email' },
+  ]);
+};
 
 export const createPayment = async (attendanceId: string, createdBy: string) => {
   const attendance = await Attendance.findById(attendanceId).populate([{ path: 'finalClass' }]);
@@ -71,7 +100,14 @@ export const createAdvancePaymentForFinalClass = async (finalClassId: string, cr
   const lead: any = cls.classLead;
   let amount = lead?.paymentAmount;
 
-  // Fallback: use tutorFees if paymentAmount is not set
+  // Fallback: use finalClass.ratePerSession if lead.paymentAmount is not set
+  if (!amount || amount <= 0) {
+    if (cls.ratePerSession && cls.ratePerSession > 0) {
+      amount = cls.ratePerSession;
+    }
+  }
+
+  // Fallback: use tutorFees if still not set
   if (!amount || amount <= 0) {
     if (lead?.tutorFees && lead.tutorFees > 0) {
       amount = lead.tutorFees;
@@ -163,6 +199,7 @@ export const getAllPayments = async (args: {
   page: number;
   limit: number;
   status?: PAYMENT_STATUS | string;
+  paymentType?: string;
   tutorId?: string;
   finalClassId?: string;
   fromDate?: Date;
@@ -170,9 +207,10 @@ export const getAllPayments = async (args: {
   sortBy?: string;
   sortOrder?: 'asc' | 'desc';
 }) => {
-  const { page, limit, status, tutorId, finalClassId, fromDate, toDate, sortBy, sortOrder } = args;
+  const { page, limit, status, paymentType, tutorId, finalClassId, fromDate, toDate, sortBy, sortOrder } = args;
   const query: any = {};
   if (status) query.status = status;
+  if (paymentType) query.paymentType = paymentType;
   if (tutorId) query.tutor = new mongoose.Types.ObjectId(tutorId);
   if (finalClassId) query.finalClass = new mongoose.Types.ObjectId(finalClassId);
   if (fromDate || toDate) {
@@ -194,6 +232,7 @@ export const getAllPayments = async (args: {
       .populate([
         { path: 'finalClass' },
         { path: 'attendance' },
+        { path: 'attendanceSheet' },
         { path: 'tutor', select: 'name email phone' },
         { path: 'createdBy', select: 'name email' },
         { path: 'paidBy', select: 'name email' },
@@ -208,6 +247,7 @@ export const getPaymentById = async (paymentId: string) => {
   const payment = await Payment.findById(paymentId).populate([
     { path: 'finalClass' },
     { path: 'attendance' },
+    { path: 'attendanceSheet' },
     { path: 'tutor', select: 'name email phone' },
     { path: 'createdBy', select: 'name email' },
     { path: 'paidBy', select: 'name email' },
@@ -303,6 +343,7 @@ export const updatePaymentStatus = async (
     await payment.populate([
       { path: 'finalClass' },
       { path: 'attendance' },
+      { path: 'attendanceSheet' },
       { path: 'tutor', select: 'name email phone' },
       { path: 'createdBy', select: 'name email' },
       { path: 'paidBy', select: 'name email' },
@@ -508,56 +549,104 @@ export const getPaymentStatistics = async (fromDate?: Date, toDate?: Date, tutor
   }
   if (tutorId) match.tutor = new mongoose.Types.ObjectId(tutorId);
 
+  // Month start for current month stats
+  const now = new Date();
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
   const pipeline: any[] = [
     { $match: match },
     {
-      $group: {
-        _id: '$status',
-        count: { $sum: 1 },
-        amount: { $sum: '$amount' },
-      },
-    },
+      $facet: {
+        totalClasses: [
+          { $group: { _id: '$finalClass' } },
+          { $count: 'count' }
+        ],
+        financials: [
+          { $match: { status: PAYMENT_STATUS.PAID } },
+          {
+            $group: {
+              _id: null,
+              feesCollected: {
+                $sum: {
+                  $cond: [{ $eq: ['$paymentType', PAYMENT_TYPE.FEES_COLLECTED] }, '$amount', 0]
+                }
+              },
+              tutorPayouts: {
+                $sum: {
+                  $cond: [{ $eq: ['$paymentType', PAYMENT_TYPE.TUTOR_PAYOUT] }, '$amount', 0]
+                }
+              },
+              miscellaneous: {
+                $sum: {
+                  $cond: [{ $eq: ['$paymentType', PAYMENT_TYPE.MISCELLANEOUS] }, '$amount', 0]
+                }
+              }
+            }
+          }
+        ],
+        monthlyFinancials: [
+          { 
+            $match: { 
+              status: PAYMENT_STATUS.PAID,
+              createdAt: { $gte: startOfMonth }
+            } 
+          },
+          {
+            $group: {
+              _id: null,
+              feesCollected: {
+                $sum: {
+                  $cond: [{ $eq: ['$paymentType', PAYMENT_TYPE.FEES_COLLECTED] }, '$amount', 0]
+                }
+              },
+              tutorPayouts: {
+                $sum: {
+                  $cond: [{ $eq: ['$paymentType', PAYMENT_TYPE.TUTOR_PAYOUT] }, '$amount', 0]
+                }
+              },
+              miscellaneous: {
+                $sum: {
+                  $cond: [{ $eq: ['$paymentType', PAYMENT_TYPE.MISCELLANEOUS] }, '$amount', 0]
+                }
+              }
+            }
+          }
+        ]
+      }
+    }
   ];
 
-  const statusAgg = await Payment.aggregate(pipeline);
-  const totals = statusAgg.reduce(
-    (acc: any, cur: any) => {
-      acc.count += cur.count;
-      acc.totalAmount += cur.amount || 0;
-      if (cur._id === PAYMENT_STATUS.PAID) acc.paidAmount = cur.amount || 0;
-      if (cur._id === PAYMENT_STATUS.PENDING) acc.pendingAmount = cur.amount || 0;
-      if (cur._id === PAYMENT_STATUS.OVERDUE) acc.overdueAmount = cur.amount || 0;
-      acc.paymentsByStatus[cur._id] = cur.count;
-      return acc;
-    },
-    { count: 0, totalAmount: 0, paidAmount: 0, pendingAmount: 0, overdueAmount: 0, paymentsByStatus: {} as Record<string, number> }
-  );
+  const [result] = await Payment.aggregate(pipeline);
+  
+  const totalClasses = result.totalClasses[0]?.count || 0;
+  const financials = result.financials[0] || { feesCollected: 0, tutorPayouts: 0, miscellaneous: 0 };
+  const feesCollected = financials.feesCollected || 0;
+  const tutorPayouts = financials.tutorPayouts || 0;
+  const miscellaneous = financials.miscellaneous || 0;
+  const serviceCharge = feesCollected - tutorPayouts;
+  const netProfit = serviceCharge - miscellaneous;
 
-  const avgAgg = await Payment.aggregate([
-    { $match: match },
-    { $group: { _id: null, avg: { $avg: '$amount' } } },
-  ]);
-
-  const methodsAgg = await Payment.aggregate([
-    { $match: match },
-    { $group: { _id: '$paymentMethod', count: { $sum: 1 } } },
-  ]);
-
-  const paymentsByMethod: Record<string, number> = {};
-  methodsAgg.forEach((m) => {
-    const key = m._id || 'UNKNOWN';
-    paymentsByMethod[key] = m.count;
-  });
+  const monthly = result.monthlyFinancials[0] || { feesCollected: 0, tutorPayouts: 0, miscellaneous: 0 };
+  const monthlyFees = monthly.feesCollected || 0;
+  const monthlyPayouts = monthly.tutorPayouts || 0;
+  const monthlyMisc = monthly.miscellaneous || 0;
+  const monthlyServiceCharge = monthlyFees - monthlyPayouts;
+  const monthlyNetProfit = monthlyServiceCharge - monthlyMisc;
 
   return {
-    totalPayments: totals.count,
-    totalAmount: totals.totalAmount,
-    paidAmount: totals.paidAmount,
-    pendingAmount: totals.pendingAmount,
-    overdueAmount: totals.overdueAmount,
-    averagePaymentAmount: avgAgg[0]?.avg || 0,
-    paymentsByStatus: totals.paymentsByStatus,
-    paymentsByMethod,
+    totalClasses,
+    feesCollected,
+    totalPayouts: tutorPayouts,
+    miscellaneous,
+    serviceCharge,
+    netProfit,
+    monthly: {
+      feesCollected: monthlyFees,
+      tutorPayouts: monthlyPayouts,
+      miscellaneous: monthlyMisc,
+      serviceCharge: monthlyServiceCharge,
+      netProfit: monthlyNetProfit
+    }
   };
 };
 
@@ -606,8 +695,113 @@ export const generatePaymentReport = async (filters: {
   return data;
 };
 
+export const getPaymentFilterOptions = async () => {
+  const classes = await Payment.aggregate([
+    {
+      $group: {
+        _id: '$finalClass'
+      }
+    },
+    {
+      $lookup: {
+        from: 'finalclasses',
+        localField: '_id',
+        foreignField: '_id',
+        as: 'classDetails'
+      }
+    },
+    { $unwind: '$classDetails' },
+    {
+      $project: {
+        _id: 1,
+        // Assuming className is customId or similar identifier based on request "class id - student names"
+        // FinalClass has className (unique), studentName
+        label: { $concat: ['$classDetails.className', ' - ', '$classDetails.studentName'] }
+      }
+    },
+    { $sort: { label: 1 } }
+  ]);
+
+  return { classes };
+};
+
+export const createPaymentForSheet = async (sheetId: string, createdBy: string) => {
+  const AttendanceSheet = require('../models/AttendanceSheet').default;
+  const sheet = await AttendanceSheet.findById(sheetId).populate([
+    { path: 'finalClass' },
+    { path: 'attendanceIds' }
+  ]);
+  if (!sheet) throw new ErrorResponse('Attendance sheet not found', 404);
+  if (sheet.status !== 'APPROVED') {
+    throw new ErrorResponse('Attendance sheet is not approved', 400);
+  }
+
+  const existing = await Payment.findOne({ attendanceSheet: new mongoose.Types.ObjectId(sheetId) });
+  if (existing) throw new ErrorResponse('Payment already exists for this attendance sheet', 409);
+
+  const cls = sheet.finalClass as any;
+  if (!cls) throw new ErrorResponse('Final class not found for sheet', 404);
+  
+  // Robust rate selection
+  const rate = cls.ratePerSession || (cls.classLead as any)?.tutorFees || 0;
+  if (rate <= 0) {
+    console.warn(`Rate per session not found for class ${cls._id}, using 0 for calculation`);
+  }
+
+  // Total amount = rate * number of approved/finalized sessions in the sheet
+  const sessionsToPay = (sheet.attendanceIds as any[]).filter(
+    (a: any) => 
+      String(a.status) === ATTENDANCE_STATUS.PARENT_APPROVED || 
+      String(a.status) === ATTENDANCE_STATUS.COORDINATOR_APPROVED ||
+      String(a.status) === ATTENDANCE_STATUS.APPROVED
+  );
+  
+  const amount = rate * sessionsToPay.length;
+  if (amount <= 0 && sessionsToPay.length > 0) {
+    throw new ErrorResponse('Calculated amount is 0 but sessions are present. Please check class rate.', 400);
+  }
+  if (amount < 0) throw new ErrorResponse('Invalid calculated amount', 400);
+
+  const dueDate = new Date();
+  dueDate.setDate(dueDate.getDate() + DEFAULT_DUE_DAYS);
+
+  const payment = await Payment.create({
+    finalClass: cls._id,
+    attendanceSheet: sheet._id,
+    tutor: cls.tutor,
+    amount,
+    currency: 'INR',
+    status: PAYMENT_STATUS.PENDING,
+    paymentType: PAYMENT_TYPE.TUTOR_PAYOUT,
+    dueDate,
+    createdBy: new mongoose.Types.ObjectId(createdBy),
+    notes: `Monthly payout for ${sheet.periodLabel}`,
+  });
+
+  await payment.populate([
+    { path: 'finalClass' },
+    { path: 'attendanceSheet' },
+    { path: 'tutor', select: 'name email phone' },
+    { path: 'createdBy', select: 'name email' },
+  ]);
+
+  try {
+    await createNotificationWithPreferences({
+      recipient: cls.tutor as any,
+      type: 'PAYMENT',
+      title: 'Monthly Payment Created',
+      message: `A payment of INR ${amount} is created for your approved monthly attendance sheet (${sheet.periodLabel}). Due by ${dueDate.toDateString()}.`,
+    });
+  } catch (e) {
+    logError(`Failed to create payment notification: ${String(e)}`);
+  }
+
+  return payment;
+};
+
 export default {
   createPayment,
+  createPaymentForSheet,
   getAllPayments,
   getPaymentById,
   updatePaymentStatus,
@@ -620,4 +814,6 @@ export default {
   generatePaymentReport,
   sendPaymentReminder,
   getPaymentsByParent,
+  getPaymentFilterOptions,
+  createManualPayment,
 };

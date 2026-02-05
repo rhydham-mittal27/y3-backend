@@ -3,7 +3,9 @@ import Test from '../models/Test';
 import FinalClass from '../models/FinalClass';
 import { createNotificationWithPreferences } from './notificationService';
 import ErrorResponse from '../utils/errorResponse';
-import { TEST_STATUS, FINAL_CLASS_STATUS } from '../config/constants';
+import { TEST_STATUS, FINAL_CLASS_STATUS, USER_ROLES } from '../config/constants';
+import { uploadFileToS3 } from '../services/s3Service';
+import { S3_CONFIG } from '../config/s3';
 
 export const scheduleTest = async (params: {
   finalClassId: string;
@@ -51,6 +53,89 @@ export const scheduleTest = async (params: {
     title: 'Test Scheduled',
     message: `A test has been scheduled for ${new Date(test.testDate).toDateString()}. Please prepare accordingly.`,
   });
+
+  return test;
+};
+
+export const uploadTestAnswerSheet = async (params: {
+  testId: string;
+  tutorUserId: string;
+  callerRole: string;
+  file: any;
+  topicName?: string;
+  totalMarks?: number;
+  obtainedMarks?: number;
+}) => {
+  const { testId, tutorUserId, callerRole, file, topicName, totalMarks, obtainedMarks } = params;
+
+  if (!file || !file.buffer) {
+    throw new ErrorResponse('Invalid file upload', 400);
+  }
+
+  const test = await Test.findById(testId).populate([{ path: 'finalClass' }, { path: 'tutor' }]);
+  if (!test) {
+    throw new ErrorResponse('Test not found', 404);
+  }
+
+  // Ensure tutor owns this test OR caller is a coordinator
+  const tutorIdFromTest = (test as any).tutor?._id ? (test as any).tutor._id : test.tutor;
+  const isTutorOwner = String(tutorIdFromTest) === String(tutorUserId);
+  const isCoordinator = callerRole === USER_ROLES.COORDINATOR;
+  if (!isTutorOwner && !isCoordinator) {
+    throw new ErrorResponse('Not authorized to upload answer sheet for this test', 403);
+  }
+
+  const finalClass: any = test.finalClass;
+  if (!finalClass || String(finalClass.status) !== FINAL_CLASS_STATUS.ACTIVE) {
+    throw new ErrorResponse('Can only upload reports for ACTIVE classes', 400);
+  }
+
+  if (typeof totalMarks === 'number' && totalMarks <= 0) {
+    throw new ErrorResponse('Total marks must be greater than zero', 400);
+  }
+  if (
+    typeof totalMarks === 'number' &&
+    typeof obtainedMarks === 'number' &&
+    (obtainedMarks < 0 || obtainedMarks > totalMarks)
+  ) {
+    throw new ErrorResponse('Obtained marks must be between 0 and total marks', 400);
+  }
+
+  const buffer: Buffer = file.buffer;
+  const originalname: string = file.originalname || 'answer-sheet';
+  const mimetype: string = file.mimetype || 'application/octet-stream';
+
+  let uploadResult: { key: string; url: string; bucket: string };
+  try {
+    uploadResult = await uploadFileToS3(
+      buffer,
+      originalname,
+      mimetype,
+      S3_CONFIG.FOLDERS.ANSWER_SHEETS
+    );
+  } catch (err: any) {
+    throw new ErrorResponse('Failed to upload answer sheet to storage', 500);
+  }
+
+  if (typeof topicName === 'string' && topicName.trim().length > 0) {
+    (test as any).topicName = topicName.trim();
+  }
+  if (typeof totalMarks === 'number' && !Number.isNaN(totalMarks)) {
+    (test as any).totalMarks = totalMarks;
+  }
+  if (typeof obtainedMarks === 'number' && !Number.isNaN(obtainedMarks)) {
+    (test as any).obtainedMarks = obtainedMarks;
+  }
+
+  (test as any).answerSheetUrl = uploadResult.url;
+  (test as any).answerSheetName = originalname;
+  (test as any).answerSheetMimeType = mimetype;
+  (test as any).answerSheetS3Key = uploadResult.key;
+
+  // Mark report submitted
+  test.status = TEST_STATUS.REPORT_SUBMITTED as any;
+
+  await test.save();
 
   return test;
 };
@@ -128,6 +213,69 @@ export const getTestsByClass = async (finalClassId: string, status?: TEST_STATUS
       { path: 'scheduledBy', select: 'name email' },
     ]);
   return tests;
+};
+
+export const uploadTestPaper = async (params: {
+  testId: string;
+  tutorUserId: string;
+  callerRole: string;
+  file: any;
+  totalMarks?: number;
+  durationMinutes?: number;
+}) => {
+  const { testId, tutorUserId, callerRole, file, totalMarks, durationMinutes } = params;
+
+  if (!file || !file.buffer) {
+    throw new ErrorResponse('Invalid file upload', 400);
+  }
+
+  const test = await Test.findById(testId).populate([{ path: 'finalClass' }, { path: 'tutor' }]);
+  if (!test) {
+    throw new ErrorResponse('Test not found', 404);
+  }
+
+  // Ensure tutor owns this test OR caller is a coordinator
+  const tutorIdFromTest = (test as any).tutor?._id ? (test as any).tutor._id : test.tutor;
+  const isTutorOwner = String(tutorIdFromTest) === String(tutorUserId);
+  const isCoordinator = callerRole === USER_ROLES.COORDINATOR;
+  if (!isTutorOwner && !isCoordinator) {
+    throw new ErrorResponse('Not authorized to upload paper for this test', 403);
+  }
+
+  const finalClass: any = test.finalClass;
+  if (!finalClass || String(finalClass.status) !== FINAL_CLASS_STATUS.ACTIVE) {
+    throw new ErrorResponse('Can only upload papers for ACTIVE classes', 400);
+  }
+
+  const buffer: Buffer = file.buffer;
+  const originalname: string = file.originalname || 'test-paper';
+  const mimetype: string = file.mimetype || 'application/octet-stream';
+
+  let uploadResult: { key: string; url: string; bucket: string };
+  try {
+    uploadResult = await uploadFileToS3(
+      buffer,
+      originalname,
+      mimetype,
+      S3_CONFIG.FOLDERS.TEST_PAPERS
+    );
+  } catch (err: any) {
+    throw new ErrorResponse('Failed to upload test paper to storage', 500);
+  }
+
+  test.paperUrl = uploadResult.url;
+  test.paperName = originalname;
+  test.paperMimeType = mimetype;
+  (test as any).paperS3Key = uploadResult.key;
+  if (typeof totalMarks === 'number' && !Number.isNaN(totalMarks)) {
+    (test as any).totalMarks = totalMarks;
+  }
+  if (typeof durationMinutes === 'number' && !Number.isNaN(durationMinutes)) {
+    (test as any).durationMinutes = durationMinutes;
+  }
+  await test.save();
+
+  return test;
 };
 
 export const getTestsByParent = async (parentUserId: string, status?: TEST_STATUS | string) => {
@@ -320,4 +468,6 @@ export default {
   deleteTest,
   getTestsForCoordinator,
   getTestsByParent,
+  uploadTestPaper,
+  uploadTestAnswerSheet,
 };

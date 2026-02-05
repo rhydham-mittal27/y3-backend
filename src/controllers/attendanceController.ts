@@ -242,21 +242,23 @@ export const exportClassAttendancePdfController = asyncHandler(async (req: AuthR
 
   // Table header
   const colDate = 40;
-  const colDuration = 150;
-  const colTopic = 230;
-  const colStatus = 430;
+  const colDuration = 110;
+  const colTopic = 170;
+  const colStatus = 310;
+  const colRemarks = 390;
 
   const drawHeader = () => {
     doc.fontSize(9).font('Helvetica-Bold').fillColor('#111827');
     const headerY = doc.y;
-    doc.rect(colDate - 2, headerY - 4, 510 - colDate, 16).fill('#E5E7EB');
+    doc.rect(colDate - 2, headerY - 4, 530 - colDate, 16).fill('#E5E7EB');
     doc.fillColor('#111827');
-    doc.text('Date', colDate, headerY, { width: 90 });
-    doc.text('Duration (mins)', colDuration, headerY, { width: 70 });
-    doc.text('Topic / Chapter Covered', colTopic, headerY, { width: 180 });
-    doc.text('Status', colStatus, headerY, { width: 80 });
+    doc.text('Date', colDate, headerY, { width: 60 });
+    doc.text('Duration', colDuration, headerY, { width: 50 });
+    doc.text('Topic / Chapter', colTopic, headerY, { width: 130 });
+    doc.text('Status', colStatus, headerY, { width: 70 });
+    doc.text('Remarks', colRemarks, headerY, { width: 130 });
     doc.moveDown(1.2);
-    doc.moveTo(colDate - 2, doc.y).lineTo(510, doc.y).strokeColor('#9CA3AF').stroke();
+    doc.moveTo(colDate - 2, doc.y).lineTo(530, doc.y).strokeColor('#9CA3AF').stroke();
     doc.strokeColor('#000000');
   };
 
@@ -266,27 +268,36 @@ export const exportClassAttendancePdfController = asyncHandler(async (req: AuthR
   attendances.forEach((a: any, index: number) => {
     const d = a.sessionDate ? new Date(a.sessionDate) : null;
     const dateStr = d ? d.toLocaleDateString('en-IN') : '';
-    const durationMins = a.durationMinutes || (a.durationHours ? Math.round(a.durationHours * 60) : '');
+    const durationMins = a.durationMinutes || (a.durationHours ? Math.round(a.durationHours * 60) : '-');
     const topic = a.topicCovered || '';
     const status = String(a.studentAttendanceStatus || '');
+    const remarks = a.notes || '';
 
     const rowTop = doc.y;
-    const rowHeight = 14;
+    // Calculate max height for this row based on content wrapping
+    const topicHeight = doc.heightOfString(topic, { width: 130 });
+    const remarksHeight = doc.heightOfString(remarks, { width: 130 });
+    const rowHeight = Math.max(14, topicHeight, remarksHeight);
 
     // Zebra striping with light blue/gray
     if (index % 2 === 0) {
-      doc.rect(colDate - 2, rowTop - 2, 510 - colDate, rowHeight)
+      doc.rect(colDate - 2, rowTop - 2, 530 - colDate, rowHeight + 4)
         .fillOpacity(0.04)
         .fill('#3B82F6')
         .fillOpacity(1);
     }
 
     doc.fontSize(9).fillColor('#111827');
-    doc.text(dateStr, colDate + 2, rowTop, { width: 90 });
-    doc.text(String(durationMins ?? ''), colDuration + 2, rowTop, { width: 70 });
-    doc.text(topic, colTopic + 2, rowTop, { width: 180 });
-    doc.text(status, colStatus + 2, rowTop, { width: 80 });
-    doc.moveDown(1);
+    doc.text(dateStr, colDate + 2, rowTop, { width: 60 });
+    doc.text(String(durationMins), colDuration + 2, rowTop, { width: 50 });
+    doc.text(topic, colTopic + 2, rowTop, { width: 130 });
+    doc.text(status, colStatus + 2, rowTop, { width: 70 });
+    doc.text(remarks, colRemarks + 2, rowTop, { width: 130 });
+    doc.moveDown();
+    // Ensure we move down enough if text wrapped
+    if (rowHeight > 14) {
+       doc.y = rowTop + rowHeight + 4; 
+    }
 
     // New page if close to bottom
     if (doc.y > doc.page.height - 60 && index !== attendances.length - 1) {
@@ -302,7 +313,7 @@ export const exportClassAttendancePdfController = asyncHandler(async (req: AuthR
   doc.fontSize(9).fillColor('#111827');
   doc.text('Total Teaching Hours: __________________________', colDate, footerY);
   doc.moveDown(0.7);
-  doc.text('Tutor’s Remarks (if any): ________________________________________________', colDate);
+  doc.text('Tutor’s General Remarks: _____________________________________________', colDate);
   doc.moveDown(1);
   doc.text('Parent’s Final Signature: __________________________', colDate, doc.y, { continued: true });
   doc.text('Date: ___ / ___ / ___', colStatus, doc.y);

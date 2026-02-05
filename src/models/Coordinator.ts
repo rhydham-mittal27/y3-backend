@@ -94,7 +94,6 @@ CoordinatorSchema.virtual('availableCapacity').get(function (this: ICoordinatorD
 });
 
 // Indexes
-CoordinatorSchema.index({ user: 1 }, { unique: true });
 CoordinatorSchema.index({ isActive: 1 });
 CoordinatorSchema.index({ isActive: 1, activeClassesCount: 1 });
 

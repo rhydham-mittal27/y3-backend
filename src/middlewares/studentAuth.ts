@@ -27,6 +27,9 @@ export const protectStudent = asyncHandler(async (req: AuthRequest, _res, next) 
       role: 'STUDENT',
       phone: '',
       isActive: true,
+      acceptedTerms: true, // Students don't have TnC popup yet
+      preferredMode: undefined,
+      city: undefined,
       createdAt: student.createdAt,
       updatedAt: student.updatedAt,
     };

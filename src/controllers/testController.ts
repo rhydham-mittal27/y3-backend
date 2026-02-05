@@ -3,7 +3,7 @@ import asyncHandler from '../utils/asyncHandler';
 import { successResponse, paginatedResponse } from '../utils/responseFormatter';
 import ErrorResponse from '../utils/errorResponse';
 import { AuthRequest } from '../types';
-import { USER_ROLES } from '../config/constants';
+import { USER_ROLES, COORDINATOR_ACTION_TYPE } from '../config/constants';
 import PDFDocument from 'pdfkit';
 import {
   scheduleTest,
@@ -17,7 +17,10 @@ import {
   deleteTest,
   getTestsForCoordinator,
   getTestsByParent,
+  uploadTestPaper,
+  uploadTestAnswerSheet,
 } from '../services/testService';
+import { logCoordinatorActivity } from '../services/coordinatorService';
 
 export const scheduleTestController = asyncHandler(async (req: AuthRequest, res) => {
   const errors = validationResult(req);
@@ -27,6 +30,19 @@ export const scheduleTestController = asyncHandler(async (req: AuthRequest, res)
   const { finalClassId, testDate, testTime, notes } = req.body as any;
   const scheduledBy = req.user!.id;
   const test = await scheduleTest({ finalClassId, testDate, testTime, notes, scheduledBy });
+
+  if (req.user?.role === USER_ROLES.COORDINATOR) {
+    try {
+      await logCoordinatorActivity(
+        scheduledBy,
+        COORDINATOR_ACTION_TYPE.SCHEDULE_TEST,
+        'Scheduled test for final class',
+        { entityType: 'Test', entityId: String((test as any)._id), entityName: String((test as any).finalClass?._id || finalClassId) },
+        { finalClassId, testDate, testTime, notes }
+      );
+    } catch {}
+  }
+
   return res.status(201).json(successResponse(test, 'Test scheduled successfully'));
 });
 
@@ -106,6 +122,19 @@ export const updateTestController = asyncHandler(async (req: AuthRequest, res) =
   const updateData = req.body as any;
   const coordinatorUserId = req.user!.id;
   const test = await updateTest(id, updateData, coordinatorUserId);
+
+  if (req.user?.role === USER_ROLES.COORDINATOR) {
+    try {
+      await logCoordinatorActivity(
+        coordinatorUserId,
+        COORDINATOR_ACTION_TYPE.UPDATE_TEST,
+        'Updated test details',
+        { entityType: 'Test', entityId: id },
+        { updateData }
+      );
+    } catch {}
+  }
+
   return res.json(successResponse(test, 'Test updated successfully'));
 });
 
@@ -118,12 +147,39 @@ export const cancelTestController = asyncHandler(async (req: AuthRequest, res) =
   const { cancellationReason } = req.body as any;
   const coordinatorUserId = req.user!.id;
   const test = await cancelTest(id, cancellationReason, coordinatorUserId);
+
+  if (req.user?.role === USER_ROLES.COORDINATOR) {
+    try {
+      await logCoordinatorActivity(
+        coordinatorUserId,
+        COORDINATOR_ACTION_TYPE.CANCEL_TEST,
+        'Cancelled test',
+        { entityType: 'Test', entityId: id },
+        { cancellationReason }
+      );
+    } catch {}
+  }
+
   return res.json(successResponse(test, 'Test cancelled successfully'));
 });
 
 export const deleteTestController = asyncHandler(async (req, res) => {
   const { id } = req.params as any;
   const result = await deleteTest(id);
+
+  // Log only if the caller is a coordinator
+  const authReq = req as AuthRequest;
+  if (authReq.user?.role === USER_ROLES.COORDINATOR) {
+    try {
+      await logCoordinatorActivity(
+        authReq.user.id,
+        COORDINATOR_ACTION_TYPE.DELETE_TEST,
+        'Deleted test',
+        { entityType: 'Test', entityId: id }
+      );
+    } catch {}
+  }
+
   return res.json(successResponse(result, 'Test deleted successfully'));
 });
 
@@ -210,6 +266,61 @@ export const exportTestReportPDF = asyncHandler(async (req, res) => {
   doc.end();
 });
 
+export const uploadTestPaperController = asyncHandler(async (req: AuthRequest, res) => {
+  const file = (req as any).file as any | undefined;
+  if (!file) {
+    throw new ErrorResponse('No file uploaded', 400);
+  }
+
+  const { id } = req.params as any;
+  const tutorUserId = String(req.user!.id);
+  const callerRole = String(req.user!.role);
+  const rawTotalMarks = (req.body as any)?.totalMarks;
+  const rawDurationMinutes = (req.body as any)?.durationMinutes;
+  const totalMarks = typeof rawTotalMarks === 'string' ? Number(rawTotalMarks) : rawTotalMarks;
+  const durationMinutes = typeof rawDurationMinutes === 'string' ? Number(rawDurationMinutes) : rawDurationMinutes;
+
+  const test = await (uploadTestPaper as any)({
+    testId: id,
+    tutorUserId,
+    callerRole,
+    file,
+    totalMarks,
+    durationMinutes,
+  });
+  return res.status(200).json(successResponse(test, 'Test paper uploaded successfully'));
+});
+
+export const uploadTestAnswerSheetController = asyncHandler(async (req: AuthRequest, res) => {
+  const file = (req as any).file as any | undefined;
+  if (!file) {
+    throw new ErrorResponse('No file uploaded', 400);
+  }
+
+  const { id } = req.params as any;
+  const tutorUserId = String(req.user!.id);
+  const callerRole = String(req.user!.role);
+  const body = req.body as any;
+
+  const rawTotalMarks = body?.totalMarks;
+  const rawObtainedMarks = body?.obtainedMarks;
+  const totalMarks = typeof rawTotalMarks === 'string' ? Number(rawTotalMarks) : rawTotalMarks;
+  const obtainedMarks = typeof rawObtainedMarks === 'string' ? Number(rawObtainedMarks) : rawObtainedMarks;
+  const topicName = typeof body?.topicName === 'string' ? body.topicName : undefined;
+
+  const test = await (uploadTestAnswerSheet as any)({
+    testId: id,
+    tutorUserId,
+    callerRole,
+    file,
+    topicName,
+    totalMarks,
+    obtainedMarks,
+  });
+
+  return res.status(200).json(successResponse(test, 'Test report uploaded successfully'));
+});
+
 export default {
   scheduleTestController,
   getTests,
@@ -223,4 +334,6 @@ export default {
   getCoordinatorTests,
   exportTestReportPDF,
   getMyTestsForParent,
+  uploadTestPaperController,
+  uploadTestAnswerSheetController,
 };

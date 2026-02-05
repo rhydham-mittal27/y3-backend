@@ -24,10 +24,14 @@ export interface IStudentDetail {
   parentName?: string;
   parentEmail?: string;
   parentPhone?: string;
+  board?: string;
+  grade?: string;
+  subject?: string[];
 }
 
 export interface IClassLeadDocument extends Document {
   _id: mongoose.Types.ObjectId;
+  leadId: string;
   studentType: 'SINGLE' | 'GROUP';
   studentName: string;
   studentGender?: 'M' | 'F';
@@ -58,6 +62,7 @@ export interface IClassLeadDocument extends Document {
   notes?: string;
 
   // Group specific fields
+  groupClass?: mongoose.Types.ObjectId;
   numberOfStudents?: number;
   studentDetails?: IStudentDetail[];
 
@@ -102,10 +107,15 @@ const StudentDetailSchema = new Schema<IStudentDetail>({
     trim: true,
     match: [/^[0-9]{10}$/, 'Please enter a valid 10-digit phone number'],
   },
+  // Per-student curriculum for groups
+  board: { type: String, enum: Object.values(BOARD_TYPE) },
+  grade: { type: String },
+  subject: { type: [String] },
 }, { _id: false });
 
 const ClassLeadSchema: Schema<IClassLeadDocument> = new Schema<IClassLeadDocument>(
   {
+    leadId: { type: String, unique: true },
     studentType: {
       type: String,
       required: true,
@@ -162,7 +172,14 @@ const ClassLeadSchema: Schema<IClassLeadDocument> = new Schema<IClassLeadDocumen
         'At least one subject is required'
       ]
     },
-    board: { type: String, enum: Object.values(BOARD_TYPE), required: true },
+    board: { 
+      type: String, 
+      enum: Object.values(BOARD_TYPE),
+      required: [
+        function (this: IClassLeadDocument) { return this.studentType === 'SINGLE'; },
+        'Board is required for single student'
+      ]
+    },
     mode: { type: String, enum: Object.values(TEACHING_MODE), required: true },
     location: { type: String },
     city: { type: String },
@@ -207,9 +224,10 @@ const ClassLeadSchema: Schema<IClassLeadDocument> = new Schema<IClassLeadDocumen
     demoTutor: { type: Schema.Types.ObjectId, ref: 'User' },
     demoDetails: { type: DemoDetailsSchema },
     createdBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+    groupClass: { type: Schema.Types.ObjectId, ref: 'GroupClass' },
     notes: { type: String },
   },
-  { timestamps: true }
+  { timestamps: true, toJSON: { virtuals: true }, toObject: { virtuals: true } }
 );
 
 // Indexes

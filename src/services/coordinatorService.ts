@@ -3,12 +3,38 @@ import Coordinator from '../models/Coordinator';
 import User from '../models/User';
 import FinalClass from '../models/FinalClass';
 import ErrorResponse from '../utils/errorResponse';
-import { USER_ROLES, MANAGER_ACTION_TYPE, FINAL_CLASS_STATUS, PAYMENT_STATUS, ATTENDANCE_STATUS } from '../config/constants';
+import { USER_ROLES, MANAGER_ACTION_TYPE, FINAL_CLASS_STATUS, PAYMENT_STATUS, ATTENDANCE_STATUS, COORDINATOR_ACTION_TYPE, PAYMENT_TYPE } from '../config/constants';
 import { logManagerActivity } from './managerService';
 import Manager from '../models/Manager';
 import Payment from '../models/Payment';
 import Attendance from '../models/Attendance';
+import Test from '../models/Test';
+import CoordinatorActivityLog from '../models/CoordinatorActivityLog';
 import { getPendingApprovalsForCoordinator } from './attendanceService';
+
+export const logCoordinatorActivity = async (
+  coordinatorUserId: string,
+  actionType: COORDINATOR_ACTION_TYPE,
+  actionDescription: string,
+  relatedEntity?: { entityType: 'FinalClass' | 'Test' | 'Payment' | 'Attendance'; entityId: string; entityName?: string },
+  metadata?: any
+) => {
+  await CoordinatorActivityLog.create({
+    coordinator: new mongoose.Types.ObjectId(coordinatorUserId),
+    actionType,
+    actionDescription,
+    relatedEntity:
+      relatedEntity && relatedEntity.entityId
+        ? {
+            entityType: relatedEntity.entityType,
+            entityId: new mongoose.Types.ObjectId(relatedEntity.entityId),
+            entityName: relatedEntity.entityName,
+          }
+        : undefined,
+    metadata,
+    timestamp: new Date(),
+  });
+};
 
 export const createCoordinator = async (
   userId: string,
@@ -104,14 +130,30 @@ export const updateCoordinatorSettings = async (
 
 export const getCoordinatorPaymentSummary = async (
   coordinatorUserId: string,
-  filters?: { status?: string; classId?: string; fromDate?: Date; toDate?: Date; page: number; limit: number; sortBy?: string; sortOrder?: 'asc' | 'desc' }
+  filters?: { 
+    status?: string; 
+    classId?: string; 
+    paymentType?: string;
+    fromDate?: Date; 
+    toDate?: Date; 
+    page: number; 
+    limit: number; 
+    sortBy?: string; 
+    sortOrder?: 'asc' | 'desc' 
+  }
 ) => {
   const classes = await FinalClass.find({ coordinator: new mongoose.Types.ObjectId(coordinatorUserId) }).select('_id');
   const classIds = classes.map((c) => c._id);
 
+  console.log(`[getCoordinatorPaymentSummary] Coordinator: ${coordinatorUserId}, Found ${classIds.length} classes`);
+
   const query: any = { finalClass: { $in: classIds } };
   if (filters?.status) query.status = filters.status;
   if (filters?.classId) query.finalClass = new mongoose.Types.ObjectId(filters.classId);
+  if (filters?.paymentType) query.paymentType = filters.paymentType;
+
+  console.log(`[getCoordinatorPaymentSummary] Query:`, JSON.stringify(query));
+
   if (filters?.fromDate || filters?.toDate) {
     query.createdAt = {} as any;
     if (filters.fromDate) (query.createdAt as any).$gte = filters.fromDate;
@@ -133,6 +175,7 @@ export const getCoordinatorPaymentSummary = async (
       .populate([
         { path: 'finalClass' },
         { path: 'attendance' },
+        { path: 'attendanceSheet', select: 'periodLabel periodStart periodEnd' },
         { path: 'tutor', select: 'name email phone' },
         { path: 'createdBy', select: 'name email' },
         { path: 'paidBy', select: 'name email' },
@@ -144,19 +187,34 @@ export const getCoordinatorPaymentSummary = async (
   const in7Days = new Date(now);
   in7Days.setDate(in7Days.getDate() + 7);
 
-  const overduePayments = payments.filter((p: any) => [PAYMENT_STATUS.PENDING, 'OVERDUE'].includes(p.status) && p.dueDate && p.dueDate < now);
-  const upcomingPayments = payments.filter((p: any) => p.status === PAYMENT_STATUS.PENDING && p.dueDate && p.dueDate >= now && p.dueDate <= in7Days);
-  const paidPayments = payments.filter((p: any) => p.status === PAYMENT_STATUS.PAID);
+  // Fetch ALL payments for this coordinator's classes to calculate accurate statistics
+  const allPayments = await Payment.find({ finalClass: { $in: classIds } });
 
-  const amounts = payments.reduce(
+  const overduePayments = allPayments.filter((p: any) => [PAYMENT_STATUS.PENDING, 'OVERDUE'].includes(p.status) && p.dueDate && p.dueDate < now);
+  const upcomingPayments = allPayments.filter((p: any) => p.status === PAYMENT_STATUS.PENDING && p.dueDate && p.dueDate >= now && p.dueDate <= in7Days);
+  const paidPayments = allPayments.filter((p: any) => p.status === PAYMENT_STATUS.PAID);
+
+  const amounts = allPayments.reduce(
     (acc: any, p: any) => {
-      acc.totalAmount += Number(p.amount) || 0;
-      if (p.status === PAYMENT_STATUS.PAID) acc.paidAmount += Number(p.amount) || 0;
-      if (p.status === PAYMENT_STATUS.PENDING) acc.pendingAmount += Number(p.amount) || 0;
-      if ((p.status as any) === 'OVERDUE') acc.overdueAmount += Number(p.amount) || 0;
+      const isFee = p.paymentType === PAYMENT_TYPE.FEES_COLLECTED || !p.paymentType;
+      const isPayout = p.paymentType === PAYMENT_TYPE.TUTOR_PAYOUT;
+      
+      if (isFee) {
+        acc.totalAmount += Number(p.amount) || 0;
+        if (p.status === PAYMENT_STATUS.PAID) acc.paidAmount += Number(p.amount) || 0;
+        if (p.status === PAYMENT_STATUS.PENDING) acc.pendingAmount += Number(p.amount) || 0;
+        if ((p.status as any) === 'OVERDUE') acc.overdueAmount += Number(p.amount) || 0;
+      } else if (isPayout) {
+        acc.totalPayoutAmount += Number(p.amount) || 0;
+        if (p.status === PAYMENT_STATUS.PAID) acc.paidPayoutAmount += Number(p.amount) || 0;
+        if (p.status === PAYMENT_STATUS.PENDING || (p.status as any) === 'OVERDUE') acc.pendingPayoutAmount += Number(p.amount) || 0;
+      }
       return acc;
     },
-    { totalAmount: 0, paidAmount: 0, pendingAmount: 0, overdueAmount: 0 }
+    { 
+      totalAmount: 0, paidAmount: 0, pendingAmount: 0, overdueAmount: 0,
+      totalPayoutAmount: 0, paidPayoutAmount: 0, pendingPayoutAmount: 0
+    }
   );
 
   const result = {
@@ -165,10 +223,13 @@ export const getCoordinatorPaymentSummary = async (
     page,
     limit,
     statistics: {
-      totalAmount: amounts.totalAmount,
+      totalAmount: amounts.totalAmount, // This is total Fees
       paidAmount: amounts.paidAmount,
       pendingAmount: amounts.pendingAmount,
       overdueAmount: amounts.overdueAmount,
+      totalPayoutAmount: amounts.totalPayoutAmount,
+      paidPayoutAmount: amounts.paidPayoutAmount,
+      pendingPayoutAmount: amounts.pendingPayoutAmount,
       overdueCount: overduePayments.length,
       upcomingCount: upcomingPayments.length,
       paidCount: paidPayments.length,
@@ -308,15 +369,65 @@ export const getCoordinatorTodaysTasks = async (coordinatorUserId: string) => {
     { $sort: { dueDate: 1 } },
   ]);
 
+  // Compute testsToSchedule based on testPerMonth per final class
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+  const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+
+  const activeClasses = await FinalClass.find({
+    coordinator: new mongoose.Types.ObjectId(coordinatorUserId),
+    status: FINAL_CLASS_STATUS.ACTIVE,
+  }).select('_id className subject grade testPerMonth');
+
+  const classIds = activeClasses.map((c) => c._id);
+
+  let testsPerClass: Record<string, number> = {};
+  if (classIds.length > 0) {
+    const testsAgg = await Test.aggregate([
+      {
+        $match: {
+          finalClass: { $in: classIds },
+          testDate: { $gte: startOfMonth, $lte: endOfMonth },
+          status: { $ne: 'CANCELLED' },
+        },
+      },
+      {
+        $group: {
+          _id: '$finalClass',
+          count: { $sum: 1 },
+        },
+      },
+    ]);
+
+    testsPerClass = testsAgg.reduce((acc: Record<string, number>, item: any) => {
+      acc[String(item._id)] = item.count || 0;
+      return acc;
+    }, {} as Record<string, number>);
+  }
+
+  const testsToSchedule = activeClasses
+    .filter((cls: any) => {
+      const target = typeof cls.testPerMonth === 'number' ? cls.testPerMonth : 1;
+      const done = testsPerClass[String(cls._id)] || 0;
+      return target > 0 && done < target;
+    })
+    .map((cls: any) => ({
+      finalClassId: cls._id,
+      className: cls.className,
+      subject: cls.subject,
+      grade: cls.grade,
+      testPerMonth: typeof cls.testPerMonth === 'number' ? cls.testPerMonth : 1,
+      testsScheduledThisMonth: testsPerClass[String(cls._id)] || 0,
+    }));
+
   const tasks = {
     pendingAttendanceApprovals: pendingAttendanceApprovals,
     paymentReminders,
-    testsToSchedule: [],
+    testsToSchedule,
     parentComplaints: [],
     counts: {
       pendingAttendance: pendingAttendanceApprovals.length || 0,
       paymentReminders: paymentReminders.length || 0,
-      testsToSchedule: 0,
+      testsToSchedule: testsToSchedule.length || 0,
       parentComplaints: 0,
     },
   };
@@ -396,18 +507,47 @@ export const getAllCoordinators = async (args: {
   hasCapacity?: boolean;
   sortBy?: string;
   sortOrder?: 'asc' | 'desc';
+  name?: string;
+  email?: string;
+  phone?: string;
+  specialization?: string;
+  search?: string;
 }) => {
-  const { page, limit, isActive, hasCapacity, sortBy, sortOrder } = args;
+  const { page, limit, isActive, hasCapacity, sortBy, sortOrder, name, email, phone, specialization, search } = args;
   const query: any = {};
   if (typeof isActive === 'boolean') query.isActive = isActive;
   if (hasCapacity) {
     query.$expr = { $lt: ['$activeClassesCount', '$maxClassCapacity'] };
   }
 
+  // Handle user-related filters (name, email, phone, global search)
+  if (name || email || phone || (search && !name)) {
+    const userQuery: any = { role: USER_ROLES.COORDINATOR };
+    
+    if (name) userQuery.name = { $regex: name, $options: 'i' };
+    if (email) userQuery.email = { $regex: email, $options: 'i' };
+    if (phone) userQuery.phone = { $regex: phone, $options: 'i' };
+    
+    if (search && !name && !email && !phone) {
+      userQuery.$or = [
+        { name: { $regex: search, $options: 'i' } },
+        { email: { $regex: search, $options: 'i' } },
+        { phone: { $regex: search, $options: 'i' } }
+      ];
+    }
+
+    const matchedUsers = await User.find(userQuery).select('_id');
+    query.user = { $in: matchedUsers.map(u => u._id) };
+  }
+
+  if (specialization) {
+    query.specialization = { $regex: specialization, $options: 'i' };
+  }
+
   const skip = (page - 1) * limit;
   const sortField = sortBy || 'createdAt';
   const sortDir = sortOrder === 'asc' ? 1 : -1;
-  const sort: Record<string, 1 | -1> = { [sortField]: sortDir } as any;
+  const sort: any = { [sortField]: sortDir };
 
   const [coordinators, total] = await Promise.all([
     Coordinator.find(query)

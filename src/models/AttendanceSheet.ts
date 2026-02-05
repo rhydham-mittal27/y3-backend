@@ -49,7 +49,7 @@ const AttendanceSheetSchema: Schema<IAttendanceSheetDocument> = new Schema<IAtte
     rejectedAt: { type: Date },
     rejectionReason: { type: String, maxlength: 500 },
   },
-  { timestamps: true }
+  { timestamps: true, toJSON: { virtuals: true }, toObject: { virtuals: true } }
 );
 
 AttendanceSheetSchema.index({ finalClass: 1, month: 1, year: 1 }, { unique: true });

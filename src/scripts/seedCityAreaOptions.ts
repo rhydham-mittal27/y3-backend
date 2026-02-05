@@ -7,8 +7,19 @@ dotenv.config();
 
 const CITY_TYPE = 'CITY';
 
-const cities: { label: string; value: string; sortOrder: number }[] = [
-  { label: 'Bhopal', value: 'BHOPAL', sortOrder: 1 },
+const cities: { label: string; value: string; sortOrder: number; metadata?: any }[] = [
+  { 
+    label: 'Bhopal', 
+    value: 'BHOPAL', 
+    sortOrder: 1, 
+    metadata: { whatsappLink: 'https://chat.whatsapp.com/BhopalOfflineTutors' } 
+  },
+  { 
+    label: 'Indore', 
+    value: 'INDORE', 
+    sortOrder: 2, 
+    metadata: { whatsappLink: 'https://chat.whatsapp.com/IndoreOfflineTutors' } 
+  },
 ];
 
 // Areas per city, keyed by the CITY option value
@@ -29,6 +40,10 @@ const cityAreas: Record<string, { label: string; value: string; sortOrder: numbe
     { label: 'Bawadiya Kalan', value: 'BAWADIYA_KALAN', sortOrder: 13 },
     { label: 'Raisen Road', value: 'RAISEN_ROAD', sortOrder: 14 },
   ],
+  INDORE: [
+    { label: 'Vijay Nagar', value: 'VIJAY_NAGAR', sortOrder: 1 },
+    { label: 'Rajwada', value: 'RAJWADA', sortOrder: 2 },
+  ],
 };
 
 const run = async () => {
@@ -41,18 +56,19 @@ const run = async () => {
 
     // Seed cities
     for (const c of cities) {
-      const existing = await Option.findOne({ type: CITY_TYPE, value: c.value });
-      if (existing) {
-        console.log(`City option already exists: ${c.value}`);
-      } else {
-        await Option.create({
+      let cityOption = await Option.findOne({ type: CITY_TYPE, value: c.value });
+      if (!cityOption) {
+        cityOption = await Option.create({
           type: CITY_TYPE,
           label: c.label,
           value: c.value,
           sortOrder: c.sortOrder,
           isActive: true,
+          metadata: c.metadata || {},
         });
         console.log(`Created city option: ${c.value}`);
+      } else {
+        console.log(`City option already exists: ${c.value}`);
       }
 
       // Seed areas for this city under type AREA_<CITYVALUE>
@@ -61,6 +77,11 @@ const run = async () => {
       for (const a of areas) {
         const existingArea = await Option.findOne({ type: areaType, value: a.value });
         if (existingArea) {
+          // Update parent if missing
+          if (!existingArea.parent) {
+             existingArea.parent = cityOption._id;
+             await existingArea.save();
+          }
           console.log(`Area option already exists: ${areaType}:${a.value}`);
           continue;
         }
@@ -68,6 +89,7 @@ const run = async () => {
           type: areaType,
           label: a.label,
           value: a.value,
+          parent: cityOption._id,
           sortOrder: a.sortOrder,
           isActive: true,
         });

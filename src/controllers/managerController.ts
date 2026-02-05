@@ -12,11 +12,15 @@ import {
   updateManagerSettings,
   getManagerMetrics,
   getManagerPerformanceHistory,
+  deleteManagerProfile,
   getManagerActivityLog,
   getManagerContribution,
-  deleteManagerProfile,
   getManagerTodoList,
+  updateManagerDocuments,
+  uploadManagerDocument,
+  getEligibleManagerUsers,
 } from '../services/managerService';
+import { USER_ROLES } from '../config/constants';
 
 export const createManagerProfileController = asyncHandler(async (req: AuthRequest, res) => {
   const errors = validationResult(req);
@@ -65,7 +69,24 @@ export const getMyProfile = asyncHandler(async (req: AuthRequest, res) => {
 export const updateManagerProfileController = asyncHandler(async (req: AuthRequest, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) throw new ErrorResponse(errors.array()[0].msg, 400);
+  
   const managerId = req.params.id as string;
+  const currentUser = req.user;
+  
+  if (!currentUser || !currentUser.id) {
+    throw new ErrorResponse('Not authenticated', 401);
+  }
+  
+  const isManager = currentUser.role === USER_ROLES.MANAGER;
+  
+  // Ownership check for managers
+  if (isManager) {
+    const manager = await getManagerByUserId(currentUser.id);
+    if (String(manager._id) !== managerId) {
+      throw new ErrorResponse('You can only update your own profile', 403);
+    }
+  }
+
   const updateData = req.body as Partial<{
     isActive: boolean;
     permissions: {
@@ -74,7 +95,20 @@ export const updateManagerProfileController = asyncHandler(async (req: AuthReque
       canCreateLeads?: boolean;
       canManagePayments?: boolean;
     };
+    bio: string;
+    languagesKnown: string[];
+    skills: string[];
+    permanentAddress: string;
+    residentialAddress: string;
+    documents: any[];
   }>;
+
+  // Sanitization: managers cannot update status or permissions
+  if (isManager) {
+    delete updateData.isActive;
+    delete updateData.permissions;
+  }
+
   const manager = await updateManagerProfile(managerId, updateData);
   return res.json(successResponse(manager, 'Manager profile updated successfully'));
 });
@@ -157,6 +191,35 @@ export const deleteManagerProfileController = asyncHandler(async (req: AuthReque
   return res.json(successResponse(true, 'Manager profile deleted successfully'));
 });
 
+export const uploadManagerDocumentsController = asyncHandler(async (req: AuthRequest, res) => {
+  const userId = req.user?.id as string;
+  const { documents } = req.body as { documents: any[] };
+  
+  if (!documents || !Array.isArray(documents)) {
+    throw new ErrorResponse('Documents are required and must be an array', 400);
+  }
+
+  const manager = await updateManagerDocuments(userId, documents);
+  return res.json(successResponse(manager, 'Documents updated successfully'));
+});
+
+export const uploadManagerDocumentController = asyncHandler(async (req: AuthRequest, res) => {
+  const userId = req.user?.id as string;
+  const file = (req as any).file;
+  const { documentType } = req.body;
+
+  if (!file) throw new ErrorResponse('No file uploaded', 400);
+  if (!documentType) throw new ErrorResponse('Document type is required', 400);
+
+  const manager = await uploadManagerDocument(userId, documentType, file);
+  return res.json(successResponse(manager, 'Document uploaded successfully'));
+});
+
+export const getEligibleManagerUsersController = asyncHandler(async (_req: AuthRequest, res) => {
+  const users = await getEligibleManagerUsers();
+  return res.json(successResponse(users));
+});
+
 export default {
   createManagerProfileController,
   getManagers,
@@ -173,4 +236,7 @@ export default {
   getMyActivityLog,
   deleteManagerProfileController,
   getManagerTodoListController,
+  uploadManagerDocumentsController,
+  uploadManagerDocumentController,
+  getEligibleManagerUsersController,
 };

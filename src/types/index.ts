@@ -41,6 +41,9 @@ export interface IUser {
   role: USER_ROLES | string;
   phone?: string;
   isActive: boolean;
+  acceptedTerms: boolean;
+  preferredMode?: string;
+  city?: string;
   createdAt: Date;
   updatedAt: Date;
   preferences?: IUserPreferences;

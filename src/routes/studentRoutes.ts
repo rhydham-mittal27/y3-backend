@@ -8,7 +8,8 @@ import {
   getStudentAttendance,
   getStudentTests,
   getStudentNotes,
-  getStudentPayments
+  getStudentPayments,
+  getStudentProfile
 } from '../controllers/studentController';
 import protect from '../middlewares/auth';
 import protectStudent from '../middlewares/studentAuth';
@@ -29,6 +30,7 @@ router.get('/student/attendance', protectStudent, authorize(USER_ROLES.STUDENT),
 router.get('/student/tests', protectStudent, authorize(USER_ROLES.STUDENT), getStudentTests);
 router.get('/student/notes', protectStudent, authorize(USER_ROLES.STUDENT), getStudentNotes);
 router.get('/student/payments', protectStudent, authorize(USER_ROLES.STUDENT), getStudentPayments);
+router.get('/:id', protect, authorize(USER_ROLES.ADMIN, USER_ROLES.MANAGER), getStudentProfile);
 
 export default router;
 

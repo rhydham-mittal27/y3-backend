@@ -29,7 +29,6 @@ const StudentSchema: Schema<IStudentDocument> = new Schema<IStudentDocument>(
 );
 
 // Indexes
-StudentSchema.index({ studentId: 1 }, { unique: true });
 StudentSchema.index({ finalClass: 1 });
 StudentSchema.index({ classLead: 1 });
 StudentSchema.index({ name: 'text' });

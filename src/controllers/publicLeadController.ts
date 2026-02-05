@@ -110,6 +110,76 @@ export const createPublicParentLead = asyncHandler(async (req, res) => {
   return res.status(201).json(successResponse(lead, 'Class lead created successfully'));
 });
 
+
+export const getPublicLead = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+
+  const lead = await import('../models/ClassLead').then(mod => mod.default.findById(id));
+
+  if (!lead) {
+    throw new ErrorResponse('Lead not found', 404);
+  }
+
+  // Check for 7-day expiration (Link valid for 7 days from creation)
+  const expirationDate = new Date(lead.createdAt);
+  expirationDate.setDate(expirationDate.getDate() + 7);
+  
+  if (new Date() > expirationDate) {
+    throw new ErrorResponse('This lead link has expired (valid for 7 days).', 410);
+  }
+
+  // Sanitize student details to remove parent PII
+  const sanitizedStudentDetails = lead.studentDetails?.map((s: any) => ({
+    name: s.name,
+    gender: s.gender,
+    // fees: s.fees, // Optional: Decide if we show parent fees vs tutor fees
+    // tutorFees: s.tutorFees
+  }));
+
+  // Sanitize: Return comprehensive public details
+  const publicDetails = {
+    _id: lead._id,
+    leadId: lead.leadId,
+    status: lead.status,
+    createdAt: lead.createdAt,
+    
+    // Student Info
+    studentType: lead.studentType,
+    studentName: lead.studentName, // Included as requested
+    studentGender: lead.studentGender,
+    numberOfStudents: lead.numberOfStudents,
+    studentDetails: sanitizedStudentDetails, // Sanitized list
+    
+    // Academic Info
+    grade: lead.grade,
+    subject: lead.subject,
+    board: lead.board,
+    mode: lead.mode,
+    
+    // Location
+    city: lead.city,
+    area: lead.area,
+    location: lead.location,
+    // address: lead.address, // Still hiding full address for safety
+    
+    // Timing & Duration
+    timing: lead.timing,
+    classesPerMonth: lead.classesPerMonth,
+    classDurationHours: lead.classDurationHours,
+    
+    // Preferences
+    preferredTutorGender: lead.preferredTutorGender,
+    notes: lead.notes,
+    
+    // Financials
+    tutorFees: lead.tutorFees, 
+    // paymentAmount: lead.paymentAmount, // Hidden as per user request
+  };
+
+  return res.status(200).json(successResponse(publicDetails, 'Public lead details fetched successfully'));
+});
+
 export default {
   createPublicParentLead,
+  getPublicLead
 };

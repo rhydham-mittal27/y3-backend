@@ -9,11 +9,13 @@ import Payment from '../models/Payment';
 import Tutor from '../models/Tutor';
 import Attendance from '../models/Attendance';
 import ErrorResponse from '../utils/errorResponse';
-import { getOverallStatistics, getCumulativeClassGrowth, getPendingApprovals } from './dashboardService';
+import { getOverallStatistics, getCumulativeClassGrowth, getPendingApprovals, getDateWiseClassLeads, getRevenueAnalytics } from './dashboardService';
 import { registerUser } from './authService';
 import { createManagerProfile } from './managerService';
 import { createCoordinator } from './coordinatorService';
-import { USER_ROLES, PAYMENT_STATUS, VERIFICATION_STATUS } from '../config/constants';
+import { getTutorsForVerification, getPendingTierChanges } from './tutorService';
+import { USER_ROLES, PAYMENT_STATUS, VERIFICATION_STATUS, FINAL_CLASS_STATUS, ATTENDANCE_STATUS, PAYMENT_TYPE, CLASS_LEAD_STATUS } from '../config/constants';
+import DemoHistory from '../models/DemoHistory';
 
 // Helper: copied pattern from managerService
 const buildDateMatch = (field: string, fromDate?: Date, toDate?: Date) => {
@@ -161,9 +163,9 @@ export const deleteAdminProfile = async (adminId: string) => {
 };
 
 // Section 2: System-Wide Analytics
-export const getSystemWideAnalytics = async (fromDate?: Date, toDate?: Date) => {
+export const getSystemWideAnalytics = async (fromDate?: Date, toDate?: Date, city?: string) => {
   // Some dashboard functions may expect non-optional dates; pass through with safe casting
-  const base = await getOverallStatistics(fromDate as any, toDate as any);
+  const base = await getOverallStatistics(fromDate as any, toDate as any, city);
 
   const dateMatchPayment = buildDateMatch('paymentDate', fromDate, toDate);
   const dateMatchUser = buildDateMatch('createdAt', fromDate, toDate);
@@ -253,26 +255,124 @@ export const getSystemWideAnalytics = async (fromDate?: Date, toDate?: Date) => 
   });
 
   // Financial summary
-  const paidRevenueAgg = await Payment.aggregate([
-    { $match: { status: PAYMENT_STATUS.PAID, ...dateMatchPayment } },
-    { $group: { _id: null, total: { $sum: '$amount' } } },
-  ]);
-  const pendingRevenueAgg = await Payment.aggregate([
-    { $match: { status: PAYMENT_STATUS.PENDING, ...dateMatchPayment } },
-    { $group: { _id: null, total: { $sum: '$amount' } } },
-  ]);
-  const overdueRevenueAgg = await Payment.aggregate([
-    { $match: { status: PAYMENT_STATUS.OVERDUE, ...dateMatchPayment } },
-    { $group: { _id: null, total: { $sum: '$amount' } } },
-  ]);
-  const paidRevenue = (paidRevenueAgg[0]?.total as number) || 0;
-  const pendingRevenue = (pendingRevenueAgg[0]?.total as number) || 0;
-  const overdueRevenue = (overdueRevenueAgg[0]?.total as number) || 0;
-  const grossRevenue = paidRevenue + pendingRevenue + overdueRevenue;
-  const collectionRate = grossRevenue > 0 ? (paidRevenue / grossRevenue) * 100 : 0;
+  const revenueAnalytics = await getRevenueAnalytics(fromDate, toDate);
+  const {
+     paidRevenue,
+     pendingRevenue,
+     overdueRevenue,
+     grossRevenue,
+     collectionRate,
+     revenueTrends,
+     monthlyRevenue 
+  } = revenueAnalytics;
+
+  // Map monthlyRevenue to the expected 'growth' shape if needed by frontend or keep it as new shape?
+  // Frontend IAdminAnalytics interface for `finance.growth` is `Array<{ month: string; total: number }>`.
+  // revenueAnalytics.monthlyRevenue is `Array<{ month: string; revenue: number }>`.
+  const revenueGrowth = monthlyRevenue.map((m: any) => ({ month: m.month, total: m.revenue }));
 
   // Growth metrics
   const classGrowth = await getCumulativeClassGrowth(fromDate as any, toDate as any);
+
+  /* 
+   * Tutor Growth Analytics 
+   * Aggregate tutors by creation date (month) and segment by status.
+   * 'Active' status: Tutors who CURRENTLY have at least one ACTIVE class.
+   * We perform aggregation in JS to match ObjectIds reliably.
+   */
+  const activeTutorUserIds = await FinalClass.distinct('tutor', { status: FINAL_CLASS_STATUS.ACTIVE });
+  const activeTutorUserIdStrings = new Set(activeTutorUserIds.map((id: any) => id.toString()));
+
+  const tutorsForGrowth = await Tutor.find(
+    buildDateMatch('createdAt', fromDate, toDate),
+    'createdAt verificationStatus user'
+  ).lean();
+
+  const growthMap: Record<string, { total: number; active: number; verified: number }> = {};
+
+  tutorsForGrowth.forEach((tutor: any) => {
+    const month = tutor.createdAt 
+      ? new Date(tutor.createdAt).toISOString().slice(0, 10) // 'YYYY-MM-DD'
+      : 'Unknown';
+    
+    if (!growthMap[month]) {
+      growthMap[month] = { total: 0, active: 0, verified: 0 };
+    }
+
+    const userIdStr = tutor.user ? tutor.user.toString() : '';
+    const isVerified = tutor.verificationStatus === VERIFICATION_STATUS.VERIFIED;
+    const isActive = activeTutorUserIdStrings.has(userIdStr);
+
+    growthMap[month].total++;
+    if (isActive) growthMap[month].active++;
+    if (isVerified) growthMap[month].verified++;
+  });
+
+  const tutorGrowth = Object.entries(growthMap)
+    .map(([month, stats]) => ({
+      month,
+      total: stats.total,
+      active: stats.active,
+      verified: stats.verified,
+    }))
+    .sort((a, b) => a.month.localeCompare(b.month));
+
+  /*
+   * Class Lead & Active Location Growth
+   * 1. Leads: Group by Created Month + City + Area
+   * 2. Active (Paid): Payments in Month -> FinalClass -> ClassLead (City/Area)
+   */
+  // 1. Leads
+  const leads = await ClassLead.find(buildDateMatch('createdAt', fromDate, toDate), 'createdAt city area').lean();
+  
+  // 2. Paid Payments (Active Classes Context)
+  const paidPayments = await Payment.find(
+    { status: PAYMENT_STATUS.PAID, ...dateMatchPayment },
+    'paymentDate finalClass'
+  ).populate({
+    path: 'finalClass',
+    select: 'classLead',
+    populate: { path: 'classLead', select: 'city area' }
+  }).lean();
+
+  // Aggregate
+  const locationGrowthMap: Record<string, { month: string; city: string; area: string; leads: number; active: number }> = {};
+  const citiesSet = new Set<string>();
+  const areasSet = new Set<string>();
+
+  // Process Leads
+  leads.forEach((l: any) => {
+    const month = l.createdAt ? new Date(l.createdAt).toISOString().slice(0, 10) : 'Unknown';
+    const city = l.city || 'Unknown';
+    const area = l.area || 'Unknown';
+    if (city !== 'Unknown') citiesSet.add(city);
+    if (area !== 'Unknown') areasSet.add(area);
+
+    const key = `${month}|${city}|${area}`;
+    if (!locationGrowthMap[key]) {
+      locationGrowthMap[key] = { month, city, area, leads: 0, active: 0 };
+    }
+    locationGrowthMap[key].leads++;
+  });
+
+  // Process Paid Payments
+  paidPayments.forEach((p: any) => {
+    const month = p.paymentDate ? new Date(p.paymentDate).toISOString().slice(0, 10) : 'Unknown';
+    // Deep populated path
+    const lead = (p.finalClass as any)?.classLead;
+    const city = lead?.city || 'Unknown';
+    const area = lead?.area || 'Unknown';
+    if (city !== 'Unknown') citiesSet.add(city);
+    if (area !== 'Unknown') areasSet.add(area);
+
+    const key = `${month}|${city}|${area}`;
+    if (!locationGrowthMap[key]) {
+      locationGrowthMap[key] = { month, city, area, leads: 0, active: 0 };
+    }
+    locationGrowthMap[key].active++;
+  });
+
+  const locationGrowth = Object.values(locationGrowthMap).sort((a, b) => a.month.localeCompare(b.month));
 
   const userGrowth = await User.aggregate([
     { $match: { ...dateMatchUser } },
@@ -280,17 +380,6 @@ export const getSystemWideAnalytics = async (fromDate?: Date, toDate?: Date) => 
       $group: {
         _id: { $dateToString: { format: '%Y-%m', date: '$createdAt' } },
         count: { $sum: 1 },
-      },
-    },
-    { $sort: { _id: 1 } },
-  ]);
-
-  const revenueGrowth = await Payment.aggregate([
-    { $match: { status: PAYMENT_STATUS.PAID, ...dateMatchPayment } },
-    {
-      $group: {
-        _id: { $dateToString: { format: '%Y-%m', date: '$paymentDate' } },
-        total: { $sum: '$amount' },
       },
     },
     { $sort: { _id: 1 } },
@@ -308,6 +397,9 @@ export const getSystemWideAnalytics = async (fromDate?: Date, toDate?: Date) => 
   );
 
   const pendingTutorVerifications = await Tutor.countDocuments({ verificationStatus: VERIFICATION_STATUS.PENDING });
+  const [leadsGrowth] = await Promise.all([
+    getDateWiseClassLeads(fromDate, toDate, 'day')
+  ]);
 
   return {
     base,
@@ -322,7 +414,10 @@ export const getSystemWideAnalytics = async (fromDate?: Date, toDate?: Date) => 
       averages: managerAverages,
     },
     coordinators: coordinatorMetrics,
-    tutors: tutorStats,
+    tutors: {
+      ...tutorStats,
+      growth: tutorGrowth
+    },
     finance: {
       paidRevenue,
       pendingRevenue,
@@ -330,9 +425,16 @@ export const getSystemWideAnalytics = async (fromDate?: Date, toDate?: Date) => 
       grossRevenue,
       collectionRate,
       growth: revenueGrowth,
+      revenueTrends,
     },
     classes: {
+      leadsGrowth,
       growth: classGrowth,
+      locationGrowth: {
+        data: locationGrowth,
+        cities: Array.from(citiesSet).sort(),
+        areas: Array.from(areasSet).sort()
+      }
     },
     health: {
       pendingApprovals,
@@ -571,6 +673,143 @@ export const bulkCreateUsers = async (
   };
 };
 
+export const getApprovalLists = async () => {
+  const [attendance, tutors, demos, tierChanges] = await Promise.all([
+    // Pending Attendance (needs coordinator or parent)
+    Attendance.find({
+      status: { $in: [ATTENDANCE_STATUS.PENDING, ATTENDANCE_STATUS.COORDINATOR_APPROVED] },
+    })
+      .sort({ createdAt: -1 })
+      .populate([
+        { path: 'finalClass', select: 'className studentName' },
+        { path: 'tutor', select: 'name email' },
+      ]),
+
+    // Tutors for Verification (status: UNDER_REVIEW)
+    getTutorsForVerification(),
+
+    // Scheduled Demos (needs followup)
+    DemoHistory.find({ status: 'SCHEDULED' })
+      .sort({ scheduledAt: 1 })
+      .populate([{ path: 'lead', select: 'studentName subject' }]),
+
+    // Pending Tier Changes
+    getPendingTierChanges(),
+  ]);
+
+  return {
+    attendance,
+    tutors,
+    demos,
+    tierChanges,
+  };
+};
+
+export const getAdvancedAnalytics = async () => {
+  const now = new Date();
+  const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+  const [
+    payments,
+    allStudents,
+    allTutors,
+    convertedLeads,
+    managers,
+    coordinators,
+  ] = await Promise.all([
+    Payment.find({ status: PAYMENT_STATUS.PAID }).lean(),
+    User.find({ role: USER_ROLES.PARENT }).lean(), // Assuming Parent is the billing entity
+    Tutor.countDocuments({ verificationStatus: VERIFICATION_STATUS.VERIFIED }),
+    ClassLead.countDocuments({ status: CLASS_LEAD_STATUS.CONVERTED }),
+    Manager.countDocuments({ isActive: true }),
+    Coordinator.countDocuments({ isActive: true }),
+  ]);
+
+  // 1. Student LTV
+  const totalRevenue = payments.reduce((sum, p) => p.paymentType === PAYMENT_TYPE.FEES_COLLECTED ? sum + p.amount : sum, 0);
+  const studentLTV = allStudents.length ? totalRevenue / allStudents.length : 0;
+
+  // 2. Student CAC (Synthetic: 10000 per manager + 2000 per lead)
+  const totalAcquisitionCost = (managers * 15000);
+  const studentCAC = convertedLeads ? totalAcquisitionCost / convertedLeads : 0;
+
+  // 3. Student Monthly Churn (Users with active classes 30d ago vs now)
+  // This is a complex one, we'll estimate based on final class closure
+  const closedLast30Days = await FinalClass.countDocuments({ 
+    status: { $in: [FINAL_CLASS_STATUS.COMPLETED, FINAL_CLASS_STATUS.CANCELLED] },
+    updatedAt: { $gte: thirtyDaysAgo }
+  });
+  const activeStudents = await FinalClass.distinct('classLead', { status: FINAL_CLASS_STATUS.ACTIVE });
+  const studentChurn = activeStudents.length ? (closedLast30Days / activeStudents.length) * 100 : 0;
+
+  // 4. Teacher Churn
+  const inactiveTeachers = await User.countDocuments({ role: USER_ROLES.TUTOR, isActive: false, updatedAt: { $gte: thirtyDaysAgo } });
+  const teacherChurn = allTutors ? (inactiveTeachers / allTutors) * 100 : 0;
+
+  // 5. Avg Teacher Earnings
+  const totalTeacherPayouts = payments.reduce((sum, p) => p.paymentType === PAYMENT_TYPE.TUTOR_PAYOUT ? sum + p.amount : sum, 0);
+  const activeTutors = await FinalClass.distinct('tutor', { status: FINAL_CLASS_STATUS.ACTIVE });
+  const avgTeacherEarnings = activeTutors.length ? totalTeacherPayouts / activeTutors.length : 0;
+
+  // 6. ARPU
+  const arpu = activeStudents.length ? totalRevenue / activeStudents.length : 0;
+
+  // 7. Gross Margin
+  const totalFees = payments.filter(p => p.paymentType === PAYMENT_TYPE.FEES_COLLECTED).reduce((s, p) => s + p.amount, 0);
+  const grossMargin = totalFees ? ((totalFees - totalTeacherPayouts) / totalFees) * 100 : 0;
+
+  // 8. Conversion Rate
+  const totalLeads = await ClassLead.countDocuments({});
+  const conversionRate = totalLeads ? (convertedLeads / totalLeads) * 100 : 0;
+
+  // 9. Retention (30/60/90) - Users still active after X days
+  const getRetention = async (days: number) => {
+    const thresholdDate = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
+    const cohort = await User.find({ role: USER_ROLES.PARENT, createdAt: { $lte: thresholdDate } }).lean();
+    if (!cohort.length) return 0;
+    
+    const activeFromCohort = await FinalClass.distinct('parent', { 
+      parent: { $in: cohort.map(u => u._id) },
+      status: FINAL_CLASS_STATUS.ACTIVE 
+    });
+    return (activeFromCohort.length / cohort.length) * 100;
+  };
+
+  const retention30 = await getRetention(30);
+  const retention60 = await getRetention(60);
+  const retention90 = await getRetention(90);
+  const retention365 = await getRetention(365);
+
+  // 10. Coordinator Cost per Active User
+  const totalCoordinatorCost = coordinators * 8000;
+  const coordinatorCostPerUser = activeStudents.length ? totalCoordinatorCost / activeStudents.length : 0;
+
+  // 11. Time-to-First-Value (Days from Lead to Converted)
+  const convertedLeadsData = await ClassLead.find({ status: CLASS_LEAD_STATUS.CONVERTED }).lean();
+  const timeToValue = convertedLeadsData.length 
+    ? convertedLeadsData.reduce((sum, l) => sum + (new Date(l.updatedAt).getTime() - new Date(l.createdAt).getTime()), 0) / (convertedLeadsData.length * 86400000)
+    : 0;
+
+
+
+  return {
+    studentLTV,
+    studentCAC,
+    studentChurn,
+    teacherChurn,
+    teacherCAC: 2500, // Placeholder
+    avgTeacherEarnings,
+    arpu,
+    netRevenueChurn: studentChurn * 0.8, // Simplified estimation
+    grossMargin,
+    conversionRate,
+    retention: { d30: retention30, d60: retention60, d90: retention90, d365: retention365 },
+    coordinatorCostPerUser,
+    refundRate: 0, // Placeholder as we don't have refund logic yet
+    timeToValue
+  };
+};
+
 const exported = {
   createAdminProfile,
   getAllAdmins,
@@ -587,6 +826,8 @@ const exported = {
   bulkDeleteRecords,
   createUserWithRole,
   bulkCreateUsers,
+  getApprovalLists,
+  getAdvancedAnalytics,
 };
 
 export default exported;

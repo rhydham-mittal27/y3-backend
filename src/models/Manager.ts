@@ -11,6 +11,20 @@ export interface IManagerDocument extends Document {
   coordinatorsCreated: number;
   paymentsProcessed: number;
   joiningDate: Date;
+  bio?: string;
+  languagesKnown: string[];
+  skills: string[];
+  permanentAddress?: string;
+  residentialAddress?: string;
+  documents: {
+    documentType: 'AADHAAR' | 'PAN' | 'VOTER_ID' | 'PROFILE_PHOTO' | 'OTHER';
+    documentUrl: string;
+    uploadedAt: Date;
+    verifiedAt?: Date;
+    s3Key?: string;
+    s3Bucket?: string;
+  }[];
+  verificationStatus: string;
   department?: string;
   isActive: boolean;
   lastActivityAt?: Date;
@@ -60,6 +74,28 @@ const ManagerSchema: Schema<IManagerDocument> = new Schema<IManagerDocument>(
     coordinatorsCreated: { type: Number, default: 0 },
     paymentsProcessed: { type: Number, default: 0 },
     joiningDate: { type: Date, default: Date.now },
+    bio: { type: String, trim: true },
+    languagesKnown: { type: [String], default: [] },
+    skills: { type: [String], default: [] },
+    permanentAddress: { type: String },
+    residentialAddress: { type: String },
+    documents: [{
+      documentType: { 
+        type: String, 
+        enum: ['AADHAAR', 'PAN', 'VOTER_ID', 'PROFILE_PHOTO', 'OTHER'],
+        required: true 
+      },
+      documentUrl: { type: String, required: true },
+      uploadedAt: { type: Date, default: Date.now },
+      verifiedAt: { type: Date },
+      s3Key: { type: String },
+      s3Bucket: { type: String }
+    }],
+    verificationStatus: { 
+      type: String, 
+      enum: ['PENDING', 'UNDER_REVIEW', 'VERIFIED', 'REJECTED'], 
+      default: 'PENDING' 
+    },
     department: { type: String },
     isActive: { type: Boolean, default: true },
     lastActivityAt: { type: Date },
@@ -125,8 +161,14 @@ ManagerSchema.virtual('averageRevenuePerClass').get(function (this: IManagerDocu
   return this.revenueGenerated / this.classesConverted;
 });
 
+ManagerSchema.virtual('isProfileComplete').get(function (this: IManagerDocument) {
+  const hasBio = !!this.bio && this.bio.length > 20;
+  const hasAddress = !!this.residentialAddress;
+  const hasAadhaar = this.documents?.some(d => d.documentType === 'AADHAAR');
+  return !!(hasBio && hasAddress && hasAadhaar);
+});
+
 // Indexes
-ManagerSchema.index({ user: 1 }, { unique: true });
 ManagerSchema.index({ isActive: 1 });
 ManagerSchema.index({ isActive: 1, classLeadsCreated: 1 });
 

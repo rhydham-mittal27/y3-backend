@@ -1,13 +1,12 @@
 import mongoose from 'mongoose';
 import Attendance from '../models/Attendance';
 import FinalClass from '../models/FinalClass';
-import Coordinator from '../models/Coordinator';
 import ErrorResponse from '../utils/errorResponse';
 import { ATTENDANCE_STATUS, FINAL_CLASS_STATUS, STUDENT_ATTENDANCE_STATUS } from '../config/constants';
-import { createPayment } from './paymentService';
 import logger from '../utils/logger';
 import { createNotificationWithPreferences } from './notificationService';
 import { upsertAttendanceSheet, submitAttendanceSheet } from './attendanceSheetService';
+import { updateTutorExperienceAndTier } from './tutorService';
 
 export const createAttendance = async (params: {
   finalClassId: string;
@@ -26,25 +25,24 @@ export const createAttendance = async (params: {
     throw new ErrorResponse('Class must be ACTIVE to create attendance', 400);
   }
 
-  // Optionally enforce that attendance can only be marked on today's date
+  // Enforce attendance submission window
   const requestedDate = new Date(sessionDate);
   const today = new Date();
   const normalize = (d: Date) => {
     const nd = new Date(d);
     nd.setHours(0, 0, 0, 0);
-    return nd.getTime();
+    return nd;
   };
-  let sameDayOnly = true;
-  try {
-    const coord = await Coordinator.findOne({ user: cls.coordinator as any });
-    if (coord && (coord as any).settings?.attendanceControls) {
-      const flag = (coord as any).settings.attendanceControls.sameDayOnly;
-      if (typeof flag === 'boolean') sameDayOnly = flag;
-    }
-  } catch {}
 
-  if (sameDayOnly && normalize(requestedDate) !== normalize(today)) {
-    throw new ErrorResponse('Attendance can only be marked for today\'s date', 400);
+  const normalizedRequested = normalize(requestedDate);
+  const windowDays = (cls as any).attendanceSubmissionWindow ?? 2;
+  
+  const deadlineDate = new Date(normalizedRequested);
+  deadlineDate.setDate(deadlineDate.getDate() + windowDays);
+  deadlineDate.setHours(23, 59, 59, 999);
+
+  if (today > deadlineDate) {
+    throw new ErrorResponse(`Attendance submission window has expired. This class allows submission within ${windowDays} day(s) of the session date.`, 400);
   }
 
   // Check one-time reschedules: allow attendance on target dates (toDate),
@@ -83,7 +81,7 @@ export const createAttendance = async (params: {
     tutor: cls.tutor,
     coordinator: cls.coordinator,
     parent: (cls as any).parent,
-    status: ATTENDANCE_STATUS.APPROVED,
+    status: ATTENDANCE_STATUS.PARENT_APPROVED,
     studentAttendanceStatus: studentAttendanceStatus || STUDENT_ATTENDANCE_STATUS.PRESENT,
     submittedBy: new mongoose.Types.ObjectId(submittedBy),
     notes,
@@ -119,6 +117,13 @@ export const createAttendance = async (params: {
     }
   } catch (e) {
     logger.error(`Failed to auto-generate/submit attendance sheet for class ${finalClassId}: ${String(e)}`);
+  }
+
+  // Update Tutor Experience & Tier logic
+  try {
+    await updateTutorExperienceAndTier(cls.tutor as any);
+  } catch (err) {
+    logger.error(`Failed to update tutor tier stats: ${err}`);
   }
 
   await attendance.populate([
@@ -200,40 +205,66 @@ export const getAttendanceById = async (attendanceId: string) => {
 };
 
 export const coordinatorApprove = async (attendanceId: string, coordinatorUserId: string) => {
-  const attendance = await Attendance.findById(attendanceId);
-  if (!attendance) throw new ErrorResponse('Attendance not found', 404);
-  if (String(attendance.status) !== ATTENDANCE_STATUS.PENDING) {
-    throw new ErrorResponse('Attendance must be in PENDING status', 400);
+  const session = await mongoose.startSession();
+  try {
+    session.startTransaction();
+
+    const attendance = await Attendance.findById(attendanceId).session(session);
+    if (!attendance) throw new ErrorResponse('Attendance not found', 404);
+    if (String(attendance.status) !== ATTENDANCE_STATUS.PENDING) {
+      throw new ErrorResponse('Attendance must be in PENDING status', 400);
+    }
+    if (String(attendance.coordinator) !== String(coordinatorUserId)) {
+      throw new ErrorResponse('Not authorized to approve this attendance', 403);
+    }
+
+    // Set status directly to PARENT_APPROVED to finalize it immediately
+    attendance.status = ATTENDANCE_STATUS.PARENT_APPROVED;
+    attendance.coordinatorApprovedBy = new mongoose.Types.ObjectId(coordinatorUserId) as any;
+    attendance.coordinatorApprovedAt = new Date();
+    
+    await attendance.save({ session });
+
+    // Increment class completed sessions
+    await FinalClass.findByIdAndUpdate(attendance.finalClass, { $inc: { completedSessions: 1 } }, { session });
+
+    await session.commitTransaction();
+
+    // Notify tutor immediately that the session is approved
+    try {
+      await createNotificationWithPreferences({
+        recipient: attendance.tutor as any,
+        type: 'ATTENDANCE',
+        title: 'Attendance Approved',
+        message: `Attendance for session on ${new Date(attendance.sessionDate).toDateString()} has been approved.`,
+      });
+    } catch (e) {
+      logger.error(`Failed to notify tutor: ${e}`);
+    }
+
+    // Update Tutor Experience & Tier logic
+    try {
+      await updateTutorExperienceAndTier((attendance.tutor as any)._id || attendance.tutor);
+    } catch (err) {
+      logger.error(`Failed to update tutor tier stats upon coordinator approval: ${err}`);
+    }
+
+    await attendance.populate([
+      { path: 'finalClass' },
+      { path: 'tutor', select: 'name email phone' },
+      { path: 'coordinator', select: 'name email phone' },
+      { path: 'parent', select: 'name email phone' },
+      { path: 'submittedBy', select: 'name email' },
+      { path: 'coordinatorApprovedBy', select: 'name email' },
+    ]);
+
+    return attendance;
+  } catch (err) {
+    if (session.inTransaction()) await session.abortTransaction();
+    throw err;
+  } finally {
+    session.endSession();
   }
-  if (String(attendance.coordinator) !== String(coordinatorUserId)) {
-    throw new ErrorResponse('Not authorized to approve this attendance', 403);
-  }
-
-  attendance.status = ATTENDANCE_STATUS.COORDINATOR_APPROVED;
-  attendance.coordinatorApprovedBy = new mongoose.Types.ObjectId(coordinatorUserId) as any;
-  attendance.coordinatorApprovedAt = new Date();
-  await attendance.save();
-
-  // Notify parent if exists
-  if (attendance.parent) {
-    await createNotificationWithPreferences({
-      recipient: attendance.parent as any,
-      type: 'ATTENDANCE',
-      title: 'Attendance Approval Required',
-      message: `Please review and approve attendance for session on ${new Date(attendance.sessionDate).toDateString()}.`,
-    });
-  }
-
-  await attendance.populate([
-    { path: 'finalClass' },
-    { path: 'tutor', select: 'name email phone' },
-    { path: 'coordinator', select: 'name email phone' },
-    { path: 'parent', select: 'name email phone' },
-    { path: 'submittedBy', select: 'name email' },
-    { path: 'coordinatorApprovedBy', select: 'name email' },
-  ]);
-
-  return attendance;
 };
 
 export const parentApprove = async (attendanceId: string, parentUserId: string) => {
@@ -282,12 +313,6 @@ export const parentApprove = async (attendanceId: string, parentUserId: string) 
 
     await session.commitTransaction();
 
-    try {
-      await createPayment(attendanceId, parentUserId);
-    } catch (e) {
-      logger.error(`Payment creation failed for attendance ${attendanceId}: ${String(e)}`);
-    }
-
     // Notify tutor
     await createNotificationWithPreferences({
       recipient: attendance.tutor as any,
@@ -295,6 +320,13 @@ export const parentApprove = async (attendanceId: string, parentUserId: string) 
       title: 'Attendance Approved',
       message: `Attendance for session on ${new Date(attendance.sessionDate).toDateString()} has been approved by parent.`,
     });
+
+    // Update Tutor Experience & Tier logic
+    try {
+        await updateTutorExperienceAndTier((attendance.tutor as any)._id || attendance.tutor);
+    } catch (err) {
+        logger.error(`Failed to update tutor tier stats upon parent approval: ${err}`);
+    }
 
     await attendance.populate([
       { path: 'finalClass' },

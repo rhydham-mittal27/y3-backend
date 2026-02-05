@@ -1,5 +1,5 @@
 import mongoose from 'mongoose';
-import FinalClass from '../models/FinalClass';
+import FinalClass, { ITutorHistory } from '../models/FinalClass';
 import Attendance from '../models/Attendance';
 import ClassLead from '../models/ClassLead';
 import Tutor from '../models/Tutor';
@@ -51,13 +51,14 @@ export const convertLeadToFinalClass = async (params: {
   ratePerSession?: number;
   notes?: string;
   convertedBy: string;
+  attendanceSubmissionWindow?: number;
 }) => {
-  const { classLeadId, coordinatorUserId, parentUserId, startDate, schedule, totalSessions, ratePerSession, notes, convertedBy } = params;
+  const { classLeadId, coordinatorUserId, parentUserId, startDate, schedule, totalSessions, ratePerSession, notes, convertedBy, attendanceSubmissionWindow } = params;
   const session = await mongoose.startSession();
   try {
     session.startTransaction();
 
-    const lead = await ClassLead.findById(classLeadId).session(session);
+    const lead = await ClassLead.findById(classLeadId).populate('groupClass').session(session);
     if (!lead) throw new ErrorResponse('Class lead not found', 404);
     if (String(lead.status) !== CLASS_LEAD_STATUS.CONVERTED) {
       throw new ErrorResponse('Class lead must be in CONVERTED status', 400);
@@ -182,11 +183,12 @@ export const convertLeadToFinalClass = async (params: {
           parentUserObjectId = parentUser._id;
         }
       }
-    } else if (lead.studentType === 'GROUP' && lead.studentDetails && lead.grade) {
+    } else if (lead.studentType === 'GROUP' && (lead.groupClass || lead.studentDetails) && lead.grade) {
       // Create individual student profiles for group classes
+      const studentDetailsToUse = (lead.groupClass as any)?.students || lead.studentDetails;
       const gradeNumber = parseInt(lead.grade.replace(/\D/g, ''));
-      if (!isNaN(gradeNumber) && gradeNumber > 0) {
-        for (const studentDetail of lead.studentDetails) {
+      if (!isNaN(gradeNumber) && gradeNumber > 0 && studentDetailsToUse) {
+        for (const studentDetail of studentDetailsToUse) {
           // Validate student detail has required gender
           if (!studentDetail.gender || !['M', 'F'].includes(studentDetail.gender)) {
             throw new Error(`Student ${studentDetail.name || 'Unknown'} has invalid or missing gender. Gender is required for student ID generation.`);
@@ -275,7 +277,7 @@ export const convertLeadToFinalClass = async (params: {
       totalSessions: autoTotalSessions,
       ratePerSession: typeof ratePerSession === 'number' ? ratePerSession : 0,
       completedSessions: 0,
-      studentName: lead.studentType === 'SINGLE' ? lead.studentName : `Group Class (${lead.studentDetails?.length || 0} students)`,
+      studentName: lead.studentType === 'SINGLE' ? lead.studentName : `Group Class (${((lead.groupClass as any)?.students || lead.studentDetails)?.length || 0} students)`,
       studentGender,
       studentId,
       subject: lead.subject,
@@ -286,6 +288,9 @@ export const convertLeadToFinalClass = async (params: {
       convertedBy: new mongoose.Types.ObjectId(convertedBy),
       status: FINAL_CLASS_STATUS.ACTIVE,
       notes,
+      classesPerMonth: lead.classesPerMonth,
+      testPerMonth: 1,
+      attendanceSubmissionWindow: typeof attendanceSubmissionWindow === 'number' ? attendanceSubmissionWindow : 2,
     });
 
     await created.save({ session });
@@ -394,16 +399,29 @@ export const getAllFinalClasses = async (args: {
   sortBy?: string;
   sortOrder?: 'asc' | 'desc';
   noCoordinator?: boolean;
+  search?: string;
+  convertedBy?: string;
 }) => {
-  const { page, limit, status, coordinatorId, tutorId, sortBy, sortOrder, noCoordinator } = args;
+  const { page, limit, status, coordinatorId, tutorId, sortBy, sortOrder, noCoordinator, search, convertedBy } = args;
   const query: any = {};
   if (status) query.status = status;
   if (coordinatorId) query.coordinator = new mongoose.Types.ObjectId(coordinatorId);
   if (tutorId) query.tutor = new mongoose.Types.ObjectId(tutorId);
+  if (convertedBy) query.convertedBy = new mongoose.Types.ObjectId(convertedBy);
   if (noCoordinator) {
     query.$or = [
       { coordinator: { $exists: false } },
       { coordinator: null },
+    ];
+  }
+
+  if (search) {
+    query.$or = [
+      ...(query.$or || []),
+      { studentName: { $regex: search, $options: 'i' } },
+      { className: { $regex: search, $options: 'i' } },
+      { subject: { $regex: search, $options: 'i' } },
+      { grade: { $regex: search, $options: 'i' } },
     ];
   }
 
@@ -450,6 +468,7 @@ export const updateFinalClass = async (
     endDate?: Date;
     notes?: string;
     coordinatorUserId?: string;
+    attendanceSubmissionWindow?: number;
   }>
 ) => {
   const cls = await FinalClass.findById(classId);
@@ -463,7 +482,31 @@ export const updateFinalClass = async (
     if (!coordinator.isActive) throw new ErrorResponse('Coordinator is not active', 400);
     const availableCapacity = (coordinator.maxClassCapacity || 0) - (coordinator.activeClassesCount || 0);
     if (availableCapacity <= 0) throw new ErrorResponse('Coordinator has reached maximum capacity', 400);
-    (cls as any).coordinator = new mongoose.Types.ObjectId(updateData.coordinatorUserId);
+
+    const oldCoordinatorUserId = cls.coordinator;
+    if (String(oldCoordinatorUserId) !== String(updateData.coordinatorUserId)) {
+      // Decrement old coordinator if exists
+      if (oldCoordinatorUserId) {
+        await Coordinator.findOneAndUpdate(
+          { user: oldCoordinatorUserId },
+          { 
+            $inc: { activeClassesCount: -1 },
+            $pull: { assignedClasses: cls._id }
+          }
+        );
+      }
+
+      // Increment new coordinator
+      await Coordinator.findOneAndUpdate(
+         { user: updateData.coordinatorUserId },
+         { 
+           $inc: { activeClassesCount: 1, totalClassesHandled: 1 },
+           $push: { assignedClasses: cls._id }
+         }
+      );
+
+      (cls as any).coordinator = new mongoose.Types.ObjectId(updateData.coordinatorUserId);
+    }
   }
   if (updateData.schedule && !('totalSessions' in updateData)) {
     const mergedSchedule: { daysOfWeek?: string[]; timeSlot?: string } = {
@@ -500,22 +543,14 @@ export const updateFinalClassStatus = async (
     if (!cls) throw new ErrorResponse('Final class not found', 404);
 
     const current = cls.status as FINAL_CLASS_STATUS;
-    const allowed: Record<FINAL_CLASS_STATUS, (FINAL_CLASS_STATUS | string)[]> = {
-      [FINAL_CLASS_STATUS.ACTIVE]: [FINAL_CLASS_STATUS.COMPLETED, FINAL_CLASS_STATUS.PAUSED, FINAL_CLASS_STATUS.CANCELLED],
-      [FINAL_CLASS_STATUS.PAUSED]: [FINAL_CLASS_STATUS.ACTIVE, FINAL_CLASS_STATUS.CANCELLED],
-      [FINAL_CLASS_STATUS.COMPLETED]: [],
-      [FINAL_CLASS_STATUS.CANCELLED]: [],
-    };
-
     if (current === newStatus) {
       await session.commitTransaction();
       session.endSession();
       return cls;
     }
-
-    if (!allowed[current]?.includes(newStatus)) {
-      throw new ErrorResponse('Invalid status transition', 400);
-    }
+    
+    // Status transition validation removed as per request
+    // Any status transition is now allowed
 
     cls.status = newStatus as any;
     if (newStatus === FINAL_CLASS_STATUS.COMPLETED || newStatus === FINAL_CLASS_STATUS.CANCELLED) {
@@ -695,6 +730,152 @@ export const getStudentsByFinalClass = async (finalClassId: string) => {
   return students;
 };
 
+export const changeTutor = async (params: {
+  classId: string;
+  newTutorUserId: string;
+  reason?: string;
+  changedBy: string;
+}) => {
+  const { classId, newTutorUserId, reason, changedBy } = params;
+  const session = await mongoose.startSession();
+  try {
+    session.startTransaction();
+
+    const cls = await FinalClass.findById(classId).session(session);
+    if (!cls) throw new ErrorResponse('Final class not found', 404);
+    if (cls.status !== FINAL_CLASS_STATUS.ACTIVE) {
+      throw new ErrorResponse('Cannot change tutor for inactive class', 400);
+    }
+
+    const oldTutorUserId = cls.tutor;
+    if (String(oldTutorUserId) === String(newTutorUserId)) {
+      throw new ErrorResponse('New tutor must be different from the current tutor', 400);
+    }
+
+    const newTutorProfile = await Tutor.findOne({ user: newTutorUserId }).session(session);
+    if (!newTutorProfile) throw new ErrorResponse('New tutor profile not found', 404);
+
+    // Update history for old tutor
+    const historyEntry: ITutorHistory = {
+      tutor: oldTutorUserId,
+      startDate: cls.updatedAt || cls.createdAt, // Approximating start date as last update or creation
+      endDate: new Date(),
+      reason: reason || 'Tutor changed by manager',
+      replacedBy: new mongoose.Types.ObjectId(newTutorUserId),
+    };
+
+    if (!cls.tutorHistory) cls.tutorHistory = [];
+    cls.tutorHistory.push(historyEntry);
+
+    // Update class with new tutor
+    cls.tutor = new mongoose.Types.ObjectId(newTutorUserId) as any;
+    
+    await cls.save({ session });
+
+    // Update tutor stats
+    await Tutor.updateOne({ user: oldTutorUserId }, { $inc: { classesAssigned: -1 } }).session(session);
+    await Tutor.updateOne({ user: newTutorUserId }, { $inc: { classesAssigned: 1 } }).session(session);
+
+    // Log activity
+    await logManagerActivity(
+      changedBy,
+      MANAGER_ACTION_TYPE.CHANGE_TUTOR,
+      `Changed tutor for class ${cls.className} from ${oldTutorUserId} to ${newTutorUserId}`,
+      { entityType: 'FinalClass', entityId: String(cls._id), entityName: cls.studentName },
+      { oldTutorUserId, newTutorUserId, reason }
+    );
+
+    // Notify new tutor
+    await Notification.create([{
+      recipient: newTutorUserId,
+      type: 'GENERAL',
+      title: 'New Class Assigned (Tutor Change)',
+      message: `You have been assigned to class ${cls.className} for student ${cls.studentName}.`,
+      relatedFinalClass: cls._id,
+    }], { session });
+
+    await session.commitTransaction();
+
+    await cls.populate([
+      { path: 'classLead' },
+      { path: 'tutor', select: 'name email phone' },
+      { path: 'coordinator', select: 'name email phone' },
+      { path: 'parent', select: 'name email phone' },
+      { path: 'tutorHistory.tutor', select: 'name email phone' },
+      { path: 'tutorHistory.replacedBy', select: 'name email phone' },
+    ]);
+
+    return cls;
+  } catch (err) {
+    await session.abortTransaction();
+    throw err;
+  } finally {
+    session.endSession();
+  }
+};
+
+export const handleTutorLeaving = async (params: {
+  classId: string;
+  reason?: string;
+  changedBy: string;
+}) => {
+  const { classId, reason, changedBy } = params;
+  const session = await mongoose.startSession();
+  try {
+    session.startTransaction();
+
+    const cls = await FinalClass.findById(classId).session(session);
+    if (!cls) throw new ErrorResponse('Final class not found', 404);
+    
+    const oldTutorUserId = cls.tutor;
+    
+    // Update history for old tutor
+    const historyEntry: ITutorHistory = {
+      tutor: oldTutorUserId,
+      startDate: cls.updatedAt || cls.createdAt,
+      endDate: new Date(),
+      reason: reason || 'Tutor left mid-session',
+    };
+
+    if (!cls.tutorHistory) cls.tutorHistory = [];
+    cls.tutorHistory.push(historyEntry);
+
+    // We don't nullify the tutor yet, but we might want to mark the class as needing a tutor
+    // For now, let's keep the old tutor until the new one is assigned, 
+    // or we could nullify if the schema allows (it currently says required: true)
+    // Since it's required, we can't nullify. We'll rely on the status or a flag if we had one.
+    // However, the user said "if teacher leaves then manager should be able to repost it"
+    
+    await cls.save({ session });
+
+    await Tutor.updateOne({ user: oldTutorUserId }, { $inc: { classesAssigned: -1 } }).session(session);
+
+    // Log activity
+    await logManagerActivity(
+      changedBy,
+      MANAGER_ACTION_TYPE.TUTOR_LEFT_MID_SESSION,
+      `Tutor ${oldTutorUserId} left class ${cls.className}`,
+      { entityType: 'FinalClass', entityId: String(cls._id), entityName: cls.studentName },
+      { oldTutorUserId, reason }
+    );
+
+    await session.commitTransaction();
+
+    await cls.populate([
+      { path: 'classLead' },
+      { path: 'tutor', select: 'name email phone' },
+      { path: 'tutorHistory.tutor', select: 'name email phone' },
+    ]);
+
+    return cls;
+  } catch (err) {
+    await session.abortTransaction();
+    throw err;
+  } finally {
+    session.endSession();
+  }
+};
+
 export default {
   convertLeadToFinalClass,
   getAllFinalClasses,
@@ -707,4 +888,6 @@ export default {
   getClassesByParent,
   computeTutorMonthlyStats,
   getStudentsByFinalClass,
+  changeTutor,
+  handleTutorLeaving,
 };

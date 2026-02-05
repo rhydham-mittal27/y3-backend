@@ -22,7 +22,7 @@ export interface IDemoHistoryDocument extends Document {
 const DemoHistorySchema = new Schema<IDemoHistoryDocument>(
   {
     classLead: { type: Schema.Types.ObjectId, ref: 'ClassLead', required: true, index: true },
-    tutor: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    tutor: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     demoDate: { type: Date, required: true },
     demoTime: { type: String, required: true },
     status: { type: String, enum: Object.values(DEMO_STATUS), required: true, index: true },

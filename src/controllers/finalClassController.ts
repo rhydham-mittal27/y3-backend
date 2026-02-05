@@ -6,7 +6,7 @@ import { AuthRequest } from '../types';
 import FinalClass from '../models/FinalClass';
 import Coordinator from '../models/Coordinator';
 import User from '../models/User';
-import { FINAL_CLASS_STATUS } from '../config/constants';
+import { FINAL_CLASS_STATUS, COORDINATOR_ACTION_TYPE, USER_ROLES } from '../config/constants';
 import { createNotificationWithPreferences } from '../services/notificationService';
 import { sendEmail } from '../utils/emailService';
 import {
@@ -19,7 +19,11 @@ import {
   getClassesByCoordinator,
   getClassesByTutor,
   getClassesByParent,
+  changeTutor,
+  handleTutorLeaving,
 } from '../services/finalClassService';
+import { repostClassAsLead } from '../services/leadService';
+import { logCoordinatorActivity } from '../services/coordinatorService';
 // FINAL_CLASS_STATUS already imported above
 
 export const convertToFinalClass = asyncHandler(async (req: AuthRequest, res) => {
@@ -52,6 +56,13 @@ export const getFinalClasses = asyncHandler(async (req: AuthRequest, res) => {
   const tutorId = (req.query.tutorId as string) || undefined;
   const sortBy = (req.query.sortBy as string) || undefined;
   const sortOrder = (req.query.sortOrder as 'asc' | 'desc') || undefined;
+  const search = (req.query.search as string) || undefined;
+  const noCoordinator = req.query.noCoordinator === 'true';
+
+  let convertedBy: string | undefined = undefined;
+  if (req.user && req.user.role === USER_ROLES.MANAGER && !tutorId && !coordinatorId && !search) {
+    convertedBy = req.user.id;
+  }
 
   const { classes, total } = await getAllFinalClasses({
     page,
@@ -61,6 +72,9 @@ export const getFinalClasses = asyncHandler(async (req: AuthRequest, res) => {
     tutorId,
     sortBy,
     sortOrder,
+    search,
+    convertedBy,
+    noCoordinator,
   });
 
   return res.json(paginatedResponse(classes, page, limit, total));
@@ -80,6 +94,20 @@ export const updateFinalClassDetails = asyncHandler(async (req: AuthRequest, res
   const classId = req.params.id as string;
   const updateData = req.body;
   const cls = await updateFinalClass(classId, updateData);
+
+  // Log coordinator-initiated updates to final classes
+  if (req.user?.role === USER_ROLES.COORDINATOR) {
+    try {
+      await logCoordinatorActivity(
+        req.user.id,
+        COORDINATOR_ACTION_TYPE.UPDATE_FINAL_CLASS,
+        'Updated final class details',
+        { entityType: 'FinalClass', entityId: classId, entityName: (cls as any)?.className },
+        { updateData }
+      );
+    } catch {}
+  }
+
   return res.json(successResponse(cls, 'Final class updated successfully'));
 });
 
@@ -248,6 +276,47 @@ export const getParentClassesController = asyncHandler(async (req: AuthRequest, 
   return res.status(200).json(paginatedResponse(paginatedClasses, page, limit, total));
 });
 
+export const changeTutorController = asyncHandler(async (req: AuthRequest, res) => {
+  const classId = req.params.id as string;
+  const { newTutorUserId, reason } = req.body;
+  const changedBy = req.user!.id;
+
+  const result = await changeTutor({
+    classId,
+    newTutorUserId,
+    reason,
+    changedBy,
+  });
+
+  return res.status(200).json(successResponse(result, 'Tutor changed successfully'));
+});
+
+export const tutorLeavingController = asyncHandler(async (req: AuthRequest, res) => {
+  const classId = req.params.id as string;
+  const { reason } = req.body;
+  const changedBy = req.user!.id;
+
+  const result = await handleTutorLeaving({
+    classId,
+    reason,
+    changedBy,
+  });
+
+  return res.status(200).json(successResponse(result, 'Tutor departure recorded successfully'));
+});
+
+export const repostLeadController = asyncHandler(async (req: AuthRequest, res) => {
+  const classId = req.params.id as string;
+  const createdBy = req.user!.id;
+
+  const result = await repostClassAsLead({
+    classId,
+    createdBy,
+  });
+
+  return res.status(201).json(successResponse(result, 'Class reposted as lead successfully'));
+});
+
 export default {
   convertToFinalClass,
   getFinalClasses,
@@ -261,4 +330,7 @@ export default {
   getParentClassesController,
   createOneTimeRescheduleController,
   parentRequestRescheduleController,
+  changeTutorController,
+  tutorLeavingController,
+  repostLeadController,
 };

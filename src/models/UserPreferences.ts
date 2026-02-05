@@ -79,7 +79,7 @@ UserPreferencesSchema.methods.resetToDefaults = function () {
   return this as IUserPreferencesDocument;
 };
 
-UserPreferencesSchema.index({ user: 1 });
+
 
 const UserPreferences: Model<IUserPreferencesDocument> =
   mongoose.models.UserPreferences || mongoose.model<IUserPreferencesDocument>('UserPreferences', UserPreferencesSchema);

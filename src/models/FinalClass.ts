@@ -1,6 +1,14 @@
 import mongoose, { Schema, Document, Model } from 'mongoose';
 import { FINAL_CLASS_STATUS } from '../config/constants';
 
+export interface ITutorHistory {
+  tutor: mongoose.Types.ObjectId;
+  startDate: Date;
+  endDate: Date;
+  reason?: string;
+  replacedBy?: mongoose.Types.ObjectId;
+}
+
 export interface IFinalClassDocument extends Document {
   _id: mongoose.Types.ObjectId;
   className: string;
@@ -12,11 +20,13 @@ export interface IFinalClassDocument extends Document {
   endDate?: Date;
   actualEndDate?: Date;
   status: FINAL_CLASS_STATUS;
+  tutorHistory?: ITutorHistory[];
   schedule?: {
     daysOfWeek?: string[];
     timeSlot?: string;
   };
   totalSessions: number;
+  classesPerMonth?: number;
   ratePerSession?: number;
   completedSessions: number;
   studentName: string;
@@ -34,6 +44,8 @@ export interface IFinalClassDocument extends Document {
   updatedAt: Date;
   progressPercentage?: number;
   oneTimeReschedules?: { fromDate: Date; toDate: Date; timeSlot: string }[];
+  testPerMonth?: number;
+  attendanceSubmissionWindow?: number;
 }
 
 const FinalClassSchema: Schema<IFinalClassDocument> = new Schema<IFinalClassDocument>(
@@ -52,6 +64,7 @@ const FinalClassSchema: Schema<IFinalClassDocument> = new Schema<IFinalClassDocu
       timeSlot: { type: String },
     },
     totalSessions: { type: Number, default: 0 },
+    classesPerMonth: { type: Number, min: 0 },
     ratePerSession: { type: Number, min: 0 },
     completedSessions: { type: Number, default: 0 },
     studentName: { type: String, required: true },
@@ -65,6 +78,8 @@ const FinalClassSchema: Schema<IFinalClassDocument> = new Schema<IFinalClassDocu
     convertedBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     convertedAt: { type: Date, default: Date.now },
     notes: { type: String },
+    testPerMonth: { type: Number, default: 1, min: 0 },
+    attendanceSubmissionWindow: { type: Number, default: 2, min: 0 },
     oneTimeReschedules: [
       {
         fromDate: { type: Date, required: true },
@@ -72,12 +87,20 @@ const FinalClassSchema: Schema<IFinalClassDocument> = new Schema<IFinalClassDocu
         timeSlot: { type: String, required: true },
       },
     ],
+    tutorHistory: [
+      {
+        tutor: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+        startDate: { type: Date, required: true },
+        endDate: { type: Date, required: true },
+        reason: { type: String },
+        replacedBy: { type: Schema.Types.ObjectId, ref: 'User' },
+      },
+    ],
   },
   { timestamps: true, toJSON: { virtuals: true }, toObject: { virtuals: true } }
 );
 
 // Indexes
-FinalClassSchema.index({ classLead: 1 }, { unique: true });
 FinalClassSchema.index({ status: 1, startDate: 1 });
 FinalClassSchema.index({ tutor: 1 });
 FinalClassSchema.index({ coordinator: 1 });

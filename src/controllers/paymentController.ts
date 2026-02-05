@@ -20,7 +20,11 @@ import {
   sendPaymentReminder,
   getPaymentsByParent,
   createAdvancePaymentForFinalClass,
+  getPaymentFilterOptions,
+  createManualPayment,
 } from '../services/paymentService';
+import { COORDINATOR_ACTION_TYPE, USER_ROLES } from '../config/constants';
+import { logCoordinatorActivity } from '../services/coordinatorService';
 
 export const createPaymentRecord = asyncHandler(async (req: AuthRequest, res: Response) => {
   const errors = validationResult(req);
@@ -32,12 +36,25 @@ export const createPaymentRecord = asyncHandler(async (req: AuthRequest, res: Re
   return res.status(201).json(successResponse(payment, 'Payment created successfully'));
 });
 
+export const createManualPaymentRecord = asyncHandler(async (req: AuthRequest, res: Response) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) throw new ErrorResponse('Validation error', 400);
+
+  const createdBy = req.user!.id;
+  const payment = await createManualPayment({
+    ...req.body,
+    createdBy,
+  });
+  return res.status(201).json(successResponse(payment, 'Payment created successfully'));
+});
+
 export const getPayments = asyncHandler(async (req: Request, res: Response) => {
-  const { page = '1', limit = '10', status, tutorId, finalClassId, fromDate, toDate, sortBy, sortOrder } = req.query as any;
+  const { page = '1', limit = '10', status, paymentType, tutorId, finalClassId, fromDate, toDate, sortBy, sortOrder } = req.query as any;
   const result = await getAllPayments({
     page: parseInt(page, 10),
     limit: parseInt(limit, 10),
     status: status as any,
+    paymentType: paymentType as string | undefined,
     tutorId: tutorId as string | undefined,
     finalClassId: finalClassId as string | undefined,
     fromDate: fromDate ? new Date(fromDate as string) : undefined,
@@ -140,6 +157,19 @@ export const generateAdvancePaymentForClass = asyncHandler(async (req: AuthReque
   const classId = req.params.classId as string;
   const createdBy = req.user!.id;
   const payment = await createAdvancePaymentForFinalClass(classId, createdBy);
+
+  if (req.user?.role === USER_ROLES.COORDINATOR) {
+    try {
+      await logCoordinatorActivity(
+        createdBy,
+        COORDINATOR_ACTION_TYPE.CREATE_ADVANCE_PAYMENT_FOR_CLASS,
+        'Created advance payment for class',
+        { entityType: 'Payment', entityId: String((payment as any)._id) },
+        { classId, amount: (payment as any).amount }
+      );
+    } catch {}
+  }
+
   return res.status(201).json(successResponse(payment, 'Advance payment created successfully'));
 });
 
@@ -284,6 +314,11 @@ export const sendReminderController = asyncHandler(async (req: AuthRequest, res:
   return res.json(successResponse(result, 'Payment reminder sent successfully'));
 });
 
+export const getFilterOptions = asyncHandler(async (_req: Request, res: Response) => {
+  const result = await getPaymentFilterOptions();
+  return res.json(successResponse(result));
+});
+
 export default {
   createPaymentRecord,
   getPayments,
@@ -301,4 +336,6 @@ export default {
   sendReminderController,
   getMyPaymentsForParent,
   generateAdvancePaymentForClass,
+  getFilterOptions,
+  createManualPaymentRecord,
 };

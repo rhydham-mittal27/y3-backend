@@ -6,6 +6,7 @@ import {
   upsertAttendanceSheetController,
   submitAttendanceSheetController,
   getCoordinatorPendingSheetsController,
+  getAllPendingSheetsController,
   approveAttendanceSheetController,
   rejectAttendanceSheetController,
 } from '../controllers/attendanceSheetController';
@@ -28,6 +29,13 @@ router.patch(
   submitAttendanceSheetController
 );
 
+// Admins/Managers: list all pending sheets
+router.get(
+  '/pending',
+  authorize(USER_ROLES.ADMIN, USER_ROLES.MANAGER),
+  getAllPendingSheetsController
+);
+
 // Coordinator: list pending sheets
 router.get(
   '/coordinator/pending',
@@ -35,17 +43,17 @@ router.get(
   getCoordinatorPendingSheetsController
 );
 
-// Coordinator: approve a sheet
+// Approve a sheet
 router.patch(
   '/:id/approve',
-  authorize(USER_ROLES.COORDINATOR),
+  authorize(USER_ROLES.COORDINATOR, USER_ROLES.ADMIN, USER_ROLES.MANAGER),
   approveAttendanceSheetController
 );
 
-// Coordinator: reject a sheet
+// Reject a sheet
 router.patch(
   '/:id/reject',
-  authorize(USER_ROLES.COORDINATOR),
+  authorize(USER_ROLES.COORDINATOR, USER_ROLES.ADMIN, USER_ROLES.MANAGER),
   rejectAttendanceSheetController
 );
 

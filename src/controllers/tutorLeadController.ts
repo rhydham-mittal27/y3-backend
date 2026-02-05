@@ -7,14 +7,24 @@ import Tutor from '../models/Tutor';
 import generateTeacherId from '../utils/generateTeacherId';
 import { USER_ROLES } from '../config/constants';
 
-function parseExperienceHours(experience: string | undefined): number {
-  if (!experience) return 0;
-  // Extract first number and a unit hint (years/months)
+function parseExperience(experience: string | undefined): { hours: number; years: number } {
+  if (!experience) return { hours: 0, years: 0 };
   const num = Number((experience.match(/\d+/)?.[0] ?? '0'));
-  if (!isFinite(num) || num <= 0) return 0;
-  if (/year/i.test(experience)) return num * 12 * 30; // approximate hours (12 months * 30 days) if needed
-  if (/month/i.test(experience)) return num * 30; // approximate
-  return num; // fallback raw number
+  if (!isFinite(num) || num <= 0) return { hours: 0, years: 0 };
+
+  if (/year/i.test(experience)) {
+    return {
+      hours: num * 12 * 30, // approximate hours
+      years: num
+    };
+  }
+  if (/month/i.test(experience)) {
+    return {
+      hours: num * 30,
+      years: Math.round((num / 12) * 10) / 10 // rounded to 1 decimal
+    };
+  }
+  return { hours: num, years: 0 };
 }
 
 export const createTutorLeadRegistrationController = asyncHandler(async (req: Request, res: Response) => {
@@ -30,6 +40,13 @@ export const createTutorLeadRegistrationController = asyncHandler(async (req: Re
     preferredAreas,
     password,
     extracurricularActivities,
+    preferredMode,
+    permanentAddress,
+    residentialAddress,
+    alternatePhone,
+    bio,
+    languagesKnown,
+    skills,
   } = req.body as {
     fullName: string;
     gender?: string;
@@ -42,11 +59,18 @@ export const createTutorLeadRegistrationController = asyncHandler(async (req: Re
     preferredAreas: string[];
     password: string;
     extracurricularActivities?: string[];
+    preferredMode?: string;
+    permanentAddress?: string;
+    residentialAddress?: string;
+    alternatePhone?: string;
+    bio?: string;
+    languagesKnown?: string[];
+    skills?: string[];
   };
 
   // Basic validation
-  if (!fullName || !email || !password) {
-    throw new ErrorResponse('Full name, email and password are required', 400);
+  if (!fullName || !email || !password || !preferredMode) {
+    throw new ErrorResponse('Full name, email, password and preferred mode are required', 400);
   }
   if (!Array.isArray(subjects) || subjects.length === 0) {
     throw new ErrorResponse('At least one subject must be selected', 400);
@@ -64,14 +88,23 @@ export const createTutorLeadRegistrationController = asyncHandler(async (req: Re
     email: String(email).toLowerCase().trim(),
     password,
     phone: phoneNumber,
+    gender,
+    city,
+    preferredMode,
     role: USER_ROLES.TUTOR,
   });
   await user.save();
 
   // Create tutor profile
-  const experienceHours = parseExperienceHours(experience);
+  const { hours: experienceHours, years: yearsOfExperience } = parseExperience(experience);
   const preferredLocations: string[] = [];
-  if (city) preferredLocations.push(city);
+  const preferredCities: string[] = [];
+  
+  if (city) {
+    preferredLocations.push(city);
+    preferredCities.push(city);
+  }
+  
   if (Array.isArray(preferredAreas)) preferredAreas.forEach((a: string) => {
     if (a && a.trim()) preferredLocations.push(a.trim());
   });
@@ -99,14 +132,21 @@ export const createTutorLeadRegistrationController = asyncHandler(async (req: Re
     }
   }
 
-  // Fallback: if still empty (very unlikely), use the Mongo id string after creation.
-
   const tutorPayload: any = {
     user: user._id,
     experienceHours,
+    yearsOfExperience,
     subjects: subjects.map(String),
     qualifications: qualification ? [qualification] : [],
     preferredLocations,
+    preferredCities,
+    preferredMode,
+    permanentAddress,
+    residentialAddress,
+    alternatePhone,
+    bio,
+    languagesKnown: languagesKnown || [],
+    skills: skills || [],
   };
   if (Array.isArray(extracurricularActivities) && extracurricularActivities.length) {
     tutorPayload.extracurricularActivities = extracurricularActivities.map(String);

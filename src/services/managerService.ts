@@ -9,7 +9,9 @@ import DemoHistory from '../models/DemoHistory';
 import Tutor from '../models/Tutor';
 import ErrorResponse from '../utils/errorResponse';
 import dashboardService from './dashboardService';
-import { CLASS_LEAD_STATUS, MANAGER_ACTION_TYPE, PAYMENT_STATUS, USER_ROLES } from '../config/constants';
+import { CLASS_LEAD_STATUS, MANAGER_ACTION_TYPE, PAYMENT_STATUS, USER_ROLES, VERIFICATION_STATUS } from '../config/constants';
+import { uploadFileToS3 } from './s3Service';
+import { S3_CONFIG } from '../config/s3';
 
 export const createManagerProfile = async (
   userId: string,
@@ -86,13 +88,20 @@ export const updateManagerProfile = async (
       canCreateLeads?: boolean;
       canManagePayments?: boolean;
     };
+    bio: string;
+    languagesKnown: string[];
+    skills: string[];
+    permanentAddress: string;
+    residentialAddress: string;
+    documents: any[];
+    verificationStatus: string;
   }>
 ) => {
   const mgr = await Manager.findById(managerId);
   if (!mgr) throw new ErrorResponse('Manager not found', 404);
   Object.assign(mgr, updateData);
   await mgr.save();
-  await mgr.populate({ path: 'user', select: 'name email phone role' });
+  await mgr.populate({ path: 'user', select: 'name email phone role gender city preferredMode' });
   return mgr;
 };
 
@@ -409,6 +418,72 @@ export const deleteManagerProfile = async (managerId: string) => {
   return true;
 };
 
+export const updateManagerDocuments = async (userId: string, documents: any[]) => {
+  const mgr = await Manager.findOne({ user: userId });
+  if (!mgr) throw new ErrorResponse('Manager profile not found', 404);
+
+  // Add new documents to existing ones
+  mgr.documents = [...(mgr.documents || []), ...documents];
+  
+  // Update status if it was pending
+  if (mgr.verificationStatus === VERIFICATION_STATUS.PENDING) {
+    mgr.verificationStatus = VERIFICATION_STATUS.UNDER_REVIEW;
+  }
+  
+  await mgr.save();
+  return mgr;
+};
+
+export const uploadManagerDocument = async (
+  userId: string,
+  documentType: string,
+  file: any
+) => {
+  const mgr = await Manager.findOne({ user: userId });
+  if (!mgr) throw new ErrorResponse('Manager profile not found', 404);
+
+  const buffer: Buffer = file.buffer;
+  const originalname: string = file.originalname;
+  const mimetype: string = file.mimetype;
+
+  const uploadResult = await uploadFileToS3(
+    buffer,
+    originalname,
+    mimetype,
+    S3_CONFIG.FOLDERS.DOCUMENTS
+  );
+
+  const doc = {
+    documentType,
+    documentUrl: uploadResult.url,
+    uploadedAt: new Date(),
+    s3Key: uploadResult.key,
+    s3Bucket: uploadResult.bucket,
+  };
+
+  mgr.documents.push(doc as any);
+  
+  if (mgr.verificationStatus === VERIFICATION_STATUS.PENDING) {
+    mgr.verificationStatus = VERIFICATION_STATUS.UNDER_REVIEW;
+  }
+
+  await mgr.save();
+  return mgr;
+};
+
+export const getEligibleManagerUsers = async () => {
+  const managers = await Manager.find({}).select('user');
+  const managerUserIds = managers.map((m) => m.user);
+
+  const eligibleUsers = await User.find({
+    role: USER_ROLES.MANAGER,
+    _id: { $nin: managerUserIds },
+    isActive: true,
+  }).select('name email phone role');
+
+  return eligibleUsers;
+};
+
 export default {
   createManagerProfile,
   getAllManagers,
@@ -423,4 +498,7 @@ export default {
   logManagerActivity,
   deleteManagerProfile,
   getManagerTodoList,
+  updateManagerDocuments,
+  uploadManagerDocument,
+  getEligibleManagerUsers,
 };

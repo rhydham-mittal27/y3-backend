@@ -12,12 +12,25 @@ import {
   deleteClassLead,
   getLeadsByManager,
   getLeadsByTutor,
+  getDistinctFilterValues,
+  getCRMLeadsGrouped,
+  reassignClassLead,
 } from '../services/leadService';
+import { getManagerByUserId } from '../services/managerService';
+import { USER_ROLES } from '../config/constants';
 
 export const createLead = asyncHandler(async (req: AuthRequest, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
     throw new ErrorResponse(errors.array()[0].msg, 400);
+  }
+
+  // Permission check for Managers
+  if (req.user!.role === USER_ROLES.MANAGER) {
+    const manager = await getManagerByUserId(req.user!.id);
+    if (!manager.permissions?.canCreateLeads) {
+      throw new ErrorResponse('You do not have permission to create leads.', 403);
+    }
   }
 
   const {
@@ -92,11 +105,27 @@ export const getLeads = asyncHandler(async (req: AuthRequest, res) => {
   const search = (req.query.search as string) || undefined;
   const sortBy = (req.query.sortBy as string) || undefined;
   const sortOrder = (req.query.sortOrder as 'asc' | 'desc') || undefined;
+  const studentName = (req.query.studentName as string) || undefined;
+  const grade = (req.query.grade as string) || undefined;
+  const subject = (req.query.subject as string) || undefined;
+  const board = (req.query.board as string) || undefined;
+  const mode = (req.query.mode as string) || undefined;
+  let createdByName = (req.query.createdByName as string) || undefined;
+  const area = (req.query.area as string) || undefined;
 
-  // For MANAGER role, always restrict leads to those created by the logged-in manager
-  if (req.user?.role === 'MANAGER') {
-    createdBy = req.user.id;
+  // Enforce role-based visibility
+  if (req.user!.role === 'MANAGER') {
+    const manager = await getManagerByUserId(req.user!.id);
+    
+    // If manager CANNOT view site leads (admin leads), restrict to their own
+    if (!manager.permissions?.canViewSiteLeads) {
+      createdBy = req.user!.id;
+      createdByName = undefined; // Clear other creator filters
+    }
+    // If they CAN view site leads, we don't force createdBy filter
+    // This allows them to see leads from admins and potentially all managers
   }
+
 
   const { leads, total } = await getAllClassLeads({
     page,
@@ -106,6 +135,13 @@ export const getLeads = asyncHandler(async (req: AuthRequest, res) => {
     search,
     sortBy,
     sortOrder,
+    studentName,
+    grade,
+    subject,
+    board,
+    mode,
+    createdByName,
+    area,
   });
 
   return res.json(paginatedResponse(leads, page, limit, total));
@@ -158,6 +194,30 @@ export const getTutorLeads = asyncHandler(async (req: AuthRequest, res) => {
   return res.json(successResponse(leads));
 });
 
+export const getFilterOptions = asyncHandler(async (_req: AuthRequest, res) => {
+  const options = await getDistinctFilterValues();
+  return res.json(successResponse(options));
+});
+
+export const getCRMLeads = asyncHandler(async (req: AuthRequest, res) => {
+  const managerId = req.user!.role === USER_ROLES.MANAGER 
+    ? req.user!.id 
+    : (req.query.managerId as string || undefined);
+    
+  const groups = await getCRMLeadsGrouped(managerId);
+  return res.json(successResponse(groups));
+});
+
+export const reassignLead = asyncHandler(async (req: AuthRequest, res) => {
+  const leadId = req.params.id as string;
+  const { managerId } = req.body;
+  if (!managerId) {
+    throw new ErrorResponse('New manager ID is required', 400);
+  }
+  const lead = await reassignClassLead(leadId, managerId);
+  return res.json(successResponse(lead, 'Class lead reassigned successfully'));
+});
+
 export default {
   createLead,
   getLeads,
@@ -167,4 +227,7 @@ export default {
   deleteLead,
   getMyLeads,
   getTutorLeads,
+  getFilterOptions,
+  getCRMLeads,
+  reassignLead,
 };

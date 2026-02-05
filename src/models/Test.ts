@@ -25,6 +25,22 @@ export interface ITestDocument extends Document {
   cancelledBy?: mongoose.Types.ObjectId;
   cancelledAt?: Date;
   notes?: string;
+  paperUrl?: string;
+  paperName?: string;
+  paperMimeType?: string;
+  totalMarks?: number;
+  durationMinutes?: number;
+  obtainedMarks?: number;
+  topicName?: string;
+  testSyllabus?: string;
+  questionAnalysis?: Array<{
+    topic: string;
+    totalQuestions: number;
+    correctedQuestions: number;
+  }>;
+  answerSheetUrl?: string;
+  answerSheetName?: string;
+  answerSheetMimeType?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -55,6 +71,27 @@ const TestSchema: Schema<ITestDocument> = new Schema<ITestDocument>(
     cancelledBy: { type: Schema.Types.ObjectId, ref: 'User' },
     cancelledAt: { type: Date },
     notes: { type: String, maxlength: 1000 },
+    paperUrl: { type: String },
+    paperName: { type: String },
+    paperMimeType: { type: String },
+    totalMarks: { type: Number },
+    durationMinutes: { type: Number },
+    obtainedMarks: { type: Number },
+    topicName: { type: String, maxlength: 255 },
+    testSyllabus: { type: String, maxlength: 1000 },
+    questionAnalysis: {
+      type: [
+        {
+          topic: { type: String, required: true },
+          totalQuestions: { type: Number, required: true },
+          correctedQuestions: { type: Number, required: true },
+        },
+      ],
+      default: [],
+    },
+    answerSheetUrl: { type: String },
+    answerSheetName: { type: String },
+    answerSheetMimeType: { type: String },
   },
   { timestamps: true }
 );

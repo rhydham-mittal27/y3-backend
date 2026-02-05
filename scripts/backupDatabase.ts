@@ -171,4 +171,3 @@ if (require.main === module) {
 }
 
 export default backupDatabase;
-

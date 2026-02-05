@@ -265,12 +265,23 @@ export const createNotificationWithPreferences = async (params: {
 }) => {
   const { recipient, type, title, message, relatedAnnouncement, relatedClassLead } = params;
 
-  const prefs = await getUserPreferences(String(recipient));
+  // Normalize recipient to a userId string (can be string, ObjectId, or full user object)
+  let userId: string;
+  if (typeof recipient === 'string') {
+    userId = recipient;
+  } else if (recipient && typeof recipient === 'object') {
+    const anyRecipient: any = recipient;
+    userId = String(anyRecipient._id || anyRecipient.id);
+  } else {
+    userId = String(recipient);
+  }
+
+  const prefs = await getUserPreferences(userId);
   const enabled = prefs.notificationPreferences?.[type];
   if (!enabled) return null;
 
   const notification = await Notification.create({
-    recipient,
+    recipient: userId,
     type,
     title,
     message,

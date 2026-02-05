@@ -3,9 +3,10 @@ import { PAYMENT_STATUS, PAYMENT_METHOD, PAYMENT_TYPE } from '../config/constant
 
 export interface IPaymentDocument extends Document {
   _id: mongoose.Types.ObjectId;
-  finalClass: mongoose.Types.ObjectId;
+  finalClass?: mongoose.Types.ObjectId;
   attendance?: mongoose.Types.ObjectId;
-  tutor: mongoose.Types.ObjectId;
+  attendanceSheet?: mongoose.Types.ObjectId;
+  tutor?: mongoose.Types.ObjectId;
   amount: number;
   currency: string;
   status: PAYMENT_STATUS | string;
@@ -23,9 +24,10 @@ export interface IPaymentDocument extends Document {
 
 const PaymentSchema: Schema<IPaymentDocument> = new Schema<IPaymentDocument>(
   {
-    finalClass: { type: Schema.Types.ObjectId, ref: 'FinalClass', required: true, index: true },
+    finalClass: { type: Schema.Types.ObjectId, ref: 'FinalClass' },
     attendance: { type: Schema.Types.ObjectId, ref: 'Attendance' },
-    tutor: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    attendanceSheet: { type: Schema.Types.ObjectId, ref: 'AttendanceSheet' },
+    tutor: { type: Schema.Types.ObjectId, ref: 'User', index: true },
     amount: { type: Number, required: true, min: 0 },
     currency: { type: String, default: 'INR' },
     status: { type: String, enum: Object.values(PAYMENT_STATUS), default: PAYMENT_STATUS.PENDING },
@@ -38,11 +40,16 @@ const PaymentSchema: Schema<IPaymentDocument> = new Schema<IPaymentDocument>(
     notes: { type: String, maxlength: 500 },
     createdBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
   },
-  { timestamps: true }
+  { 
+    timestamps: true,
+    toJSON: { virtuals: true },
+    toObject: { virtuals: true }
+  }
 );
 
 // Indexes
 PaymentSchema.index({ attendance: 1 });
+PaymentSchema.index({ attendanceSheet: 1 });
 PaymentSchema.index({ tutor: 1, status: 1 });
 PaymentSchema.index({ status: 1, dueDate: 1 });
 PaymentSchema.index({ finalClass: 1 });

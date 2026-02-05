@@ -4,7 +4,18 @@ import { DEMO_STATUS } from '../config/constants';
 export const assignDemoValidation = [
   param('leadId').isMongoId().withMessage('Invalid lead ID'),
   body('tutorUserId').notEmpty().withMessage('Tutor user ID is required').isMongoId().withMessage('Invalid tutor user ID'),
-  body('demoDate').notEmpty().withMessage('Demo date is required').isISO8601().withMessage('Invalid date format'),
+  body('demoDate')
+    .notEmpty().withMessage('Demo date is required')
+    .isISO8601().withMessage('Invalid date format')
+    .custom((value) => {
+      const demoDate = new Date(value);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      if (demoDate < today) {
+        throw new Error('Demo date cannot be in the past');
+      }
+      return true;
+    }),
   body('demoTime').trim().notEmpty().withMessage('Demo time is required').isLength({ min: 2, max: 50 }).withMessage('Demo time must be 2-50 characters'),
   body('notes').optional().trim().isLength({ max: 500 }).withMessage('Notes must not exceed 500 characters'),
 ];
@@ -26,7 +37,18 @@ export const editDemoValidation = [
 export const reassignDemoValidation = [
   param('leadId').isMongoId().withMessage('Invalid lead ID'),
   body('newTutorUserId').notEmpty().withMessage('New tutor user ID is required').isMongoId().withMessage('Invalid tutor user ID'),
-  body('demoDate').notEmpty().withMessage('Demo date is required').isISO8601().withMessage('Invalid date format'),
+  body('demoDate')
+    .notEmpty().withMessage('Demo date is required')
+    .isISO8601().withMessage('Invalid date format')
+    .custom((value) => {
+      const demoDate = new Date(value);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      if (demoDate < today) {
+        throw new Error('Demo date cannot be in the past');
+      }
+      return true;
+    }),
   body('demoTime').trim().notEmpty().withMessage('Demo time is required').isLength({ min: 2, max: 50 }),
   body('notes').optional().trim().isLength({ max: 500 }),
 ];
