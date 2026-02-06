@@ -1,0 +1,19 @@
+Testing AWS S3 Connection...
+
+Test 1: Verifying AWS credentials...
+SUCCESS: AWS credentials are valid!
+Found 2 bucket(s)
+
+Test 2: Checking target bucket...
+SUCCESS: Bucket "yourshikshak-production" exists!
+
+Test 3: Testing file upload...
+SUCCESS: Test file uploaded!
+Key: uploads/test/connection-test-1770392652352.txt
+
+ALL TESTS PASSED!
+
+Configuration:
+  Region: ap-south-1
+  Bucket: yourshikshak-production
+  Folder Prefix: uploads
