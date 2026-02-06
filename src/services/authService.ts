@@ -96,10 +96,12 @@ export const registerUser = async (
   }
 
   let isProfileComplete = true;
+  let verificationStatus: string | undefined;
   if (user.role === USER_ROLES.MANAGER) {
     const manager = await Manager.findOne({ user: user._id });
     if (manager) {
       isProfileComplete = (manager as any).isProfileComplete;
+      verificationStatus = (manager as any).verificationStatus;
     } else {
       isProfileComplete = false;
     }
@@ -117,6 +119,7 @@ export const registerUser = async (
     acceptedTerms: user.acceptedTerms,
     preferredMode: preferredMode || (user as any).preferredMode,
     isProfileComplete,
+    verificationStatus,
     createdAt: user.createdAt,
     updatedAt: user.updatedAt,
   };
@@ -195,10 +198,12 @@ export const loginUser = async (email: string, password: string) => {
   }
 
   let isProfileComplete = true;
+  let verificationStatus: string | undefined;
   if (user.role === USER_ROLES.MANAGER) {
     const manager = await Manager.findOne({ user: user._id });
     if (manager) {
       isProfileComplete = (manager as any).isProfileComplete;
+      verificationStatus = (manager as any).verificationStatus;
     } else {
       isProfileComplete = false;
     }
@@ -216,6 +221,7 @@ export const loginUser = async (email: string, password: string) => {
     acceptedTerms: user.acceptedTerms,
     preferredMode: preferredMode || (user as any).preferredMode,
     isProfileComplete,
+    verificationStatus,
     createdAt: user.createdAt,
     updatedAt: user.updatedAt,
   };
@@ -427,10 +433,12 @@ export const verifyLoginOtp = async (email: string, otp: string) => {
   }
 
   let isProfileComplete = true;
+  let verificationStatus: string | undefined;
   if (user.role === USER_ROLES.MANAGER) {
     const manager = await Manager.findOne({ user: user._id });
     if (manager) {
       isProfileComplete = (manager as any).isProfileComplete;
+      verificationStatus = (manager as any).verificationStatus;
     } else {
       isProfileComplete = false;
     }
@@ -446,6 +454,7 @@ export const verifyLoginOtp = async (email: string, otp: string) => {
     acceptedTerms: user.acceptedTerms,
     preferredMode,
     isProfileComplete,
+    verificationStatus,
     createdAt: user.createdAt,
     updatedAt: user.updatedAt,
   };
