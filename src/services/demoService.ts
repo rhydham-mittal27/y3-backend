@@ -88,7 +88,8 @@ export const updateDemoStatus = async (
   feedback: string | undefined,
   rejectionReason: string | undefined,
   updatedBy: string,
-  updatedByRole: USER_ROLES | string
+  updatedByRole: USER_ROLES | string,
+  coordinatorUserId?: string
 ) => {
   const lead = await ClassLead.findById(classLeadId);
   if (!lead) throw new ErrorResponse('Class lead not found', 404);
@@ -168,6 +169,7 @@ export const updateDemoStatus = async (
     const startDate = demoDate ? new Date(demoDate) : new Date();
     await convertLeadToFinalClass({
       classLeadId: String(lead._id),
+      coordinatorUserId,
       startDate,
       convertedBy: updatedBy,
     });
@@ -299,17 +301,24 @@ export const getDemoHistory = async (classLeadId: string) => {
   return history;
 };
 
-export const getTutorDemoHistory = async (tutorUserId: string, page = 1, limit = 10) => {
+export const getTutorDemoHistory = async (tutorUserId: string, page = 1, limit = 10, status?: string) => {
   const safePage = Math.max(1, Number(page) || 1);
   const safeLimit = Math.max(1, Number(limit) || 10);
   const skip = (safePage - 1) * safeLimit;
+
+  // Build filter object
+  const filter: any = { tutor: tutorUserId };
+  if (status) {
+    filter.status = status;
+  }
+
   const [history, total] = await Promise.all([
-    DemoHistory.find({ tutor: tutorUserId })
+    DemoHistory.find(filter)
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(safeLimit)
       .populate('classLead'),
-    DemoHistory.countDocuments({ tutor: tutorUserId }),
+    DemoHistory.countDocuments(filter),
   ]);
   return { history, total, page: safePage, limit: safeLimit };
 };

@@ -7,7 +7,11 @@ import ErrorResponse from '../utils/errorResponse';
 const storage = multer.memoryStorage();
 
 const fileFilter: multer.Options['fileFilter'] = (_req: Request, file: any, cb: multer.FileFilterCallback) => {
-  if (!UPLOAD_CONFIG.ALLOWED_FILE_TYPES.includes(file.mimetype)) {
+  const mimeTypeValid = UPLOAD_CONFIG.ALLOWED_FILE_TYPES.includes(file.mimetype);
+  const isPdfExtension = file.originalname.toLowerCase().endsWith('.pdf');
+  
+  // Allow if standard mime type is valid OR if it looks like a PDF (fallback for some mobile browsers/scanners)
+  if (!mimeTypeValid && !(isPdfExtension && file.mimetype === 'application/octet-stream')) {
     return cb(new ErrorResponse('Invalid file type. Allowed: JPEG, PNG, PDF', 400));
   }
   cb(null, true);

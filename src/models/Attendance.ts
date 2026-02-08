@@ -47,7 +47,7 @@ const AttendanceSchema: Schema<IAttendanceDocument> = new Schema<IAttendanceDocu
     sessionNumber: { type: Number },
     topicCovered: { type: String, maxlength: 200 },
     tutor: { type: Schema.Types.ObjectId, ref: 'User', required: true },
-    coordinator: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+    coordinator: { type: Schema.Types.ObjectId, ref: 'User' },
     parent: { type: Schema.Types.ObjectId, ref: 'User' },
     status: { type: String, enum: Object.values(ATTENDANCE_STATUS), default: ATTENDANCE_STATUS.PENDING },
     studentAttendanceStatus: {

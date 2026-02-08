@@ -145,6 +145,13 @@ router.patch(
   updateVerificationStatusController
 );
 
+router.patch(
+  '/:id/verification-fee',
+  authorize(USER_ROLES.TUTOR, USER_ROLES.MANAGER, USER_ROLES.ADMIN),
+  uploadDocument, // reuse multer middleware for file upload
+  require('../controllers/tutorController').updateVerificationFeeStatusController
+);
+
 // Tier management and feedback routes
 router.post(
   '/tier/request',

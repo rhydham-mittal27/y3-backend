@@ -154,6 +154,7 @@ export const getAllClassLeads = async (args: {
   limit: number;
   status?: CLASS_LEAD_STATUS | string;
   createdBy?: string;
+  createdByIds?: string[];
   search?: string;
   sortBy?: string;
   sortOrder?: 'asc' | 'desc';
@@ -166,11 +167,16 @@ export const getAllClassLeads = async (args: {
   createdByName?: string;
   area?: string;
 }) => {
-  const { page, limit, status, createdBy, search, sortBy, sortOrder, studentName, parentName, grade, subject, board, mode, createdByName, area } = args;
+  const { page, limit, status, createdBy, createdByIds, search, sortBy, sortOrder, studentName, parentName, grade, subject, board, mode, createdByName, area } = args;
 
   const query: any = {};
   if (status) query.status = status;
-  if (createdBy) query.createdBy = new mongoose.Types.ObjectId(createdBy);
+  
+  if (createdByIds && createdByIds.length > 0) {
+    query.createdBy = { $in: createdByIds.map(id => new mongoose.Types.ObjectId(id)) };
+  } else if (createdBy) {
+    query.createdBy = new mongoose.Types.ObjectId(createdBy);
+  }
 
   if (createdByName) {
     const User = mongoose.model('User');

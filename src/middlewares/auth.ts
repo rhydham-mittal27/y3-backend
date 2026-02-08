@@ -4,6 +4,7 @@ import { verifyAccessToken } from '../utils/jwtUtils';
 import User from '../models/User';
 import * as mongoose from 'mongoose';
 import Student from '../models/Student';
+import Manager from '../models/Manager';
 import { AuthRequest } from '../types';
 
 export const protect = asyncHandler(async (req: AuthRequest, _res, next) => {
@@ -21,12 +22,26 @@ export const protect = asyncHandler(async (req: AuthRequest, _res, next) => {
     if (user && user.isActive !== false) {
       let preferredMode: string | undefined;
       let city: string | undefined;
+      let permissions: any = undefined;
+      
       if (user.role === 'TUTOR') {
         const TutorModel = mongoose.model('Tutor');
         const tutor = await TutorModel.findOne({ user: user._id });
         if (tutor) {
           preferredMode = (tutor as any).preferredMode;
           city = (tutor as any).preferredLocations?.[0]; // Default city
+        }
+      }
+      
+      if (user.role === 'MANAGER') {
+        const manager = await Manager.findOne({ user: user._id });
+        if (manager) {
+          permissions = {
+            canViewSiteLeads: (manager as any).permissions?.canViewSiteLeads ?? false,
+            canVerifyTutors: (manager as any).permissions?.canVerifyTutors ?? false,
+            canCreateLeads: (manager as any).permissions?.canCreateLeads ?? false,
+            canManagePayments: (manager as any).permissions?.canManagePayments ?? false,
+          };
         }
       }
 
@@ -40,6 +55,7 @@ export const protect = asyncHandler(async (req: AuthRequest, _res, next) => {
         acceptedTerms: user.acceptedTerms || false,
         preferredMode,
         city,
+        permissions,
         createdAt: user.createdAt,
         updatedAt: user.updatedAt,
       };

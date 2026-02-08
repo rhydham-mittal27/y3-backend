@@ -33,14 +33,12 @@ router.post(
 router.get(
   '/',
   authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN),
-  requireManagerPermissions('canViewSiteLeads'),
   getLeads
 );
 
 router.get(
   '/my-leads',
   authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN),
-  requireManagerPermissions('canViewSiteLeads'),
   getMyLeads
 );
 router.get('/tutor/my-leads', authorize(USER_ROLES.TUTOR), getTutorLeads);

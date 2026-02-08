@@ -44,6 +44,12 @@ export interface IUser {
   acceptedTerms: boolean;
   preferredMode?: string;
   city?: string;
+  permissions?: {
+    canViewSiteLeads?: boolean;
+    canVerifyTutors?: boolean;
+    canCreateLeads?: boolean;
+    canManagePayments?: boolean;
+  };
   createdAt: Date;
   updatedAt: Date;
   preferences?: IUserPreferences;

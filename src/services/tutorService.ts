@@ -728,6 +728,56 @@ export const getTutorsByVerificationStatus = async (
   return { tutors, total, page, limit };
 };
 
+export const updateVerificationFeeStatus = async (
+  tutorId: string,
+  feeStatus: 'PENDING' | 'PAID' | 'DEDUCT_FROM_FIRST_MONTH',
+  paymentProofFile?: any
+) => {
+  const tutor = await Tutor.findById(tutorId);
+  if (!tutor) throw new ErrorResponse('Tutor not found', 404);
+
+  let verificationFeePaymentProof = tutor.verificationFeePaymentProof;
+  let verificationFeePaymentDate = tutor.verificationFeePaymentDate;
+
+  if (feeStatus === 'PAID') {
+    if (!paymentProofFile) {
+        throw new ErrorResponse('Payment proof is required when status is PAID', 400);
+    }
+    
+    // Upload proof
+    const buffer = paymentProofFile.buffer;
+    const originalname = paymentProofFile.originalname;
+    const mimetype = paymentProofFile.mimetype;
+    
+    try {
+        const uploadResult = await uploadFileToS3(
+            buffer,
+            originalname,
+            mimetype,
+            'verification-fees' 
+        );
+        verificationFeePaymentProof = uploadResult.url;
+        verificationFeePaymentDate = new Date();
+    } catch (err: any) {
+        console.error('Failed to upload payment proof', err);
+        throw new ErrorResponse('Failed to upload payment proof', 500);
+    }
+  } else if (feeStatus === 'DEDUCT_FROM_FIRST_MONTH') {
+      // Clear proof if switching to deduct? optional. lets keep it simple.
+  }
+
+  tutor.verificationFeeStatus = feeStatus;
+  if (verificationFeePaymentProof) tutor.verificationFeePaymentProof = verificationFeePaymentProof;
+  if (verificationFeePaymentDate) tutor.verificationFeePaymentDate = verificationFeePaymentDate;
+
+  await tutor.save();
+  await tutor.populate([
+    { path: 'user', select: 'name email phone role gender city preferredMode' },
+    { path: 'verifiedBy', select: 'name email phone role' },
+  ]);
+  return tutor;
+};
+
 export const getTutorsForVerification = async () => {
   const tutors = await Tutor.find({
     verificationStatus: VERIFICATION_STATUS.UNDER_REVIEW,

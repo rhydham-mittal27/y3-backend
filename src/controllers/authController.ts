@@ -37,19 +37,109 @@ export const register = asyncHandler(async (req, res) => {
     await sendEmail(
       email,
       'Welcome to Your Shikshak - Account Created',
-      `
-      <div style="font-family: Arial, sans-serif; padding: 20px; color: #333;">
-        <h2 style="color: #4A148C;">Welcome to Your Shikshak!</h2>
-        <p>Hello <strong>${name}</strong>,</p>
-        <p>Your account has been successfully created as a <strong>${role}</strong>.</p>
-        <p>You can now log in to your dashboard to manage your activities.</p>
-        <div style="margin: 20px 0; padding: 15px; background: #f3f4f6; border-radius: 8px;">
-          <p style="margin: 0;"><strong>Login Email:</strong> ${email}</p>
+      `<!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Welcome to Your Shikshak</title>
+        <style>
+          body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
+          .container { background-color: white; padding: 40px; border-radius: 12px; box-shadow: 0 10px 40px rgba(0,0,0,0.15); margin-top: 20px; }
+          .header { text-align: center; margin-bottom: 30px; border-bottom: 3px solid #667eea; padding-bottom: 20px; }
+          .logo { font-size: 28px; font-weight: bold; color: #667eea; margin-bottom: 10px; }
+          .tagline { color: #666; font-size: 14px; }
+          h1 { color: #333; margin: 20px 0; text-align: center; font-size: 24px; }
+          .welcome-box { background: linear-gradient(135deg, #667eea15 0%, #764ba215 100%); padding: 25px; border-radius: 10px; margin: 25px 0; border-left: 5px solid #667eea; }
+          .role-badge { display: inline-block; background: #667eea; color: white; padding: 8px 16px; border-radius: 20px; font-weight: bold; font-size: 14px; margin: 10px 0; }
+          .credentials { background-color: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0; border: 1px solid #e0e0e0; }
+          .credential-item { margin: 12px 0; display: flex; justify-content: space-between; align-items: center; padding: 10px; background: white; border-radius: 5px; }
+          .label { font-weight: bold; color: #666; font-size: 14px; }
+          .value { font-weight: bold; color: #667eea; font-size: 16px; font-family: 'Courier New', monospace; }
+          .features { margin: 30px 0; }
+          .feature-item { display: flex; align-items: flex-start; margin: 15px 0; }
+          .feature-icon { width: 40px; height: 40px; background: #667eea; color: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin-right: 15px; font-weight: bold; flex-shrink: 0; }
+          .feature-text { flex: 1; }
+          .feature-text h3 { margin: 0 0 5px 0; color: #333; font-size: 16px; }
+          .feature-text p { margin: 0; color: #666; font-size: 14px; }
+          .cta-button { display: inline-block; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 14px 40px; border-radius: 25px; text-decoration: none; font-weight: bold; margin: 20px 0; text-align: center; width: 100%; box-sizing: border-box; }
+          .cta-button:hover { transform: translateY(-2px); box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4); }
+          .footer { text-align: center; margin-top: 40px; padding-top: 20px; border-top: 1px solid #eee; color: #666; font-size: 13px; }
+          .footer-links { margin: 10px 0; }
+          .footer-links a { color: #667eea; text-decoration: none; margin: 0 10px; }
+          .highlight { background-color: #fff3cd; padding: 15px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #ffc107; color: #856404; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <div class="logo">✓ Your Shikshak</div>
+            <div class="tagline">Empowering Education</div>
+          </div>
+
+          <h1>Welcome to Your Shikshak! 🎉</h1>
+
+          <p>Hello <strong>${name}</strong>,</p>
+
+          <div class="welcome-box">
+            <p style="margin-top: 0; font-size: 16px;">Your account has been successfully created! We're excited to have you join our learning community.</p>
+            <p style="text-align: center; margin-bottom: 0;">
+              <span class="role-badge">${role.toUpperCase()}</span>
+            </p>
+          </div>
+
+          <div class="credentials">
+            <div class="credential-item">
+              <span class="label">📧 Login Email:</span>
+              <span class="value">${email}</span>
+            </div>
+          </div>
+
+          <div class="highlight">
+            <strong>🔐 Security Tip:</strong> Never share your login credentials with anyone. Your password is case-sensitive and unique to your account.
+          </div>
+
+          <div class="features">
+            <h2 style="color: #333; margin-bottom: 20px; font-size: 18px;">What You Can Do:</h2>
+            <div class="feature-item">
+              <div class="feature-icon">📊</div>
+              <div class="feature-text">
+                <h3>Manage Your Dashboard</h3>
+                <p>Access your personalized dashboard to track activities and progress</p>
+              </div>
+            </div>
+            <div class="feature-item">
+              <div class="feature-icon">📚</div>
+              <div class="feature-text">
+                <h3>Access Resources</h3>
+                <p>Explore educational materials, notes, and resources curated for your growth</p>
+              </div>
+            </div>
+            <div class="feature-item">
+              <div class="feature-icon">🔔</div>
+              <div class="feature-text">
+                <h3>Stay Updated</h3>
+                <p>Receive important notifications and updates directly in your dashboard</p>
+              </div>
+            </div>
+          </div>
+
+          <a href="https://yourshikshak.com" class="cta-button" style="display: block; padding: 14px; text-align: center; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; text-decoration: none; border-radius: 25px; font-weight: bold; margin: 30px 0;">Go to Your Dashboard</a>
+
+          <p style="text-align: center; color: #666;">If you didn't create this account or have any questions, please contact our support team immediately.</p>
+
+          <div class="footer">
+            <p style="margin: 0 0 10px 0;">Best regards,<br><strong>Team Your Shikshak</strong></p>
+            <div class="footer-links">
+              <a href="mailto:support@yourshikshak.com">Support</a> | 
+              <a href="https://yourshikshak.com/help">Help Center</a> | 
+              <a href="https://yourshikshak.com/privacy">Privacy Policy</a>
+            </div>
+            <p style="margin-top: 15px; font-size: 12px; color: #999;"><small>This is an automated message. Please do not reply to this email.</small></p>
+          </div>
         </div>
-        <p>If you have any questions, feel free to reach out to our support team.</p>
-        <p>Best regards,<br/>The Your Shikshak Team</p>
-      </div>
-      `
+      </body>
+      </html>`
     );
   } catch (emailError) {
     console.error('[RegistrationEmail] Failed to send confirmation email:', emailError);

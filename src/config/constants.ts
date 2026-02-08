@@ -235,7 +235,7 @@ export enum FEEDBACK_RATING {
 
 export const UPLOAD_CONFIG = {
   MAX_FILE_SIZE: 5 * 1024 * 1024,
-  ALLOWED_FILE_TYPES: ['image/jpeg', 'image/png', 'image/jpg', 'application/pdf'],
+  ALLOWED_FILE_TYPES: ['image/jpeg', 'image/png', 'image/jpg', 'application/pdf', 'application/x-pdf', 'application/acrobat', 'application/vnd.pdf', 'text/pdf', 'text/x-pdf'],
   UPLOAD_DIR: './uploads/documents',
 };
 

@@ -135,6 +135,7 @@ export const deleteDocumentController = asyncHandler(async (req: Request, res: R
   return res.json(successResponse(tutor, 'Document deleted successfully'));
 });
 
+// This controller (updateVerificationStatusController) handles VERIFICATION STATUS (Verified/Pending)
 export const updateVerificationStatusController = asyncHandler(async (req: AuthRequest, res: Response) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) throw new ErrorResponse(errors.array()[0].msg, 400);
@@ -142,6 +143,19 @@ export const updateVerificationStatusController = asyncHandler(async (req: AuthR
   const { status, verificationNotes, whatsappCommunityJoined } = req.body;
   const tutor = await updateVerificationStatusService(req.params.id, status, verificationNotes, String(req.user!.id), whatsappCommunityJoined);
   return res.json(successResponse(tutor, 'Verification status updated successfully'));
+});
+
+export const updateVerificationFeeStatusController = asyncHandler(async (req: Request, res: Response) => {
+  const { verificationFeeStatus } = req.body;
+  const file = (req as any).file;
+  
+  // Use require or import. Since I cannot easily change top imports in this replace block safely without context, I will use require for the service function if it's not imported at top.
+  // Actually, I should update the imports at the top first or use the exported name.
+  // Let's rely on the service being imported at top if I modify imports, or use require.
+  const { updateVerificationFeeStatus } = require('../services/tutorService');
+
+  const tutor = await updateVerificationFeeStatus(req.params.id, verificationFeeStatus, file);
+  return res.json(successResponse(tutor, 'Verification fee status updated successfully'));
 });
 
 export const getTutorsByStatus = asyncHandler(async (req: Request, res: Response) => {

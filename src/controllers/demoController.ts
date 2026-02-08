@@ -26,10 +26,10 @@ export const updateDemoStatusController = asyncHandler(async (req: AuthRequest, 
   const errors = validationResult(req);
   if (!errors.isEmpty()) throw new ErrorResponse(errors.array()[0].msg, 400);
   const { leadId } = req.params as any;
-  const { status, feedback, rejectionReason } = req.body;
+  const { status, feedback, rejectionReason, coordinatorUserId } = req.body;
   const updatedBy = req.user!.id;
   const updatedByRole = req.user!.role;
-  const lead = await updateDemoStatus(leadId, status, feedback, rejectionReason, updatedBy, updatedByRole);
+  const lead = await updateDemoStatus(leadId, status, feedback, rejectionReason, updatedBy, updatedByRole, coordinatorUserId);
   res.status(200).json(successResponse(lead, 'Demo status updated successfully'));
 });
 
@@ -70,7 +70,7 @@ export const getTutorDemoHistoryController = asyncHandler(async (req: AuthReques
 export const getMyDemosController = asyncHandler(async (req: AuthRequest, res) => {
   const page = parseInt((req.query.page as string) || '1', 10);
   const limit = parseInt((req.query.limit as string) || '10', 10);
-  const result = await getTutorDemoHistory(req.user!.id, page, limit);
-  // paginatedResponse expects (data, page, limit, total)
+  const status = req.query.status as string | undefined;
+  const result = await getTutorDemoHistory(req.user!.id, page, limit, status);
   res.status(200).json(paginatedResponse(result.history, result.page, result.limit, result.total));
 });

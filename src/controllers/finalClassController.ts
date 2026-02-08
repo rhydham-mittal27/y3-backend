@@ -216,11 +216,80 @@ export const parentRequestRescheduleController = asyncHandler(async (req: AuthRe
       const tutorName = (tutorUser as any).name || 'Tutor';
       await sendEmail(
         tutorUser.email,
-        'Parent requested to reschedule a class',
-        `<p>Dear ${tutorName},</p>
-         <p>The parent has requested to reschedule the class for <strong>${studentName}</strong>.</p>
-         <p>Please contact the parent to coordinate a new time that works for both of you.</p>
-         <p>Regards,<br/>Your Shikshak</p>`
+        '📅 Class Reschedule Request - Your Shikshak',
+        `<!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>Reschedule Request</title>
+          <style>
+            body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px; background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); }
+            .container { background-color: white; padding: 40px; border-radius: 12px; box-shadow: 0 10px 40px rgba(0,0,0,0.15); margin-top: 20px; }
+            .header { text-align: center; margin-bottom: 30px; border-bottom: 3px solid #f59e0b; padding-bottom: 20px; }
+            .logo { font-size: 28px; font-weight: bold; color: #f59e0b; margin-bottom: 10px; }
+            .alert-box { background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%); padding: 20px; border-radius: 10px; margin: 20px 0; border-left: 5px solid #f59e0b; }
+            .alert-title { color: #92400e; font-weight: bold; font-size: 16px; margin-bottom: 10px; }
+            .info-card { background-color: #f9fafb; padding: 20px; border-radius: 8px; margin: 20px 0; border: 1px solid #e5e7eb; }
+            .student-name { color: #d97706; font-weight: bold; font-size: 18px; }
+            .action-steps { background-color: #fef3c7; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #f59e0b; }
+            .action-steps h3 { color: #92400e; margin-top: 0; font-size: 15px; }
+            .action-steps ol { margin: 10px 0; padding-left: 20px; color: #78350f; }
+            .action-steps li { margin: 10px 0; }
+            .cta-button { display: inline-block; background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: white; padding: 14px 35px; border-radius: 25px; text-decoration: none; font-weight: bold; text-align: center; margin: 20px auto; display: block; width: fit-content; }
+            .cta-button:hover { transform: translateY(-2px); box-shadow: 0 5px 20px rgba(245, 158, 11, 0.4); }
+            .footer { text-align: center; margin-top: 30px; padding-top: 20px; border-top: 1px solid #eee; color: #666; font-size: 13px; }
+            .footer a { color: #f59e0b; text-decoration: none; font-weight: bold; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="header">
+              <div class="logo">📅 Your Shikshak</div>
+            </div>
+
+            <h2 style="color: #333; text-align: center; margin-bottom: 25px;">Class Reschedule Request</h2>
+
+            <p>Hello ${tutorName},</p>
+
+            <div class="alert-box">
+              <div class="alert-title">⏰ Reschedule Request Received</div>
+              <p style="margin: 0;">The parent has requested to reschedule the class for their child.</p>
+            </div>
+
+            <div class="info-card">
+              <p><strong>Student:</strong></p>
+              <p class="student-name">${studentName}</p>
+            </div>
+
+            <div class="action-steps">
+              <h3>✨ Next Steps:</h3>
+              <ol>
+                <li>Review the reschedule request in your dashboard</li>
+                <li>Check your availability for alternative time slots</li>
+                <li>Contact the parent to propose new time options</li>
+                <li>Confirm the new class schedule</li>
+                <li>Update the attendance records accordingly</li>
+              </ol>
+            </div>
+
+            <p style="text-align: center;">
+              <a href="https://yourshikshak.com/dashboard/classes" class="cta-button">View Request in Dashboard →</a>
+            </p>
+
+            <div style="background-color: #f0f9ff; padding: 15px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #3b82f6;">
+              <strong style="color: #1e40af;">💡 Tip:</strong> <span style="color: #1e3a8a;">Respond to reschedule requests promptly to maintain good parent relationships and class continuity.</span>
+            </div>
+
+            <p style="text-align: center; color: #666; margin-top: 25px;">Need assistance? <a href="mailto:support@yourshikshak.com" style="color: #f59e0b; text-decoration: none; font-weight: bold;">Contact Support</a></p>
+
+            <div class="footer">
+              <p style="margin: 0;">Best regards,<br><strong>Your Shikshak Class Management Team</strong></p>
+              <p style="margin-top: 10px; font-size: 12px; color: #999;"><small>This is an automated message. Please do not reply to this email.</small></p>
+            </div>
+          </div>
+        </body>
+        </html>`
       );
     }
   } catch (e) {

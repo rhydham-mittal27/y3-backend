@@ -3,6 +3,7 @@ import asyncHandler from '../utils/asyncHandler';
 import { successResponse, paginatedResponse } from '../utils/responseFormatter';
 import ErrorResponse from '../utils/errorResponse';
 import { AuthRequest } from '../types';
+import User from '../models/User';
 import {
   createClassLead,
   getAllClassLeads,
@@ -114,6 +115,7 @@ export const getLeads = asyncHandler(async (req: AuthRequest, res) => {
   const area = (req.query.area as string) || undefined;
 
   // Enforce role-based visibility
+  let createdByIds: string[] | undefined;
   if (req.user!.role === 'MANAGER') {
     const manager = await getManagerByUserId(req.user!.id);
     
@@ -121,9 +123,17 @@ export const getLeads = asyncHandler(async (req: AuthRequest, res) => {
     if (!manager.permissions?.canViewSiteLeads) {
       createdBy = req.user!.id;
       createdByName = undefined; // Clear other creator filters
+    } else {
+      // If they CAN view site leads, show admin leads + their own leads
+      // Get all admin user IDs
+      const adminUsers = await User.find({ role: 'ADMIN' }).select('_id');
+      const adminIds = adminUsers.map(u => u._id.toString());
+      // Combine admin IDs with the current manager's ID
+      createdByIds = [...adminIds, req.user!.id];
+      // Clear any createdBy filter from query params
+      createdBy = undefined;
+      createdByName = undefined;
     }
-    // If they CAN view site leads, we don't force createdBy filter
-    // This allows them to see leads from admins and potentially all managers
   }
 
 
@@ -132,6 +142,7 @@ export const getLeads = asyncHandler(async (req: AuthRequest, res) => {
     limit,
     status,
     createdBy,
+    createdByIds,
     search,
     sortBy,
     sortOrder,
