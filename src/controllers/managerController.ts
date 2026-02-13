@@ -62,8 +62,17 @@ export const getManagerByUser = asyncHandler(async (req: AuthRequest, res) => {
 
 export const getMyProfile = asyncHandler(async (req: AuthRequest, res) => {
   const userId = req.user?.id as string;
-  const manager = await getManagerByUserId(userId);
-  return res.json(successResponse(manager));
+  try {
+    const manager = await getManagerByUserId(userId);
+    return res.json(successResponse(manager));
+  } catch (error: any) {
+    if (error.statusCode === 404) {
+      // Auto-create profile if it doesn't exist (e.g. for seeded users or failed registrations)
+      const newManager = await createManagerProfile(userId);
+      return res.json(successResponse(newManager, 'Manager profile created and fetched'));
+    }
+    throw error;
+  }
 });
 
 export const updateManagerProfileController = asyncHandler(async (req: AuthRequest, res) => {

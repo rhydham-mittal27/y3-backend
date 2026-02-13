@@ -77,9 +77,15 @@ export const createTutorLeadRegistrationController = asyncHandler(async (req: Re
   }
 
   // Check if user already exists
-  const existing = await User.findOne({ email: String(email).toLowerCase().trim() }).lean();
+  const existing = await User.findOne({ email: String(email).toLowerCase().trim() });
   if (existing) {
     throw new ErrorResponse('An account with this email already exists', 409);
+  }
+
+  // Check if phone number already exists
+  const existingPhone = await User.findOne({ phone: phoneNumber });
+  if (existingPhone) {
+    throw new ErrorResponse('An account with this phone number already exists', 409);
   }
 
   // Create user (role TUTOR). User model hashes password in pre-save hook.

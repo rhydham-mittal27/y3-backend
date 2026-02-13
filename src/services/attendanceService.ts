@@ -70,7 +70,20 @@ export const createAttendance = async (params: {
     }
   }
 
-  const existing = await Attendance.findOne({ finalClass: finalClassId, sessionDate: new Date(sessionDate) });
+
+  const startOfDay = new Date(sessionDate);
+  startOfDay.setHours(0, 0, 0, 0);
+  
+  const endOfDay = new Date(sessionDate);
+  endOfDay.setHours(23, 59, 59, 999);
+  
+  const existing = await Attendance.findOne({ 
+    finalClass: finalClassId, 
+    sessionDate: { 
+        $gte: startOfDay, 
+        $lte: endOfDay 
+    } 
+  });
   if (existing) throw new ErrorResponse('Attendance already exists for this date', 409);
 
   const attendance = await Attendance.create({

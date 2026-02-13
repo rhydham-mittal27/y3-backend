@@ -17,7 +17,7 @@ export interface IManagerDocument extends Document {
   permanentAddress?: string;
   residentialAddress?: string;
   documents: {
-    documentType: 'AADHAAR' | 'PAN' | 'VOTER_ID' | 'PROFILE_PHOTO' | 'OTHER';
+    documentType: 'AADHAAR' | 'PROFILE_PHOTO' | 'EXPERIENCE_PROOF' | 'DEGREE' | 'CERTIFICATE';
     documentUrl: string;
     uploadedAt: Date;
     verifiedAt?: Date;
@@ -82,7 +82,7 @@ const ManagerSchema: Schema<IManagerDocument> = new Schema<IManagerDocument>(
     documents: [{
       documentType: { 
         type: String, 
-        enum: ['AADHAAR', 'PAN', 'VOTER_ID', 'PROFILE_PHOTO', 'OTHER'],
+        enum: ['AADHAAR', 'PROFILE_PHOTO', 'EXPERIENCE_PROOF', 'DEGREE', 'CERTIFICATE'],
         required: true 
       },
       documentUrl: { type: String, required: true },
