@@ -5,7 +5,7 @@ import FinalClass from '../models/FinalClass';
 import Student from '../models/Student';
 import ErrorResponse from '../utils/errorResponse';
 import { PAYMENT_STATUS, PAYMENT_METHOD, PAYMENT_TYPE, ATTENDANCE_STATUS, MANAGER_ACTION_TYPE } from '../config/constants';
-import { logError } from '../utils/logger';
+import logger, { logError } from '../utils/logger';
 import { logManagerActivity } from './managerService';
 import Manager from '../models/Manager';
 import { createNotificationWithPreferences } from './notificationService';
@@ -263,7 +263,8 @@ export const updatePaymentStatus = async (
   transactionId?: string,
   notes?: string,
   paidBy?: string,
-  currentUser?: { id: string; role: string }
+  currentUser?: { id: string; role: string },
+  paymentProof?: string
 ) => {
   const session = await mongoose.startSession();
   session.startTransaction();
@@ -320,6 +321,7 @@ export const updatePaymentStatus = async (
       if (transactionId) payment.transactionId = transactionId;
       if (notes) payment.notes = notes;
       if (paidBy) payment.paidBy = new mongoose.Types.ObjectId(paidBy) as any;
+      if (paymentProof) payment.paymentProof = paymentProof;
     }
     
     await payment.save({ session });
@@ -729,9 +731,11 @@ export const createPaymentForSheet = async (sheetId: string, createdBy: string) 
   const AttendanceSheet = require('../models/AttendanceSheet').default;
   const sheet = await AttendanceSheet.findById(sheetId).populate([
     { path: 'finalClass' },
-    { path: 'attendanceIds' }
+    { path: 'groupClass' }, // Populate Group Class
   ]);
   if (!sheet) throw new ErrorResponse('Attendance sheet not found', 404);
+  
+  // Existing logic...
   if (sheet.status !== 'APPROVED') {
     throw new ErrorResponse('Attendance sheet is not approved', 400);
   }
@@ -739,36 +743,50 @@ export const createPaymentForSheet = async (sheetId: string, createdBy: string) 
   const existing = await Payment.findOne({ attendanceSheet: new mongoose.Types.ObjectId(sheetId) });
   if (existing) throw new ErrorResponse('Payment already exists for this attendance sheet', 409);
 
-  const cls = sheet.finalClass as any;
-  if (!cls) throw new ErrorResponse('Final class not found for sheet', 404);
+  let entity: any;
+  let tutorRate = 0;
+  let paymentData: any = {};
   
-  // Robust rate selection
-  const rate = cls.ratePerSession || (cls.classLead as any)?.tutorFees || 0;
-  if (rate <= 0) {
-    console.warn(`Rate per session not found for class ${cls._id}, using 0 for calculation`);
+  if (sheet.sheetType === 'GROUP' || sheet.groupClass) {
+       const group = sheet.groupClass;
+       if (!group) throw new ErrorResponse('Group class not found for sheet', 404);
+       entity = group;
+       tutorRate = group.tutorRatePerSession || 0;
+       paymentData.groupClass = group._id;
+  } else {
+       const cls = sheet.finalClass;
+       if (!cls) throw new ErrorResponse('Final class not found for sheet', 404);
+       entity = cls;
+       // Tutor Rate Selection
+       tutorRate = cls.tutorRatePerSession || (cls.classLead as any)?.tutorFees || 0;
+       paymentData.finalClass = cls._id;
+  }
+  
+  if (tutorRate <= 0) {
+    logger.warn(`Tutor rate per session not found for class/group ${entity._id}, using 0 for calculation`);
   }
 
-  // Total amount = rate * number of approved/finalized sessions in the sheet
-  const sessionsToPay = (sheet.attendanceIds as any[]).filter(
+  // Total amount = tutorRate * number of approved/verified sessions
+  const sessionsVerified = (sheet.records || []).filter(
     (a: any) => 
-      String(a.status) === ATTENDANCE_STATUS.PARENT_APPROVED || 
+      String(a.status) === ATTENDANCE_STATUS.APPROVED || 
       String(a.status) === ATTENDANCE_STATUS.COORDINATOR_APPROVED ||
-      String(a.status) === ATTENDANCE_STATUS.APPROVED
+      String(a.status) === ATTENDANCE_STATUS.PARENT_APPROVED
   );
   
-  const amount = rate * sessionsToPay.length;
-  if (amount <= 0 && sessionsToPay.length > 0) {
-    throw new ErrorResponse('Calculated amount is 0 but sessions are present. Please check class rate.', 400);
-  }
-  if (amount < 0) throw new ErrorResponse('Invalid calculated amount', 400);
-
+  const amount = tutorRate * sessionsVerified.length;
+  // ... rest of logic
+  
+  /* 
+     Constructing Payment Object 
+  */
   const dueDate = new Date();
   dueDate.setDate(dueDate.getDate() + DEFAULT_DUE_DAYS);
 
   const payment = await Payment.create({
-    finalClass: cls._id,
+    ...paymentData, // finalClass or groupClass
     attendanceSheet: sheet._id,
-    tutor: cls.tutor,
+    tutor: entity.tutor,
     amount,
     currency: 'INR',
     status: PAYMENT_STATUS.PENDING,
@@ -780,6 +798,7 @@ export const createPaymentForSheet = async (sheetId: string, createdBy: string) 
 
   await payment.populate([
     { path: 'finalClass' },
+    { path: 'groupClass' },
     { path: 'attendanceSheet' },
     { path: 'tutor', select: 'name email phone' },
     { path: 'createdBy', select: 'name email' },
@@ -787,7 +806,7 @@ export const createPaymentForSheet = async (sheetId: string, createdBy: string) 
 
   try {
     await createNotificationWithPreferences({
-      recipient: cls.tutor as any,
+      recipient: entity.tutor as any,
       type: 'PAYMENT',
       title: 'Monthly Payment Created',
       message: `A payment of INR ${amount} is created for your approved monthly attendance sheet (${sheet.periodLabel}). Due by ${dueDate.toDateString()}.`,
@@ -797,6 +816,70 @@ export const createPaymentForSheet = async (sheetId: string, createdBy: string) 
   }
 
   return payment;
+};
+
+export const createCyclePayments = async (sheetId: string, createdBy: string) => {
+  const AttendanceSheet = require('../models/AttendanceSheet').default;
+  const sheet = await AttendanceSheet.findById(sheetId).populate({
+    path: 'finalClass',
+    populate: { path: 'classLead' }
+  });
+
+  if (!sheet) throw new ErrorResponse('Attendance sheet not found', 404);
+  const cls = sheet.finalClass as any;
+  if (!cls) throw new ErrorResponse('Final class not found for sheet', 404);
+
+  const numSessions = sheet.totalSessionsPlanned || 0;
+  if (numSessions <= 0) return;
+
+  const parentRate = cls.ratePerSession || 0;
+  // const tutorRate = cls.tutorRatePerSession || 0; // Unused, removing
+
+  // Prefer monthlyFees if available, otherwise calculate from rate * sessions
+  const parentAmount = (cls.monthlyFees && cls.monthlyFees > 0) 
+    ? cls.monthlyFees 
+    : (parentRate * numSessions);
+
+  // const tutorAmount = ... (removed commented out code)
+
+  const dueDate = new Date();
+  dueDate.setDate(dueDate.getDate() + 7);
+
+  // 1. Fee Collected (Parent -> Coordinator/Office)
+  if (parentAmount > 0) {
+    await Payment.create({
+      finalClass: cls._id,
+      attendanceSheet: sheet._id,
+      tutor: cls.tutor,
+      amount: parentAmount,
+      currency: 'INR',
+      status: PAYMENT_STATUS.PENDING,
+      paymentType: PAYMENT_TYPE.FEES_COLLECTED,
+      dueDate,
+      createdBy: new mongoose.Types.ObjectId(createdBy),
+      notes: `Monthly fees for ${sheet.periodLabel}`,
+    });
+  }
+
+  // 2. Tutor Payout (Coordinator/Office -> Tutor)
+  // DEPRECATED: Payouts are now generated upon sheet verification (approval) based on actual verified sessions.
+  // See createPaymentForSheet
+  /*
+  if (tutorAmount > 0) {
+    await Payment.create({
+      finalClass: cls._id,
+      attendanceSheet: sheet._id,
+      tutor: cls.tutor,
+      amount: tutorAmount,
+      currency: 'INR',
+      status: PAYMENT_STATUS.PENDING,
+      paymentType: PAYMENT_TYPE.TUTOR_PAYOUT,
+      dueDate,
+      createdBy: new mongoose.Types.ObjectId(createdBy),
+      notes: `Monthly payout for ${sheet.periodLabel}`,
+    });
+  }
+  */
 };
 
 export default {
@@ -816,4 +899,5 @@ export default {
   getPaymentsByParent,
   getPaymentFilterOptions,
   createManualPayment,
+  createCyclePayments,
 };

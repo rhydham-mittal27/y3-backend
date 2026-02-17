@@ -28,6 +28,7 @@ export interface IFinalClassDocument extends Document {
   totalSessions: number;
   classesPerMonth?: number;
   ratePerSession?: number;
+  tutorRatePerSession?: number;
   completedSessions: number;
   studentName: string;
   studentGender?: 'M' | 'F';
@@ -46,6 +47,8 @@ export interface IFinalClassDocument extends Document {
   oneTimeReschedules?: { fromDate: Date; toDate: Date; timeSlot: string }[];
   testPerMonth?: number;
   attendanceSubmissionWindow?: number;
+  monthlyFees?: number;
+  tutorMonthlyFees?: number;
 }
 
 const FinalClassSchema: Schema<IFinalClassDocument> = new Schema<IFinalClassDocument>(
@@ -66,6 +69,7 @@ const FinalClassSchema: Schema<IFinalClassDocument> = new Schema<IFinalClassDocu
     totalSessions: { type: Number, default: 0 },
     classesPerMonth: { type: Number, min: 0 },
     ratePerSession: { type: Number, min: 0 },
+    tutorRatePerSession: { type: Number, min: 0 },
     completedSessions: { type: Number, default: 0 },
     studentName: { type: String, required: true },
     studentGender: { type: String, enum: ['M', 'F'] },
@@ -80,6 +84,8 @@ const FinalClassSchema: Schema<IFinalClassDocument> = new Schema<IFinalClassDocu
     notes: { type: String },
     testPerMonth: { type: Number, default: 1, min: 0 },
     attendanceSubmissionWindow: { type: Number, default: 2, min: 0 },
+    monthlyFees: { type: Number, min: 0 },
+    tutorMonthlyFees: { type: Number, min: 0 },
     oneTimeReschedules: [
       {
         fromDate: { type: Date, required: true },

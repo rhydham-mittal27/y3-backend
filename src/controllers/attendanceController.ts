@@ -7,38 +7,50 @@ import { USER_ROLES } from '../config/constants';
 import PDFDocument from 'pdfkit';
 import path from 'path';
 import {
-  createAttendance,
   getAllAttendance,
   getAttendanceById,
-  coordinatorApprove,
-  parentApprove,
-  rejectAttendance,
-  updateAttendance,
+
   deleteAttendance,
   getAttendanceByClass,
   getAttendanceHistory,
-  getPendingApprovalsForCoordinator,
-  getPendingApprovalsForParent,
   getTutorAttendanceSummary,
 } from '../services/attendanceService';
+import { addDailyAttendance, updateDailyAttendance } from '../services/attendanceSheetService';
 
 export const createAttendanceRecord = asyncHandler(async (req: AuthRequest, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
     throw new ErrorResponse(errors.array()[0].msg, 400);
   }
-  const { finalClassId, sessionDate, sessionNumber, topicCovered, notes, studentAttendanceStatus } = req.body as any;
+  const { finalClassId, sessionDate, durationHours, topicCovered, notes, studentAttendanceStatus } = req.body as any;
   const submittedBy = req.user!.id;
-  const attendance = await createAttendance({
+
+  const sheet = await addDailyAttendance({
     finalClassId,
     sessionDate,
-    sessionNumber,
+    durationHours,
     topicCovered,
     notes,
     studentAttendanceStatus,
-    submittedBy,
+    userId: submittedBy,
   });
-  return res.status(201).json(successResponse(attendance, 'Attendance record created successfully'));
+
+  return res.status(201).json(successResponse(sheet, 'Attendance record created successfully'));
+});
+
+// ... (getAttendances etc)
+
+export const updateAttendanceRecord = asyncHandler(async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    throw new ErrorResponse(errors.array()[0].msg, 400);
+  }
+  const { id } = req.params as any;
+  const updateData = req.body as any;
+  
+  const record = await updateDailyAttendance(id, updateData);
+  
+  return res.json(successResponse(record, 'Attendance updated successfully'));
 });
 
 export const getAttendances = asyncHandler(async (req, res) => {
@@ -92,50 +104,19 @@ export const getAttendance = asyncHandler(async (req, res) => {
   return res.json(successResponse(attendance));
 });
 
-export const coordinatorApproveAttendance = asyncHandler(async (req: AuthRequest, res) => {
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    throw new ErrorResponse(errors.array()[0].msg, 400);
-  }
-  const { id } = req.params as any;
-  const coordinatorUserId = req.user!.id;
-  const attendance = await coordinatorApprove(id, coordinatorUserId);
-  return res.json(successResponse(attendance, 'Attendance approved by coordinator'));
+export const coordinatorApproveAttendance = asyncHandler(async (_req: AuthRequest, _res) => {
+  throw new ErrorResponse('Individual attendance verification is deprecated. Please verify the monthly attendance sheet.', 400);
 });
 
-export const parentApproveAttendance = asyncHandler(async (req: AuthRequest, res) => {
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    throw new ErrorResponse(errors.array()[0].msg, 400);
-  }
-  const { id } = req.params as any;
-  const parentUserId = req.user!.id;
-  const attendance = await parentApprove(id, parentUserId);
-  return res.json(successResponse(attendance, 'Attendance approved by parent'));
+export const parentApproveAttendance = asyncHandler(async (_req: AuthRequest, _res) => {
+  throw new ErrorResponse('Individual attendance verification is deprecated. Please verify the monthly attendance sheet.', 400);
 });
 
-export const rejectAttendanceRecord = asyncHandler(async (req: AuthRequest, res) => {
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    throw new ErrorResponse(errors.array()[0].msg, 400);
-  }
-  const { id } = req.params as any;
-  const { rejectionReason } = req.body as any;
-  const rejectedByUserId = req.user!.id;
-  const attendance = await rejectAttendance(id, rejectedByUserId, rejectionReason);
-  return res.json(successResponse(attendance, 'Attendance rejected'));
+export const rejectAttendanceRecord = asyncHandler(async (_req: AuthRequest, _res) => {
+  throw new ErrorResponse('Individual attendance verification is deprecated. Please verify the monthly attendance sheet.', 400);
 });
 
-export const updateAttendanceRecord = asyncHandler(async (req, res) => {
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    throw new ErrorResponse(errors.array()[0].msg, 400);
-  }
-  const { id } = req.params as any;
-  const updateData = req.body as any;
-  const attendance = await updateAttendance(id, updateData);
-  return res.json(successResponse(attendance, 'Attendance updated successfully'));
-});
+
 
 export const deleteAttendanceRecord = asyncHandler(async (req, res) => {
   const { id } = req.params as any;
@@ -156,16 +137,14 @@ export const getClassAttendanceHistory = asyncHandler(async (req, res) => {
   return res.json(successResponse(data));
 });
 
-export const getCoordinatorPendingApprovals = asyncHandler(async (req: AuthRequest, res) => {
-  const coordinatorUserId = req.user!.id;
-  const attendances = await getPendingApprovalsForCoordinator(coordinatorUserId);
-  return res.json(successResponse(attendances));
+export const getCoordinatorPendingApprovals = asyncHandler(async (_req: AuthRequest, res) => {
+  // Return empty list as individual approvals are deprecated
+  return res.json(successResponse([]));
 });
 
-export const getParentPendingApprovals = asyncHandler(async (req: AuthRequest, res) => {
-  const parentUserId = req.user!.id;
-  const attendances = await getPendingApprovalsForParent(parentUserId);
-  return res.json(successResponse(attendances));
+export const getParentPendingApprovals = asyncHandler(async (_req: AuthRequest, res) => {
+  // Return empty list as individual approvals are deprecated
+  return res.json(successResponse([]));
 });
 
 export const getTutorAttendanceSummaryController = asyncHandler(async (req: AuthRequest, res) => {

@@ -89,6 +89,8 @@ export const updatePaymentStatusController = asyncHandler(async (req: AuthReques
     userId: req.user?.id
   });
   
+  const paymentProof = req.file ? req.file.path : undefined;
+  
   const payment = await updatePaymentStatus(
     req.params.id, 
     status, 
@@ -96,7 +98,8 @@ export const updatePaymentStatusController = asyncHandler(async (req: AuthReques
     transactionId, 
     notes, 
     req.user!.id,
-    req.user // Pass the current user for authorization
+    req.user, // Pass the current user for authorization
+    paymentProof
   );
   return res.json(successResponse(payment, 'Payment status updated successfully'));
 });

@@ -7,7 +7,7 @@ export const createManagerValidation = [
   body('permissions.canViewSiteLeads').optional().isBoolean(),
   body('permissions.canVerifyTutors').optional().isBoolean(),
   body('permissions.canCreateLeads').optional().isBoolean(),
-  body('permissions.canManagePayments').optional().isBoolean(),
+
 ];
 
 export const updateManagerValidation = [
@@ -17,7 +17,7 @@ export const updateManagerValidation = [
   body('permissions.canViewSiteLeads').optional().isBoolean(),
   body('permissions.canVerifyTutors').optional().isBoolean(),
   body('permissions.canCreateLeads').optional().isBoolean(),
-  body('permissions.canManagePayments').optional().isBoolean(),
+
   body('bio').optional().isString().trim(),
   body('languagesKnown').optional().isArray(),
   body('skills').optional().isArray(),

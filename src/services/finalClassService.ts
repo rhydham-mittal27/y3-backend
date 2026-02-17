@@ -52,8 +52,10 @@ export const convertLeadToFinalClass = async (params: {
   notes?: string;
   convertedBy: string;
   attendanceSubmissionWindow?: number;
+  monthlyFees?: number;
+  tutorMonthlyFees?: number;
 }) => {
-  const { classLeadId, coordinatorUserId, parentUserId, startDate, schedule, totalSessions, ratePerSession, notes, convertedBy, attendanceSubmissionWindow } = params;
+  const { classLeadId, coordinatorUserId, parentUserId, startDate, schedule, totalSessions, ratePerSession, notes, convertedBy, attendanceSubmissionWindow, monthlyFees, tutorMonthlyFees } = params;
   const session = await mongoose.startSession();
   try {
     session.startTransaction();
@@ -266,6 +268,12 @@ export const convertLeadToFinalClass = async (params: {
       parentUserObjectId = parentUsersByEmail[firstEmail];
     }
 
+    const denom = lead.classesPerMonth || autoTotalSessions || 8;
+    const calculatedParentRate = typeof ratePerSession === 'number' && ratePerSession > 0 
+      ? ratePerSession 
+      : (lead.paymentAmount || 0) / denom;
+    const calculatedTutorRate = (lead.tutorFees || 0) / denom;
+
     const created = new FinalClass({
       className,
       classLead: new mongoose.Types.ObjectId(classLeadId),
@@ -275,7 +283,8 @@ export const convertLeadToFinalClass = async (params: {
       startDate: new Date(startDate),
       schedule,
       totalSessions: autoTotalSessions,
-      ratePerSession: typeof ratePerSession === 'number' ? ratePerSession : 0,
+      ratePerSession: calculatedParentRate,
+      tutorRatePerSession: calculatedTutorRate,
       completedSessions: 0,
       studentName: lead.studentType === 'SINGLE' ? lead.studentName : `Group Class (${((lead.groupClass as any)?.students || lead.studentDetails)?.length || 0} students)`,
       studentGender,
@@ -291,6 +300,8 @@ export const convertLeadToFinalClass = async (params: {
       classesPerMonth: lead.classesPerMonth,
       testPerMonth: 1,
       attendanceSubmissionWindow: typeof attendanceSubmissionWindow === 'number' ? attendanceSubmissionWindow : 2,
+      monthlyFees: typeof monthlyFees === 'number' ? monthlyFees : (lead.paymentAmount || 0),
+      tutorMonthlyFees: typeof tutorMonthlyFees === 'number' ? tutorMonthlyFees : (lead.tutorFees || 0),
     });
 
     await created.save({ session });
@@ -469,6 +480,8 @@ export const updateFinalClass = async (
     notes?: string;
     coordinatorUserId?: string;
     attendanceSubmissionWindow?: number;
+    monthlyFees?: number;
+    tutorMonthlyFees?: number;
   }>
 ) => {
   const cls = await FinalClass.findById(classId);

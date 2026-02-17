@@ -40,7 +40,6 @@ export const protect = asyncHandler(async (req: AuthRequest, _res, next) => {
             canViewSiteLeads: (manager as any).permissions?.canViewSiteLeads ?? false,
             canVerifyTutors: (manager as any).permissions?.canVerifyTutors ?? false,
             canCreateLeads: (manager as any).permissions?.canCreateLeads ?? false,
-            canManagePayments: (manager as any).permissions?.canManagePayments ?? false,
           };
         }
       }

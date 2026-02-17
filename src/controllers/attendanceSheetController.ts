@@ -5,28 +5,40 @@ import { successResponse } from '../utils/responseFormatter';
 import ErrorResponse from '../utils/errorResponse';
 import { AuthRequest } from '../types';
 import {
-  upsertAttendanceSheet,
+  addDailyAttendance,
   submitAttendanceSheet,
   getCoordinatorPendingSheets,
   getAllPendingSheets,
   approveAttendanceSheet,
   rejectAttendanceSheet,
+  getSheetsForClass,
 } from '../services/attendanceSheetService';
 
-export const upsertAttendanceSheetController = asyncHandler(async (req: AuthRequest, res: Response) => {
-  const { finalClassId, month, year } = req.body as any;
-  if (!finalClassId || !month || !year) {
-    throw new ErrorResponse('finalClassId, month, and year are required', 400);
+export const addDailyAttendanceController = asyncHandler(async (req: AuthRequest, res: Response) => {
+  const { finalClassId, sessionDate, durationHours, topicCovered, studentAttendanceStatus, notes } = req.body as any;
+  
+  if (!finalClassId || !sessionDate) {
+    throw new ErrorResponse('finalClassId and sessionDate are required', 400);
   }
 
-  const sheet = await upsertAttendanceSheet({
+  const sheet = await addDailyAttendance({
     finalClassId,
-    month: Number(month),
-    year: Number(year),
-    createdByUserId: req.user!.id,
+    sessionDate,
+    durationHours,
+    topicCovered,
+    studentAttendanceStatus,
+    notes,
+    userId: req.user!.id,
   });
 
-  return res.status(201).json(successResponse(sheet, 'Attendance sheet generated/updated successfully'));
+  return res.status(201).json(successResponse(sheet, 'Attendance recorded successfully'));
+});
+
+export const getSheetsForClassController = asyncHandler(async (req: AuthRequest, res: Response) => {
+  const { classId } = req.params as any;
+  const { month, year } = req.query as any;
+  const sheets = await getSheetsForClass(classId, month ? Number(month) : undefined, year ? Number(year) : undefined);
+  return res.json(successResponse(sheets));
 });
 
 export const submitAttendanceSheetController = asyncHandler(async (req: AuthRequest, res: Response) => {
@@ -65,7 +77,8 @@ export const rejectAttendanceSheetController = asyncHandler(async (req: AuthRequ
 });
 
 export default {
-  upsertAttendanceSheetController,
+  addDailyAttendanceController,
+  getSheetsForClassController,
   submitAttendanceSheetController,
   getCoordinatorPendingSheetsController,
   getAllPendingSheetsController,

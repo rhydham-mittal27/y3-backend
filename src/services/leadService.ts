@@ -127,7 +127,7 @@ export const createClassLead = async (params: {
       board: params.board,
     });
     await groupClass.save();
-    lead.groupClass = groupClass._id;
+    lead.groupClass = groupClass._id as any;
   }
 
   await lead.save();
@@ -447,6 +447,17 @@ export const getDistinctFilterValues = async () => {
     name: u.name
   })).sort((a: any, b: any) => a.name.localeCompare(b.name));
 
+  // Fetch ALL users with role COORDINATOR
+  const allCoordinatorsList = await User.find({ 
+    role: USER_ROLES.COORDINATOR,
+    isActive: true
+  }).select('name role').lean();
+
+  const coordinators = allCoordinatorsList.map((u: any) => ({
+    id: String(u._id),
+    name: u.name
+  })).sort((a: any, b: any) => a.name.localeCompare(b.name));
+
   return {
     grades: getValues('GRADE'),
     subjects: getValues('SUBJECT'),
@@ -460,6 +471,7 @@ export const getDistinctFilterValues = async () => {
     creators: creatorNames,
     status: getValues('CLASS_LEAD_STATUS'),
     managers,
+    coordinators,
     // Return the raw map for advanced usage if needed
     _raw: optionsMap
   };

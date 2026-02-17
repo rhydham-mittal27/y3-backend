@@ -1,11 +1,11 @@
 import mongoose from 'mongoose';
 import Attendance from '../models/Attendance';
+import AttendanceSheet from '../models/AttendanceSheet';
 import FinalClass from '../models/FinalClass';
 import ErrorResponse from '../utils/errorResponse';
 import { ATTENDANCE_STATUS, FINAL_CLASS_STATUS, STUDENT_ATTENDANCE_STATUS } from '../config/constants';
 import logger from '../utils/logger';
 import { createNotificationWithPreferences } from './notificationService';
-import { upsertAttendanceSheet, submitAttendanceSheet } from './attendanceSheetService';
 import { updateTutorExperienceAndTier } from './tutorService';
 
 export const createAttendance = async (params: {
@@ -101,36 +101,15 @@ export const createAttendance = async (params: {
   });
 
   // Since attendance is auto-approved in the new flow, increment completed sessions for this class
-  const updatedClass = await FinalClass.findByIdAndUpdate(
+  await FinalClass.findByIdAndUpdate(
     cls._id,
     { $inc: { completedSessions: 1 } },
     { new: true }
   );
 
   // If this attendance completes all planned sessions for the class, auto-generate and submit
-  // a monthly attendance sheet for the month of this session.
-  try {
-    const totalSessions = (updatedClass as any)?.totalSessions || cls.totalSessions || 0;
-    const completedSessions = (updatedClass as any)?.completedSessions || (cls.completedSessions || 0) + 1;
-    if (totalSessions > 0 && completedSessions >= totalSessions) {
-      const sessionDt = new Date(sessionDate);
-      const month = sessionDt.getMonth() + 1;
-      const year = sessionDt.getFullYear();
-
-      const sheet = await upsertAttendanceSheet({
-        finalClassId,
-        month,
-        year,
-        createdByUserId: submittedBy,
-      });
-
-      if (sheet && (sheet as any)._id) {
-        await submitAttendanceSheet(String((sheet as any)._id), submittedBy);
-      }
-    }
-  } catch (e) {
-    logger.error(`Failed to auto-generate/submit attendance sheet for class ${finalClassId}: ${String(e)}`);
-  }
+  // a monthly attendance sheet logic is replaced by per-session sheet updates.
+  // Legacy logic removed.
 
   // Update Tutor Experience & Tier logic
   try {
@@ -164,57 +143,168 @@ export const getAllAttendance = async (args: {
   sortOrder?: 'asc' | 'desc';
 }) => {
   const { page, limit, finalClassId, status, tutorId, coordinatorId, parentId, fromDate, toDate, sortBy, sortOrder } = args;
-  const query: any = {};
-  if (finalClassId) query.finalClass = new mongoose.Types.ObjectId(finalClassId);
-  if (status) query.status = status;
-  if (tutorId) query.tutor = new mongoose.Types.ObjectId(tutorId);
-  if (coordinatorId) query.coordinator = new mongoose.Types.ObjectId(coordinatorId);
-  if (parentId) query.parent = new mongoose.Types.ObjectId(parentId);
+
+  const matchStage: any = {};
+  if (finalClassId) matchStage.finalClass = new mongoose.Types.ObjectId(finalClassId);
+  if (coordinatorId) matchStage.coordinator = new mongoose.Types.ObjectId(coordinatorId);
+  // Sheet-level filters might not clear partial months if date range is specific, handled after unwind?
+  // Actually, filtering sheets first is good for performance.
+  
+  // Create pipeline
+  const pipeline: any[] = [
+    { $match: matchStage },
+    { $unwind: '$records' },
+  ];
+
+  // Record-level match
+  const recordMatch: any = {};
+  if (tutorId) recordMatch['records.tutor'] = new mongoose.Types.ObjectId(tutorId);
+  if (status) recordMatch['records.status'] = status;
+  if (parentId) {
+      // Parent logic might be tricky if not stored on record. 
+      // But typically parents query by class or student.
+      // Ignoring parentId filter on record level for now unless it's on the sheet?
+      // Old Attendance had 'parent'. New one doesn't seem to explicitly store 'parent' on record?
+      // It stores 'tutor', 'submittedBy'.
+  }
+  
   if (fromDate || toDate) {
-    query.sessionDate = {};
-    if (fromDate) query.sessionDate.$gte = new Date(fromDate);
-    if (toDate) query.sessionDate.$lte = new Date(toDate);
+    recordMatch['records.sessionDate'] = {};
+    if (fromDate) recordMatch['records.sessionDate'].$gte = new Date(fromDate);
+    if (toDate) recordMatch['records.sessionDate'].$lte = new Date(toDate);
   }
 
-  const skip = (page - 1) * limit;
-  const sortField = sortBy || 'sessionDate';
-  const sortDir = sortOrder === 'asc' ? 1 : -1;
-  const sort: Record<string, 1 | -1> = { [sortField]: sortDir } as any;
+  if (Object.keys(recordMatch).length > 0) {
+    pipeline.push({ $match: recordMatch });
+  }
 
-  const [attendances, total] = await Promise.all([
-    Attendance.find(query)
-      .skip(skip)
-      .limit(limit)
-      .sort(sort)
-      .populate([
-        { path: 'finalClass' },
-        { path: 'tutor', select: 'name email phone' },
-        { path: 'coordinator', select: 'name email phone' },
-        { path: 'parent', select: 'name email phone' },
-        { path: 'submittedBy', select: 'name email' },
-        { path: 'coordinatorApprovedBy', select: 'name email' },
-        { path: 'parentApprovedBy', select: 'name email' },
-        { path: 'rejectedBy', select: 'name email' },
-      ]),
-    Attendance.countDocuments(query),
-  ]);
+  // Sort
+  const sortField = sortBy ? `records.${sortBy}` : 'records.sessionDate';
+  const sortDir = sortOrder === 'asc' ? 1 : -1;
+  pipeline.push({ $sort: { [sortField]: sortDir } });
+
+  // Facet for pagination
+  pipeline.push({
+    $facet: {
+      attendances: [
+        { $skip: (page - 1) * limit },
+        { $limit: limit },
+        // Lookup/Populate emulation
+        {
+            $lookup: {
+                from: 'finalclasses',
+                localField: 'finalClass',
+                foreignField: '_id',
+                as: 'finalClass'
+            }
+        },
+        { $unwind: { path: '$finalClass', preserveNullAndEmptyArrays: true } },
+        {
+             $lookup: {
+                 from: 'users',
+                 localField: 'records.tutor',
+                 foreignField: '_id',
+                 as: 'tutor'
+             }
+        },
+         { $unwind: { path: '$tutor', preserveNullAndEmptyArrays: true } },
+        {
+             $lookup: {
+                 from: 'users',
+                 localField: 'records.submittedBy',
+                 foreignField: '_id',
+                 as: 'submittedBy'
+             }
+        },
+         { $unwind: { path: '$submittedBy', preserveNullAndEmptyArrays: true } },
+         // We can add others: coordinator, submittedBy.
+         // Flatten structure to match old Attendance interface?
+         {
+             $project: {
+                 _id: '$records._id', // Use record ID as the main ID
+                 sheetId: '$_id',
+                 finalClass: '$finalClass',
+                 sessionDate: '$records.sessionDate',
+                 durationHours: '$records.durationHours',
+                 topicCovered: '$records.topicCovered',
+                 studentAttendanceStatus: '$records.studentAttendanceStatus',
+                 status: '$records.status',
+                 notes: '$records.notes',
+                 tutor: { _id: '$tutor._id', name: '$tutor.name', email: '$tutor.email' },
+                 submittedBy: { _id: '$submittedBy._id', name: '$submittedBy.name', email: '$submittedBy.email' }, // Needs lookup if we want details
+                 // Compatibility fields
+                 sessionNumber: { $literal: 0 } // deprecated
+             }
+         }
+      ],
+      total: [{ $count: 'count' }]
+    }
+  });
+
+  const result = await AttendanceSheet.aggregate(pipeline);
+  
+  const attendances = result[0].attendances;
+  const total = result[0].total[0] ? result[0].total[0].count : 0;
 
   return { attendances, total, page, limit };
 };
 
 export const getAttendanceById = async (attendanceId: string) => {
-  const attendance = await Attendance.findById(attendanceId).populate([
-    { path: 'finalClass' },
-    { path: 'tutor', select: 'name email phone' },
-    { path: 'coordinator', select: 'name email phone' },
-    { path: 'parent', select: 'name email phone' },
-    { path: 'submittedBy', select: 'name email' },
-    { path: 'coordinatorApprovedBy', select: 'name email' },
-    { path: 'parentApprovedBy', select: 'name email' },
-    { path: 'rejectedBy', select: 'name email' },
-  ]);
-  if (!attendance) throw new ErrorResponse('Attendance not found', 404);
-  return attendance;
+  const pipeline: any[] = [
+    { $match: { 'records._id': new mongoose.Types.ObjectId(attendanceId) } },
+    { $unwind: '$records' },
+    { $match: { 'records._id': new mongoose.Types.ObjectId(attendanceId) } },
+    
+    // Lookups
+    {
+        $lookup: {
+            from: 'finalclasses',
+            localField: 'finalClass',
+            foreignField: '_id',
+            as: 'finalClass'
+        }
+    },
+    { $unwind: { path: '$finalClass', preserveNullAndEmptyArrays: true } },
+    {
+         $lookup: {
+             from: 'users',
+             localField: 'records.tutor',
+             foreignField: '_id',
+             as: 'tutor'
+         }
+    },
+    { $unwind: { path: '$tutor', preserveNullAndEmptyArrays: true } },
+    {
+         $lookup: {
+             from: 'users',
+             localField: 'records.submittedBy',
+             foreignField: '_id',
+             as: 'submittedBy'
+         }
+    },
+    { $unwind: { path: '$submittedBy', preserveNullAndEmptyArrays: true } },
+    
+    // Project
+    {
+         $project: {
+             _id: '$records._id',
+             sheetId: '$_id',
+             finalClass: '$finalClass',
+             sessionDate: '$records.sessionDate',
+             durationHours: '$records.durationHours',
+             topicCovered: '$records.topicCovered',
+             studentAttendanceStatus: '$records.studentAttendanceStatus',
+             status: '$records.status',
+             notes: '$records.notes',
+             tutor: { _id: '$tutor._id', name: '$tutor.name', email: '$tutor.email', phone: '$tutor.phone' },
+             submittedBy: { _id: '$submittedBy._id', name: '$submittedBy.name', email: '$submittedBy.email' }
+         }
+    }
+  ];
+
+  const results = await AttendanceSheet.aggregate(pipeline);
+  if (!results.length) throw new ErrorResponse('Attendance not found', 404);
+  return results[0];
 };
 
 export const coordinatorApprove = async (attendanceId: string, coordinatorUserId: string) => {
@@ -433,21 +523,70 @@ export const deleteAttendance = async (attendanceId: string) => {
 };
 
 export const getAttendanceByClass = async (finalClassId: string, status?: ATTENDANCE_STATUS | string) => {
-  const query: any = { finalClass: new mongoose.Types.ObjectId(finalClassId) };
-  if (status) query.status = status;
-  const attendances = await Attendance.find(query)
-    .sort({ sessionDate: -1 })
-    .populate([
+  const matchStage: any = { finalClass: new mongoose.Types.ObjectId(finalClassId) };
+  
+  const pipeline: any[] = [
+    { $match: matchStage },
+    { $unwind: '$records' }
+  ];
+
+  if (status) {
+    pipeline.push({ $match: { 'records.status': status } });
+  }
+
+  pipeline.push({ $sort: { 'records.sessionDate': -1 } });
+  
+  // Lookups similar to getAllAttendance
+  pipeline.push(
       {
-        path: 'finalClass',
-        populate: { path: 'classLead', select: 'classDurationHours' },
+        $lookup: {
+            from: 'finalclasses',
+            localField: 'finalClass',
+            foreignField: '_id',
+            as: 'finalClass'
+        }
       },
-      { path: 'tutor', select: 'name email phone' },
-      { path: 'coordinator', select: 'name email phone' },
-      { path: 'parent', select: 'name email phone' },
-      { path: 'submittedBy', select: 'name email' },
-    ]);
-  return attendances;
+      { $unwind: { path: '$finalClass', preserveNullAndEmptyArrays: true } },
+      // Tutor lookup
+      {
+         $lookup: {
+             from: 'users',
+             localField: 'records.tutor',
+             foreignField: '_id',
+             as: 'tutor'
+         }
+      },
+      { $unwind: { path: '$tutor', preserveNullAndEmptyArrays: true } },
+      {
+         $lookup: {
+             from: 'users',
+             localField: 'records.submittedBy',
+             foreignField: '_id',
+             as: 'submittedBy'
+         }
+      },
+      { $unwind: { path: '$submittedBy', preserveNullAndEmptyArrays: true } },
+      // Project to flatten
+      {
+         $project: {
+             _id: '$records._id',
+             sheetId: '$_id',
+             finalClass: '$finalClass',
+             sessionDate: '$records.sessionDate',
+             durationHours: '$records.durationHours',
+             topicCovered: '$records.topicCovered',
+             studentAttendanceStatus: '$records.studentAttendanceStatus',
+             status: '$records.status',
+             notes: '$records.notes',
+             tutor: { _id: '$tutor._id', name: '$tutor.name', email: '$tutor.email', phone: '$tutor.phone' },
+             submittedBy: { _id: '$submittedBy._id', name: '$submittedBy.name', email: '$submittedBy.email' }
+             // Add coordinator/parent if needed for PDF export context? 
+             // PDF export uses finalClass.studentName etc.
+         }
+      }
+  );
+
+  return await AttendanceSheet.aggregate(pipeline);
 };
 
 export const getTutorAttendanceSummary = async (tutorUserId: string) => {
@@ -457,21 +596,19 @@ export const getTutorAttendanceSummary = async (tutorUserId: string) => {
 
   const tutorObjectId = new mongoose.Types.ObjectId(tutorUserId);
 
-  const agg = await Attendance.aggregate([
-    { $match: { tutor: tutorObjectId } },
+  // Find all classes for this tutor
+  const tutorClasses = await FinalClass.find({ tutor: tutorObjectId }).select('_id');
+  const tutorClassIds = tutorClasses.map(c => c._id);
+
+  if (tutorClassIds.length === 0) return [];
+
+  const agg = await AttendanceSheet.aggregate([
+    { $match: { finalClass: { $in: tutorClassIds } } },
     {
       $group: {
         _id: '$finalClass',
-        totalSessionsTaken: { $sum: 1 },
-        presentCount: {
-          $sum: {
-            $cond: [
-              { $eq: ['$studentAttendanceStatus', STUDENT_ATTENDANCE_STATUS.PRESENT] },
-              1,
-              0,
-            ],
-          },
-        },
+        totalSessionsTaken: { $sum: '$totalSessionsTaken' },
+        presentCount: { $sum: '$presentCount' },
       },
     },
   ]);
@@ -501,19 +638,14 @@ export const getTutorAttendanceSummary = async (tutorUserId: string) => {
 };
 
 export const getAttendanceHistory = async (finalClassId: string) => {
-  const attendances = await Attendance.find({ finalClass: new mongoose.Types.ObjectId(finalClassId) })
-    .sort({ sessionDate: -1 })
-    .populate([
-      { path: 'finalClass' },
-      { path: 'tutor', select: 'name email phone' },
-      { path: 'coordinator', select: 'name email phone' },
-      { path: 'parent', select: 'name email phone' },
-    ]);
+  // Use getAttendanceByClass to fetch flattened records
+  const attendances: any[] = await getAttendanceByClass(finalClassId);
 
+  // Stats calculation
   const total = attendances.length;
   const approvedCount = attendances.filter((a) =>
-    String(a.status) === ATTENDANCE_STATUS.PARENT_APPROVED ||
-    String(a.status) === ATTENDANCE_STATUS.APPROVED
+    String(a.status) === ATTENDANCE_STATUS.APPROVED || // New simplified status
+    String(a.status) === ATTENDANCE_STATUS.PARENT_APPROVED // Legacy/Compat
   ).length;
   const pendingCount = attendances.filter((a) => String(a.status) === ATTENDANCE_STATUS.PENDING).length;
   const rejectedCount = attendances.filter((a) => String(a.status) === ATTENDANCE_STATUS.REJECTED).length;

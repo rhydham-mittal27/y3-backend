@@ -31,7 +31,8 @@ import {
 } from '../validators/paymentValidator';
 import protect from '../middlewares/auth';
 import authorize from '../middlewares/authorize';
-import { requireManagerPermissions } from '../middlewares/managerPermissions';
+import { uploadDocument } from '../middlewares/fileUpload';
+
 import { USER_ROLES } from '../config/constants';
 
 const router = Router();
@@ -41,7 +42,7 @@ router.use(protect);
 router.post(
   '/',
   authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN),
-  requireManagerPermissions('canManagePayments'),
+
   createPaymentValidation,
   createPaymentRecord
 );
@@ -49,7 +50,7 @@ router.post(
 router.post(
   '/manual',
   authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN),
-  requireManagerPermissions('canManagePayments'),
+
   createManualPaymentValidation,
   createManualPaymentRecord
 );
@@ -57,34 +58,34 @@ router.post(
 router.get(
   '/',
   authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN),
-  requireManagerPermissions('canManagePayments'),
+
   getPayments
 );
 
 router.get(
   '/statistics',
   authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN),
-  requireManagerPermissions('canManagePayments'),
+
   getPaymentStats
 );
 router.get(
   '/export/csv',
   authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN),
-  requireManagerPermissions('canManagePayments'),
+
   exportPaymentsCSV
 );
 
 router.get(
   '/filters',
   authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN),
-  requireManagerPermissions('canManagePayments'),
+
   getFilterOptions
 );
 
 router.get(
   '/export/pdf',
   authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN),
-  requireManagerPermissions('canManagePayments'),
+
   exportPaymentsPDF
 );
 router.get('/tutor/:tutorId', authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN, USER_ROLES.TUTOR), tutorIdParamValidation, getTutorPayments);
@@ -125,21 +126,21 @@ router.get(
 router.put(
   '/:id',
   authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN),
-  requireManagerPermissions('canManagePayments'),
+
   updatePaymentValidation,
   updatePaymentRecord
 );
 router.delete(
   '/:id',
   authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN),
-  requireManagerPermissions('canManagePayments'),
+
   paymentIdValidation,
   deletePaymentRecord
 );
 router.patch(
   '/:id/status',
-  authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN, USER_ROLES.PARENT, USER_ROLES.STUDENT),
-  requireManagerPermissions('canManagePayments'),
+  authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN, USER_ROLES.COORDINATOR, USER_ROLES.PARENT, USER_ROLES.STUDENT),
+  uploadDocument,
   updatePaymentStatusValidation,
   updatePaymentStatusController
 );

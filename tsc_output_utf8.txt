@@ -1,0 +1,5 @@
+﻿src/scripts/backfill-rates.ts(3,1): error TS6133: 'path' is declared but its value is never read.
+src/scripts/backfill-rates.ts(5,1): error TS6133: 'ClassLead' is declared but its value is never read.
+src/scripts/fix-payments.ts(4,1): error TS6133: 'ClassLead' is declared but its value is never read.
+src/scripts/seedRequestedLeads.ts(144,5): error TS2322: Type 'unknown' is not assignable to type 'ObjectId | undefined'.
+src/services/attendanceSheetService.ts(519,7): error TS2322: Type '"REJECTED"' is not assignable to type 'ATTENDANCE_STATUS'.

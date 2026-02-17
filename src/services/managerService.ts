@@ -19,7 +19,6 @@ export const createManagerProfile = async (
     canViewSiteLeads?: boolean;
     canVerifyTutors?: boolean;
     canCreateLeads?: boolean;
-    canManagePayments?: boolean;
   }
 ) => {
   const user = await User.findById(userId);
@@ -86,7 +85,6 @@ export const updateManagerProfile = async (
       canViewSiteLeads?: boolean;
       canVerifyTutors?: boolean;
       canCreateLeads?: boolean;
-      canManagePayments?: boolean;
     };
     bio: string;
     languagesKnown: string[];

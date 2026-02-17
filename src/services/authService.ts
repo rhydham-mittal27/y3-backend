@@ -210,7 +210,6 @@ export const loginUser = async (email: string, password: string) => {
         canViewSiteLeads: (manager as any).permissions?.canViewSiteLeads ?? false,
         canVerifyTutors: (manager as any).permissions?.canVerifyTutors ?? false,
         canCreateLeads: (manager as any).permissions?.canCreateLeads ?? false,
-        canManagePayments: (manager as any).permissions?.canManagePayments ?? false,
       };
     } else {
       isProfileComplete = false;
@@ -510,7 +509,6 @@ export const verifyLoginOtp = async (email: string, otp: string) => {
         canViewSiteLeads: (manager as any).permissions?.canViewSiteLeads ?? false,
         canVerifyTutors: (manager as any).permissions?.canVerifyTutors ?? false,
         canCreateLeads: (manager as any).permissions?.canCreateLeads ?? false,
-        canManagePayments: (manager as any).permissions?.canManagePayments ?? false,
       };
     } else {
       isProfileComplete = false;

@@ -48,7 +48,7 @@ export interface IUser {
     canViewSiteLeads?: boolean;
     canVerifyTutors?: boolean;
     canCreateLeads?: boolean;
-    canManagePayments?: boolean;
+
   };
   createdAt: Date;
   updatedAt: Date;

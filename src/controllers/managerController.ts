@@ -31,7 +31,6 @@ export const createManagerProfileController = asyncHandler(async (req: AuthReque
       canViewSiteLeads?: boolean;
       canVerifyTutors?: boolean;
       canCreateLeads?: boolean;
-      canManagePayments?: boolean;
     };
   };
   const manager = await createManagerProfile(userId, permissions);
@@ -102,7 +101,6 @@ export const updateManagerProfileController = asyncHandler(async (req: AuthReque
       canViewSiteLeads?: boolean;
       canVerifyTutors?: boolean;
       canCreateLeads?: boolean;
-      canManagePayments?: boolean;
     };
     bio: string;
     languagesKnown: string[];

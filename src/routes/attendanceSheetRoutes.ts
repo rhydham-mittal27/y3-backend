@@ -3,23 +3,31 @@ import protect from '../middlewares/auth';
 import authorize from '../middlewares/authorize';
 import { USER_ROLES } from '../config/constants';
 import {
-  upsertAttendanceSheetController,
+  addDailyAttendanceController,
   submitAttendanceSheetController,
   getCoordinatorPendingSheetsController,
   getAllPendingSheetsController,
   approveAttendanceSheetController,
   rejectAttendanceSheetController,
+  getSheetsForClassController,
 } from '../controllers/attendanceSheetController';
 
 const router = Router();
 
 router.use(protect);
 
-// Generate or update a monthly attendance sheet for a class
+// Add daily attendance record
 router.post(
   '/',
   authorize(USER_ROLES.TUTOR, USER_ROLES.COORDINATOR, USER_ROLES.MANAGER, USER_ROLES.ADMIN),
-  upsertAttendanceSheetController
+  addDailyAttendanceController
+);
+
+// Get sheets for a class
+router.get(
+  '/class/:classId',
+  authorize(USER_ROLES.TUTOR, USER_ROLES.COORDINATOR, USER_ROLES.MANAGER, USER_ROLES.ADMIN, USER_ROLES.PARENT, USER_ROLES.STUDENT),
+  getSheetsForClassController
 );
 
 // Submit a sheet to the coordinator for approval

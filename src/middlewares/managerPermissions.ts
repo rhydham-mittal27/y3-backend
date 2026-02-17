@@ -9,7 +9,7 @@ export type ManagerPermissionKey =
   | 'canViewSiteLeads'
   | 'canVerifyTutors'
   | 'canCreateLeads'
-  | 'canManagePayments';
+
 
 /**
  * Middleware factory to ensure a MANAGER has the specified permissions.

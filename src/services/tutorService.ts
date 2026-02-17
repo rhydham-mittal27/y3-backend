@@ -14,6 +14,7 @@ import FinalClass from '../models/FinalClass';
 import Test from '../models/Test';
 import Payment from '../models/Payment';
 import DemoHistory from '../models/DemoHistory';
+import AttendanceSheet from '../models/AttendanceSheet';
 import { createNotificationWithPreferences } from './notificationService';
 import { PAYMENT_STATUS, DEMO_STATUS } from '../config/constants';
 
@@ -204,18 +205,20 @@ export const getTutorByUserId = async (userId: string) => {
   let totalClassHours = 0;
 
   if (classIds.length > 0) {
-    // Aggregate attendance counts per finalClass for this tutor.
-    const attendanceCounts = await Attendance.aggregate([
+    // Aggregate attendance counts per finalClass for this tutor using AttendanceSheet.
+    const attendanceCounts = await AttendanceSheet.aggregate([
       {
         $match: {
-          tutor: tutorUserId,
           finalClass: { $in: classIds },
+          // We assume sheets belong to the current tutor of the class or handled via finalClass association
+          // If we want to be strict about who took the session, we might need to filter records inside sheet
+          // But totalSessionsTaken is a good approximation for the class progress.
         },
       },
       {
         $group: {
           _id: '$finalClass',
-          count: { $sum: 1 },
+          count: { $sum: '$totalSessionsTaken' },
         },
       },
     ]);

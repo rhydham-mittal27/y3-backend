@@ -36,7 +36,7 @@ export interface IManagerDocument extends Document {
     canViewSiteLeads?: boolean;
     canVerifyTutors?: boolean;
     canCreateLeads?: boolean;
-    canManagePayments?: boolean;
+
   };
   settings?: {
     dashboardPreferences?: {
@@ -104,7 +104,7 @@ const ManagerSchema: Schema<IManagerDocument> = new Schema<IManagerDocument>(
         canViewSiteLeads: { type: Boolean, default: true },
         canVerifyTutors: { type: Boolean, default: true },
         canCreateLeads: { type: Boolean, default: true },
-        canManagePayments: { type: Boolean, default: true },
+
       },
       default: {},
     },

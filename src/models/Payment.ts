@@ -4,6 +4,7 @@ import { PAYMENT_STATUS, PAYMENT_METHOD, PAYMENT_TYPE } from '../config/constant
 export interface IPaymentDocument extends Document {
   _id: mongoose.Types.ObjectId;
   finalClass?: mongoose.Types.ObjectId;
+  groupClass?: mongoose.Types.ObjectId; // Added for Group support
   attendance?: mongoose.Types.ObjectId;
   attendanceSheet?: mongoose.Types.ObjectId;
   tutor?: mongoose.Types.ObjectId;
@@ -16,6 +17,7 @@ export interface IPaymentDocument extends Document {
   paymentDate?: Date;
   dueDate: Date;
   paidBy?: mongoose.Types.ObjectId;
+  paymentProof?: string;
   notes?: string;
   createdBy: mongoose.Types.ObjectId;
   createdAt: Date;
@@ -25,6 +27,7 @@ export interface IPaymentDocument extends Document {
 const PaymentSchema: Schema<IPaymentDocument> = new Schema<IPaymentDocument>(
   {
     finalClass: { type: Schema.Types.ObjectId, ref: 'FinalClass' },
+    groupClass: { type: Schema.Types.ObjectId, ref: 'GroupClass' },
     attendance: { type: Schema.Types.ObjectId, ref: 'Attendance' },
     attendanceSheet: { type: Schema.Types.ObjectId, ref: 'AttendanceSheet' },
     tutor: { type: Schema.Types.ObjectId, ref: 'User', index: true },
@@ -37,6 +40,7 @@ const PaymentSchema: Schema<IPaymentDocument> = new Schema<IPaymentDocument>(
     paymentDate: { type: Date },
     dueDate: { type: Date, required: true },
     paidBy: { type: Schema.Types.ObjectId, ref: 'User' },
+    paymentProof: { type: String },
     notes: { type: String, maxlength: 500 },
     createdBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
   },
