@@ -60,7 +60,7 @@ export const convertLeadToFinalClass = async (params: {
   try {
     session.startTransaction();
 
-    const lead = await ClassLead.findById(classLeadId).populate('groupClass').session(session);
+    const lead = await ClassLead.findById(classLeadId).populate('groupleads').session(session);
     if (!lead) throw new ErrorResponse('Class lead not found', 404);
     if (String(lead.status) !== CLASS_LEAD_STATUS.CONVERTED) {
       throw new ErrorResponse('Class lead must be in CONVERTED status', 400);
@@ -185,9 +185,9 @@ export const convertLeadToFinalClass = async (params: {
           parentUserObjectId = parentUser._id;
         }
       }
-    } else if (lead.studentType === 'GROUP' && (lead.groupClass || lead.studentDetails) && lead.grade) {
+    } else if (lead.studentType === 'GROUP' && (lead.groupleads || lead.studentDetails) && lead.grade) {
       // Create individual student profiles for group classes
-      const studentDetailsToUse = (lead.groupClass as any)?.students || lead.studentDetails;
+      const studentDetailsToUse = (lead.groupleads as any)?.students || lead.studentDetails;
       const gradeNumber = parseInt(lead.grade.replace(/\D/g, ''));
       if (!isNaN(gradeNumber) && gradeNumber > 0 && studentDetailsToUse) {
         for (const studentDetail of studentDetailsToUse) {
@@ -286,7 +286,7 @@ export const convertLeadToFinalClass = async (params: {
       ratePerSession: calculatedParentRate,
       tutorRatePerSession: calculatedTutorRate,
       completedSessions: 0,
-      studentName: lead.studentType === 'SINGLE' ? lead.studentName : `Group Class (${((lead.groupClass as any)?.students || lead.studentDetails)?.length || 0} students)`,
+      studentName: lead.studentType === 'SINGLE' ? lead.studentName : `Group Class (${((lead.groupleads as any)?.students || lead.studentDetails)?.length || 0} students)`,
       studentGender,
       studentId,
       subject: lead.subject,

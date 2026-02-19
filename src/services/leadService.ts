@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 import ClassLead from '../models/ClassLead';
-import GroupClass from '../models/GroupClass';
+import Groupleads from '../models/GroupClass';
 import ErrorResponse from '../utils/errorResponse';
 import {
   BOARD_TYPE,
@@ -10,6 +10,7 @@ import {
   LEAD_SOURCE,
   PREFERRED_TUTOR_GENDER,
   PAYMENT_STATUS,
+  PAYMENT_TYPE,
   USER_ROLES,
 } from '../config/constants';
 import Manager from '../models/Manager';
@@ -55,7 +56,7 @@ export const generateLeadId = (
   }
 
   return `L${initials}${typeChar}${modeChar}${randomChars}${randomNums}`;
-};
+}
 
 export const createClassLead = async (params: {
   studentType: 'SINGLE' | 'GROUP';
@@ -87,6 +88,12 @@ export const createClassLead = async (params: {
     gender: 'M' | 'F';
     fees: number;
     tutorFees: number;
+    board?: string;
+    grade?: string;
+    subject?: string[];
+    parentName?: string;
+    parentEmail?: string;
+    parentPhone?: string;
   }>;
   createdBy: string;
 }) => {
@@ -120,20 +127,40 @@ export const createClassLead = async (params: {
   });
 
   if (params.studentType === 'GROUP' && params.studentDetails) {
-    const groupClass = new GroupClass({
-      classLead: lead._id,
-      students: params.studentDetails,
-      grade: params.grade,
-      board: params.board,
-    });
-    await groupClass.save();
-    lead.groupClass = groupClass._id as any;
+    try {
+      const groupleads = new Groupleads({
+        name: `Group - ${params.studentDetails.map(s => s.name).join(', ')}`,
+        createdBy: new mongoose.Types.ObjectId(createdBy),
+        // tutor will be assigned when lead is converted to final class
+        classLead: lead._id,
+        students: params.studentDetails.map(s => ({
+          name: s.name,
+          gender: s.gender,
+          fees: s.fees,
+          tutorFees: s.tutorFees,
+          board: s.board,
+          grade: s.grade,
+          subject: s.subject,
+          parentName: s.parentName,
+          parentEmail: s.parentEmail,
+          parentPhone: s.parentPhone,
+        })),
+        grade: params.grade,
+        board: params.board,
+      });
+      await groupleads.save();
+      lead.groupleads = groupleads._id as any;
+    } catch (e) {
+      console.error('Error creating Groupleads:', e);
+      // Don't fail lead creation if Groupleads fails
+    }
   }
 
   await lead.save();
   await lead.populate([
     { path: 'createdBy', select: 'name email role' },
     { path: 'assignedTutor', select: 'name email phone' },
+    { path: 'groupleads' },
   ]);
 
   try {
@@ -325,26 +352,118 @@ export const updateClassLeadStatus = async (
     (lead as any).paymentReceived = true;
     await lead.save();
 
-    // Also find associated FinalClass and its advance payment to mark as PAID
+    // Also find associated FinalClass and its advance payment to mark as PAID or create new
     try {
       const finalCls = await FinalClass.findOne({ classLead: lead._id });
       if (finalCls) {
-        const payment = await Payment.findOne({ 
-          finalClass: finalCls._id, 
-          status: PAYMENT_STATUS.PENDING,
-          attendance: { $exists: false } // Advance payments don't have attendance
-        });
-        
-        if (payment) {
-          payment.status = PAYMENT_STATUS.PAID;
-          payment.paymentDate = new Date();
-          payment.paidBy = new mongoose.Types.ObjectId(_userId) as any;
-          payment.notes = (payment.notes || '') + ' | Payment received via Lead status update';
-          await payment.save();
+        // Determine if this is a group or single student lead
+        const isGroupLead = lead.studentType === 'GROUP' && lead.studentDetails && lead.studentDetails.length > 1;
+
+        if (isGroupLead) {
+          // For GROUP leads: create/mark a PAID payment for each student
+          const studentDetails = lead.studentDetails || [];
+          for (const detail of studentDetails) {
+            try {
+              // Find the student record in the Student collection for this FinalClass
+              const student = await Student.findOne({ 
+                finalClass: finalCls._id, 
+                name: detail.name 
+              });
+              if (student) {
+                // Check if there's already a pending payment for this student
+                let payment = await Payment.findOne({
+                  finalClass: finalCls._id,
+                  student: student._id,
+                  paymentType: PAYMENT_TYPE.FEES_COLLECTED,
+                  attendance: { $exists: false }
+                });
+                const amount = detail.fees || 0;
+                if (payment) {
+                  // Mark existing payment as PAID if pending, else do nothing
+                  if (payment.status === PAYMENT_STATUS.PENDING) {
+                    payment.status = PAYMENT_STATUS.PAID;
+                    payment.paymentDate = new Date();
+                    payment.paidBy = new mongoose.Types.ObjectId(_userId) as any;
+                    payment.notes = (payment.notes || '') + ' | Payment received via Lead status update';
+                    await payment.save();
+                  }
+                } else if (amount > 0) {
+                  // Create new PENDING payment for this student
+                  await Payment.create({
+                    finalClass: finalCls._id,
+                    student: student._id,
+                    tutor: finalCls.tutor,
+                    amount: amount,
+                    currency: 'INR',
+                    status: PAYMENT_STATUS.PENDING,
+                    paymentType: PAYMENT_TYPE.FEES_COLLECTED,
+                    dueDate: new Date(),
+                    createdBy: new mongoose.Types.ObjectId(_userId),
+                    notes: `Pending payment created via Lead status update for ${detail.name}`,
+                  });
+                }
+              }
+            } catch (e) {
+              console.error(`Error processing payment for student ${detail.name}:`, e);
+            }
+          }
+        } else {
+          // For SINGLE student leads: create/mark a single PAID payment
+          // Only consider FEES_COLLECTED advance payments (not tutor payouts)
+          let payment = await Payment.findOne({ 
+            finalClass: finalCls._id, 
+            paymentType: PAYMENT_TYPE.FEES_COLLECTED,
+            status: PAYMENT_STATUS.PENDING,
+            attendance: { $exists: false } // Advance payments don't have attendance
+          });
+          
+          if (payment) {
+            payment.status = PAYMENT_STATUS.PAID;
+            payment.paymentDate = new Date();
+            payment.paidBy = new mongoose.Types.ObjectId(_userId) as any;
+            payment.notes = (payment.notes || '') + ' | Payment received via Lead status update';
+            await payment.save();
+          } else {
+            // Create new PAID payment
+            // Determine amount: prefer student-specific fee if available, then lead.paymentAmount, then finalClass.monthlyFees
+            let amount = 0;
+            try {
+              const student = await Student.findOne({ finalClass: finalCls._id });
+              if (student && (student as any).fees) {
+                amount = (student as any).fees;
+              } else if (lead.paymentAmount && lead.paymentAmount > 0) {
+                amount = lead.paymentAmount;
+              } else if (finalCls.monthlyFees && finalCls.monthlyFees > 0) {
+                amount = finalCls.monthlyFees;
+              }
+
+              if (amount > 0) {
+                const paymentPayload: any = {
+                  finalClass: finalCls._id,
+                  tutor: finalCls.tutor,
+                  amount: amount,
+                  currency: 'INR',
+                  status: PAYMENT_STATUS.PAID,
+                  paymentType: PAYMENT_TYPE.FEES_COLLECTED,
+                  dueDate: new Date(),
+                  paymentDate: new Date(),
+                  paidBy: new mongoose.Types.ObjectId(_userId),
+                  createdBy: new mongoose.Types.ObjectId(_userId),
+                  notes: 'Payment received via Lead status update',
+                };
+
+                if (student) paymentPayload.student = student._id;
+
+                payment = await Payment.create(paymentPayload);
+              }
+            } catch (e) {
+              console.error('Error while creating paid payment via lead status update:', e);
+            }
+          }
         }
       }
     } catch (err) {
-      console.error('Failed to auto-update payment status:', err);
+      console.error('Failed to auto-update/create payment status:', err);
     }
 
     await lead.populate([
@@ -714,17 +833,5 @@ export const reassignClassLead = async (leadId: string, newManagerUserId: string
   return lead;
 };
 
-export default {
-  createClassLead,
-  getAllClassLeads,
-  getClassLeadById,
-  updateClassLead,
-  updateClassLeadStatus,
-  deleteClassLead,
-  getLeadsByManager,
-  getLeadsByTutor,
-  getDistinctFilterValues,
-  getCRMLeadsGrouped,
-  repostClassAsLead,
-  reassignClassLead,
-};
+
+

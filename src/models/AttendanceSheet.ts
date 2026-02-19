@@ -25,7 +25,7 @@ export interface IDailyAttendanceRecord {
 export interface IAttendanceSheetDocument extends Document {
   _id: mongoose.Types.ObjectId;
   finalClass?: mongoose.Types.ObjectId;
-  groupClass?: mongoose.Types.ObjectId; // New: For Group Classes
+  groupleads?: mongoose.Types.ObjectId; // New: For Group Classes
   sheetType: 'SINGLE' | 'GROUP';
   coordinator?: mongoose.Types.ObjectId;
   month: number;
@@ -72,7 +72,7 @@ const DailyAttendanceRecordSchema = new Schema<IDailyAttendanceRecord>({
 const AttendanceSheetSchema: Schema<IAttendanceSheetDocument> = new Schema<IAttendanceSheetDocument>(
   {
     finalClass: { type: Schema.Types.ObjectId, ref: 'FinalClass' },
-    groupClass: { type: Schema.Types.ObjectId, ref: 'GroupClass' },
+    groupleads: { type: Schema.Types.ObjectId, ref: 'Groupleads' },
     sheetType: { type: String, enum: ['SINGLE', 'GROUP'], default: 'SINGLE' },
     coordinator: { type: Schema.Types.ObjectId, ref: 'User' },
     month: { type: Number, required: true },

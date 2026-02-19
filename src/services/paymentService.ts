@@ -98,63 +98,105 @@ export const createAdvancePaymentForFinalClass = async (finalClassId: string, cr
 
   const cls: any = finalClass as any;
   const lead: any = cls.classLead;
-  let amount = lead?.paymentAmount;
 
-  // Fallback: use finalClass.ratePerSession if lead.paymentAmount is not set
-  if (!amount || amount <= 0) {
-    if (cls.ratePerSession && cls.ratePerSession > 0) {
-      amount = cls.ratePerSession;
-    }
+  // 1. Determine Students & Fees
+  let studentsDetails: { studentId: string; fee: number }[] = [];
+  
+  // Check if it's a group class (GroupClass linked or studentDetails array present)
+  // If we have associated students in the class, we should use them
+  const associatedStudents = await Student.find({ finalClass: finalClass._id });
+  
+  if (associatedStudents.length > 1) {
+    // IT IS A GROUP CLASS
+    // Try to match students with their specific fees from lead.studentDetails
+    const leadDetails = lead?.studentDetails || [];
+    
+    studentsDetails = associatedStudents.map(student => {
+      // Find matching detail by name (fallback)
+      const detail = leadDetails.find((d: any) => d.name === student.name);
+      return {
+        studentId: String(student._id),
+        fee: detail?.fees || (lead.paymentAmount / associatedStudents.length) || 0 // Fallback to even split if no specific fee
+      };
+    });
+  } else if (associatedStudents.length === 1) {
+    // SINGLE STUDENT
+    studentsDetails = [{
+      studentId: String(associatedStudents[0]._id),
+      fee: lead?.paymentAmount || (cls.monthlyFees) || 0
+    }];
+  } else {
+    // Fallback if no students found yet (should not happen if converted properly)
+    // Just use the Class Lead data directly if possible, or return null
+     return null; 
   }
 
-  // Fallback: use tutorFees if still not set
-  if (!amount || amount <= 0) {
-    if (lead?.tutorFees && lead.tutorFees > 0) {
-      amount = lead.tutorFees;
-    }
-  }
-
-  // Fallback for group leads: sum tutorFees from studentDetails
-  if ((!amount || amount <= 0) && Array.isArray(lead?.studentDetails) && lead.studentDetails.length > 0) {
-    const totalTutorFees = (lead.studentDetails as any[]).reduce(
-      (sum: number, s: any) => sum + (Number(s.tutorFees) || 0),
-      0
-    );
-    if (totalTutorFees > 0) {
-      amount = totalTutorFees;
-    }
-  }
-
-  if (!amount || amount <= 0) {
-    throw new ErrorResponse('Advance payment amount not set for this class lead', 400);
-  }
-
-  const existing = await Payment.findOne({ finalClass: finalClass._id, attendance: { $exists: false } });
-  if (existing) {
-    return existing;
-  }
-
+  const results: any[] = [];
   const dueDate = new Date(cls.startDate || Date.now());
   dueDate.setDate(dueDate.getDate() + DEFAULT_DUE_DAYS);
 
-  const payment = await Payment.create({
-    finalClass: finalClass._id,
-    tutor: cls.tutor,
-    amount,
-    currency: 'INR',
-    status: PAYMENT_STATUS.PENDING,
-    dueDate,
-    createdBy: new mongoose.Types.ObjectId(createdBy),
-    notes: 'Advance class payment',
-  });
+  // 2. Create FEES_COLLECTED payments (One per student)
+  for (const item of studentsDetails) {
+    if (item.fee > 0) {
+      const existing = await Payment.findOne({ 
+        finalClass: finalClass._id, 
+        student: new mongoose.Types.ObjectId(item.studentId),
+        paymentType: PAYMENT_TYPE.FEES_COLLECTED,
+        attendance: { $exists: false } 
+      });
 
-  await payment.populate([
-    { path: 'finalClass' },
-    { path: 'tutor', select: 'name email phone' },
-    { path: 'createdBy', select: 'name email' },
-  ]);
+      if (!existing) {
+        const payment = await Payment.create({
+          finalClass: finalClass._id,
+          groupClass: cls.groupClass, // If applicable
+          student: new mongoose.Types.ObjectId(item.studentId),
+          tutor: cls.tutor,
+          amount: item.fee,
+          currency: 'INR',
+          status: PAYMENT_STATUS.PENDING,
+          paymentType: PAYMENT_TYPE.FEES_COLLECTED,
+          dueDate,
+          createdBy: new mongoose.Types.ObjectId(createdBy),
+          notes: 'Advance class fees',
+        });
+        results.push(payment);
+      } else {
+        results.push(existing);
+      }
+    }
+  }
 
-  return payment;
+  // 3. Create TUTOR_PAYOUT payment (One for the tutor)
+  // Only if tutor fees are defined
+  let tutorPayoutAmount = lead?.tutorFees || (cls.tutorMonthlyFees) || 0;
+  
+  if (tutorPayoutAmount > 0) {
+      const existingPayout = await Payment.findOne({ 
+        finalClass: finalClass._id, 
+        paymentType: PAYMENT_TYPE.TUTOR_PAYOUT,
+        attendance: { $exists: false } 
+      });
+
+      if (!existingPayout) {
+        const payout = await Payment.create({
+          finalClass: finalClass._id,
+          groupClass: cls.groupClass,
+          tutor: cls.tutor,
+          amount: tutorPayoutAmount,
+          currency: 'INR',
+          status: PAYMENT_STATUS.PENDING, // Payout is pending until admin pays
+          paymentType: PAYMENT_TYPE.TUTOR_PAYOUT,
+          dueDate, // Maybe different due date for payout? Using same for now.
+          createdBy: new mongoose.Types.ObjectId(createdBy),
+          notes: 'Advance tutor payout',
+        });
+        results.push(payout);
+      } else {
+        results.push(existingPayout);
+      }
+  }
+
+  return results.length > 0 ? results : null;
 };
 
 export const sendPaymentReminder = async (args: { paymentId: string; reminderMessage?: string; sentBy: string }) => {
@@ -266,10 +308,11 @@ export const updatePaymentStatus = async (
   currentUser?: { id: string; role: string },
   paymentProof?: string
 ) => {
-  const session = await mongoose.startSession();
-  session.startTransaction();
-
-  try {
+  // Check if transactions are supported (Replica Set)
+  // Note: Reliable check for replica set can be tricky. Simpler approach: Try transaction, fallback if failed.
+  
+  // Implementation with fallback
+  const performUpdate = async (session: mongoose.ClientSession | null) => {
     // Find payment with necessary population
     const payment = await Payment.findById(paymentId)
       .populate('finalClass')
@@ -280,20 +323,17 @@ export const updatePaymentStatus = async (
       throw new ErrorResponse('Payment not found', 404);
     }
 
-    // Check if the current user is a parent trying to update the payment
+    // Check availability logic...
     if (currentUser?.role === 'parent') {
-      // Get the final class to check if the parent is associated with it
       const finalClass = await FinalClass.findById(payment.finalClass)
         .populate('student')
         .session(session);
-
-      // @ts-ignore - Ignore TypeScript error for student.parent access
+      // @ts-ignore
       if (finalClass?.student?.parent?.toString() !== currentUser.id) {
         throw new ErrorResponse('Not authorized to update this payment', 403);
       }
     }
 
-    // Check if the current user is a student trying to update the payment
     if (currentUser?.role === 'student') {
       const student = await Student.findById(currentUser.id).session(session);
       if (!student || String(student.finalClass) !== String(payment.finalClass)) {
@@ -313,7 +353,6 @@ export const updatePaymentStatus = async (
       throw new ErrorResponse('Invalid payment status transition', 400);
     }
 
-    // Update payment status and related fields
     payment.status = newStatus as any;
     if (newStatus === PAYMENT_STATUS.PAID) {
       payment.paymentDate = new Date();
@@ -326,7 +365,7 @@ export const updatePaymentStatus = async (
     
     await payment.save({ session });
     
-    // Send notification
+    // Notifications (non-critical, can be outside transaction but keeping inside for simplicity if session exists)
     try {
       await createNotificationWithPreferences({
         recipient: payment.tutor as any,
@@ -341,7 +380,6 @@ export const updatePaymentStatus = async (
       logError(`Failed to create payment status notification: ${String(e)}`);
     }
 
-    // Populate payment details
     await payment.populate([
       { path: 'finalClass' },
       { path: 'attendance' },
@@ -351,7 +389,6 @@ export const updatePaymentStatus = async (
       { path: 'paidBy', select: 'name email' },
     ]);
 
-    // Log manager activity if payment is marked as paid
     if (newStatus === PAYMENT_STATUS.PAID && paidBy) {
       try {
         await Manager.findOneAndUpdate(
@@ -382,9 +419,23 @@ export const updatePaymentStatus = async (
       }
     }
 
-    await session.commitTransaction();
     return payment;
-  } catch (error) {
+  };
+
+  const session = await mongoose.startSession();
+  try {
+    session.startTransaction();
+    const result = await performUpdate(session);
+    await session.commitTransaction();
+    return result;
+  } catch (error: any) {
+    // If transaction is not supported (standalone mongo), retry without transaction
+    if (error.message && (error.message.includes('Transactions are not supported') || error.code === 20)) {
+       await session.abortTransaction(); // Cleanup failed transaction attempt
+       logError('Transactions not supported. Retrying without transaction.');
+       return await performUpdate(null);
+    }
+    
     await session.abortTransaction();
     throw error;
   } finally {
@@ -832,33 +883,67 @@ export const createCyclePayments = async (sheetId: string, createdBy: string) =>
   const numSessions = sheet.totalSessionsPlanned || 0;
   if (numSessions <= 0) return;
 
-  const parentRate = cls.ratePerSession || 0;
-  // const tutorRate = cls.tutorRatePerSession || 0; // Unused, removing
-
-  // Prefer monthlyFees if available, otherwise calculate from rate * sessions
-  const parentAmount = (cls.monthlyFees && cls.monthlyFees > 0) 
-    ? cls.monthlyFees 
-    : (parentRate * numSessions);
-
-  // const tutorAmount = ... (removed commented out code)
+  // NEW: Skip Fees Collected for Cycle 1 (covered by Advance Payment)
+  if (sheet.cycleNumber === 1) {
+    // logger.info(`Skipping cycle payment creation for Cycle 1 of sheet ${sheet._id}`);
+    return;
+  }
 
   const dueDate = new Date();
   dueDate.setDate(dueDate.getDate() + 7);
 
-  // 1. Fee Collected (Parent -> Coordinator/Office)
-  if (parentAmount > 0) {
-    await Payment.create({
-      finalClass: cls._id,
-      attendanceSheet: sheet._id,
-      tutor: cls.tutor,
-      amount: parentAmount,
-      currency: 'INR',
-      status: PAYMENT_STATUS.PENDING,
-      paymentType: PAYMENT_TYPE.FEES_COLLECTED,
-      dueDate,
-      createdBy: new mongoose.Types.ObjectId(createdBy),
-      notes: `Monthly fees for ${sheet.periodLabel}`,
-    });
+  const parentRate = cls.ratePerSession || 0;
+
+  // Check for associated students to determine if it's a Group Class (Legacy FinalClass style)
+  const students = await Student.find({ finalClass: cls._id });
+
+  if (students.length > 1) {
+    // --- GROUP CLASS LOGIC ---
+    const monthlyFees = cls.monthlyFees || 0;
+    // Avoid division by zero
+    const perStudentFee = students.length > 0 ? Math.round(monthlyFees / students.length) : 0;
+    
+    if (perStudentFee > 0) {
+      for (const student of students) {
+        // Create payment for each student
+        const paymentData: any = {
+          finalClass: cls._id,
+          attendanceSheet: sheet._id,
+          student: student._id,
+          tutor: cls.tutor,
+          amount: perStudentFee,
+          currency: 'INR',
+          status: PAYMENT_STATUS.PENDING,
+          paymentType: PAYMENT_TYPE.FEES_COLLECTED,
+          dueDate,
+          createdBy: new mongoose.Types.ObjectId(createdBy),
+          notes: `Monthly fees for ${sheet.periodLabel} (Group Split)`,
+        };
+        await Payment.create(paymentData);
+      }
+    }
+  } else {
+    // --- SINGLE CLASS LOGIC ---
+    // Prefer monthlyFees if available, otherwise calculate from rate * sessions
+    const parentAmount = (cls.monthlyFees && cls.monthlyFees > 0) 
+      ? cls.monthlyFees 
+      : (parentRate * numSessions);
+
+    // 1. Fee Collected (Parent -> Coordinator/Office)
+    if (parentAmount > 0) {
+      await Payment.create({
+        finalClass: cls._id,
+        attendanceSheet: sheet._id,
+        tutor: cls.tutor,
+        amount: parentAmount,
+        currency: 'INR',
+        status: PAYMENT_STATUS.PENDING,
+        paymentType: PAYMENT_TYPE.FEES_COLLECTED,
+        dueDate,
+        createdBy: new mongoose.Types.ObjectId(createdBy),
+        notes: `Monthly fees for ${sheet.periodLabel}`,
+      });
+    }
   }
 
   // 2. Tutor Payout (Coordinator/Office -> Tutor)
@@ -882,22 +967,4 @@ export const createCyclePayments = async (sheetId: string, createdBy: string) =>
   */
 };
 
-export default {
-  createPayment,
-  createPaymentForSheet,
-  getAllPayments,
-  getPaymentById,
-  updatePaymentStatus,
-  updatePayment,
-  deletePayment,
-  getPaymentsByTutor,
-  getPaymentsByClass,
-  markOverduePayments,
-  getPaymentStatistics,
-  generatePaymentReport,
-  sendPaymentReminder,
-  getPaymentsByParent,
-  getPaymentFilterOptions,
-  createManualPayment,
-  createCyclePayments,
-};
+

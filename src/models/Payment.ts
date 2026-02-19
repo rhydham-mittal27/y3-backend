@@ -4,7 +4,8 @@ import { PAYMENT_STATUS, PAYMENT_METHOD, PAYMENT_TYPE } from '../config/constant
 export interface IPaymentDocument extends Document {
   _id: mongoose.Types.ObjectId;
   finalClass?: mongoose.Types.ObjectId;
-  groupClass?: mongoose.Types.ObjectId; // Added for Group support
+  groupleads?: mongoose.Types.ObjectId; // Added for Group support
+  student?: mongoose.Types.ObjectId; // Added for individual student payments
   attendance?: mongoose.Types.ObjectId;
   attendanceSheet?: mongoose.Types.ObjectId;
   tutor?: mongoose.Types.ObjectId;
@@ -27,7 +28,8 @@ export interface IPaymentDocument extends Document {
 const PaymentSchema: Schema<IPaymentDocument> = new Schema<IPaymentDocument>(
   {
     finalClass: { type: Schema.Types.ObjectId, ref: 'FinalClass' },
-    groupClass: { type: Schema.Types.ObjectId, ref: 'GroupClass' },
+    groupleads: { type: Schema.Types.ObjectId, ref: 'Groupleads' },
+    student: { type: Schema.Types.ObjectId, ref: 'Student' }, // Added for individual student payments
     attendance: { type: Schema.Types.ObjectId, ref: 'Attendance' },
     attendanceSheet: { type: Schema.Types.ObjectId, ref: 'AttendanceSheet' },
     tutor: { type: Schema.Types.ObjectId, ref: 'User', index: true },

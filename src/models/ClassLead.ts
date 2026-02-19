@@ -62,7 +62,7 @@ export interface IClassLeadDocument extends Document {
   notes?: string;
 
   // Group specific fields
-  groupClass?: mongoose.Types.ObjectId;
+  groupleads?: mongoose.Types.ObjectId;
   numberOfStudents?: number;
   studentDetails?: IStudentDetail[];
 
@@ -224,7 +224,7 @@ const ClassLeadSchema: Schema<IClassLeadDocument> = new Schema<IClassLeadDocumen
     demoTutor: { type: Schema.Types.ObjectId, ref: 'User' },
     demoDetails: { type: DemoDetailsSchema },
     createdBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
-    groupClass: { type: Schema.Types.ObjectId, ref: 'GroupClass' },
+    groupleads: { type: Schema.Types.ObjectId, ref: 'Groupleads' },
     notes: { type: String },
   },
   { timestamps: true, toJSON: { virtuals: true }, toObject: { virtuals: true } }

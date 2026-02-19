@@ -2,7 +2,7 @@ import 'dotenv/config';
 import mongoose from 'mongoose';
 import ClassLead from '../models/ClassLead';
 import User from '../models/User';
-import GroupClass from '../models/GroupClass';
+import Groupleads from '../models/GroupClass';
 import { generateLeadId } from '../services/leadService';
 import { 
   BOARD_TYPE, 
@@ -131,19 +131,19 @@ async function main() {
   );
   console.log(`[seedRequestedLeads] Upserted GROUP lead: ${groupLead.studentName} (${groupLead.leadId})`);
 
-  // Create GroupClass record if it doesn't exist
-  let groupClass = await GroupClass.findOne({ classLead: groupLead._id });
-  if (!groupClass) {
-    groupClass = new GroupClass({
+  // Create Groupleads record if it doesn't exist
+  let groupleads = await Groupleads.findOne({ classLead: groupLead._id });
+  if (!groupleads) {
+    groupleads = new Groupleads({
       classLead: groupLead._id,
       students: groupLeadData.studentDetails,
       grade: groupLeadData.grade,
       board: groupLeadData.board,
     });
-    await groupClass.save();
-    groupLead.groupClass = groupClass._id as any;
+    await groupleads.save();
+    groupLead.groupleads = groupleads._id as any;
     await groupLead.save();
-    console.log(`[seedRequestedLeads] Created GroupClass for lead: ${groupLead.studentName}`);
+    console.log(`[seedRequestedLeads] Created Groupleads for lead: ${groupLead.studentName}`);
   }
 
 }

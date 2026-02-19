@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 import FinalClass from '../models/FinalClass';
-import GroupClass from '../models/GroupClass';
+import Groupleads from '../models/GroupClass';
 import StudentEnrollment from '../models/StudentEnrollment';
 import AttendanceSheet, { IDailyAttendanceRecord, IStudentAttendance } from '../models/AttendanceSheet';
 import Payment from '../models/Payment';
@@ -35,9 +35,9 @@ export const addDailyAttendance = async (params: {
 
   if (groupClassId) {
     if (!mongoose.isValidObjectId(groupClassId)) throw new ErrorResponse('Invalid group class id', 400);
-    const group = await GroupClass.findById(groupClassId);
-    if (!group) throw new ErrorResponse('Group class not found', 404);
-    if (group.status !== 'ACTIVE') throw new ErrorResponse('Group must be ACTIVE to mark attendance', 400);
+    const group = await Groupleads.findById(groupClassId);
+    if (!group) throw new ErrorResponse('Groupleads not found', 404);
+    if (group.status !== 'ACTIVE') throw new ErrorResponse('Groupleads must be ACTIVE to mark attendance', 400);
     
     entity = group;
     // Group doesn't explicitly have a coordinator field in the Plan? 
@@ -141,13 +141,11 @@ export const addDailyAttendance = async (params: {
 
     sheet = await AttendanceSheet.create(sheetData);
 
-    // Create automatic cycle payments (only for Single classes for now)
-    if (!isGroup) {
-        try {
-          await createCyclePayments(String(sheet._id), userId);
-        } catch (paymentErr) {
-          logger.error(`Failed to create cycle payments for sheet ${sheet._id}: ${paymentErr}`);
-        }
+    // Create automatic cycle payments (for both Single and Group classes)
+    try {
+      await createCyclePayments(String(sheet._id), userId);
+    } catch (paymentErr) {
+      logger.error(`Failed to create cycle payments for sheet ${sheet._id}: ${paymentErr}`);
     }
   }
 
@@ -376,21 +374,21 @@ export const approveAttendanceSheet = async (sheetId: string, coordinatorUserId:
   // Verification Constraint: Check if all planned sessions are marked
   // let entity: any; // Unused
   let requiredSessions = 8;
-  let currentTutorId: string;
+  let currentTutorId: string | undefined;
   let startDate: Date;
   let tutorHistory: any[] = [];
   
-  if (sheet.sheetType === 'GROUP' || sheet.groupClass) {
-      if (!sheet.groupClass) throw new ErrorResponse('Group Class reference missing in Group Sheet', 500);
-      const group = await GroupClass.findById(sheet.groupClass);
-      if (!group) throw new ErrorResponse('Group class not found', 404);
+    if (sheet.sheetType === 'GROUP' || sheet.groupleads) {
+      if (!sheet.groupleads) throw new ErrorResponse('Groupleads reference missing in Group Sheet', 500);
+      const group = await Groupleads.findById(sheet.groupleads);
+      if (!group) throw new ErrorResponse('Groupleads not found', 404);
       // entity = group;
       requiredSessions = group.sessionsPerMonth || 8;
-      currentTutorId = group.tutor.toString();
-      startDate = group.createdAt; // Group doesn't have startDate field in schema, use createdAt or we need to add startDate?
-      // User request did not specify startDate for Group. 
+      currentTutorId = group.tutor ? group.tutor.toString() : undefined;
+      startDate = group.createdAt; // Groupleads doesn't have startDate field in schema, use createdAt or we need to add startDate?
+      // User request did not specify startDate for Groupleads. 
       // We can use createdAt as proxy for start.
-      tutorHistory = []; // No tutor history in Group Schema yet.
+      tutorHistory = []; // No tutor history in Groupleads Schema yet.
   } else {
       const finalClass = await FinalClass.findById(sheet.finalClass);
       if (!finalClass) throw new ErrorResponse('Final class not found', 404);
@@ -460,16 +458,16 @@ export const approveAttendanceSheet = async (sheetId: string, coordinatorUserId:
   // Handle Post-Approval Actions
   try {
      if (sheet.sheetType === 'GROUP') {
-         // 1. Update Student Enrollment Counters
-         if (sheet.groupClass) {
-             // For each record, for each studentAttendance
-             // We need to aggregate.
-             // Loop through records -> studentAttendances
-             for (const record of sheet.records) {
-                 if (record.studentAttendances && record.studentAttendances.length > 0) {
-                     for (const sa of record.studentAttendances) {
-                         if (sa.status === STUDENT_ATTENDANCE_STATUS.PRESENT && sa.enrollment) {
-                             // Increment sessionsVerified for this enrollment
+       // 1. Update Student Enrollment Counters
+       if (sheet.groupleads) {
+         // For each record, for each studentAttendance
+         // We need to aggregate.
+         // Loop through records -> studentAttendances
+         for (const record of sheet.records) {
+           if (record.studentAttendances && record.studentAttendances.length > 0) {
+             for (const sa of record.studentAttendances) {
+               if (sa.status === STUDENT_ATTENDANCE_STATUS.PRESENT && sa.enrollment) {
+                 // Increment sessionsVerified for this enrollment
                              await StudentEnrollment.findByIdAndUpdate(sa.enrollment, { 
                                  $inc: { sessionsVerified: 1 } 
                              });

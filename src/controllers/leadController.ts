@@ -66,6 +66,17 @@ export const createLead = asyncHandler(async (req: AuthRequest, res) => {
   const normalizedStudentGender =
     studentType === 'GROUP' || !studentGender ? undefined : studentGender;
 
+  // For GROUP leads, populate top-level grade and subject from first student if not provided
+  let finalGrade = grade;
+  let finalSubject = subject;
+  let finalBoard = board;
+  
+  if (studentType === 'GROUP' && studentDetails && studentDetails.length > 0) {
+    finalGrade = finalGrade || studentDetails[0].grade;
+    finalSubject = finalSubject || studentDetails[0].subject;
+    finalBoard = finalBoard || studentDetails[0].board;
+  }
+
   const lead = await createClassLead({
     studentType,
     studentName,
@@ -73,9 +84,9 @@ export const createLead = asyncHandler(async (req: AuthRequest, res) => {
     parentName,
     parentEmail,
     parentPhone,
-    grade,
-    subject,
-    board,
+    grade: finalGrade,
+    subject: finalSubject,
+    board: finalBoard,
     mode,
     location,
     city,

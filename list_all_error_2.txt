@@ -1,0 +1,12 @@
+Error: MissingSchemaError: Schema hasn't been registered for model "User".
+Use mongoose.model(name, schema)
+    at NativeConnection.model (C:\Users\Rhydham\Desktop\projects\ys-final\v3\web-app\backend\node_modules\mongoose\lib\connection.js:1497:13)
+    at _getModelFromConn (C:\Users\Rhydham\Desktop\projects\ys-final\v3\web-app\backend\node_modules\mongoose\lib\helpers\populate\getModelsMapForPopulate.js:579:15)
+    at addModelNamesToMap (C:\Users\Rhydham\Desktop\projects\ys-final\v3\web-app\backend\node_modules\mongoose\lib\helpers\populate\getModelsMapForPopulate.js:507:17)
+    at getModelsMapForPopulate (C:\Users\Rhydham\Desktop\projects\ys-final\v3\web-app\backend\node_modules\mongoose\lib\helpers\populate\getModelsMapForPopulate.js:208:7)
+    at _populatePath (C:\Users\Rhydham\Desktop\projects\ys-final\v3\web-app\backend\node_modules\mongoose\lib\model.js:4481:21)
+    at Function.populate (C:\Users\Rhydham\Desktop\projects\ys-final\v3\web-app\backend\node_modules\mongoose\lib\model.js:4448:21)
+    at model.Query._find (C:\Users\Rhydham\Desktop\projects\ys-final\v3\web-app\backend\node_modules\mongoose\lib\query.js:2456:20)
+    at processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async model.Query.exec (C:\Users\Rhydham\Desktop\projects\ys-final\v3\web-app\backend\node_modules\mongoose\lib\query.js:4627:63)
+    at async run (C:\Users\Rhydham\Desktop\projects\ys-final\v3\web-app\backend\src\scripts\list_all_tutor_payouts.ts:15:29)

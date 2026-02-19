@@ -1,0 +1,20 @@
+C:\Users\Rhydham\Desktop\projects\ys-final\v3\web-app\backend\node_modules\ts-node\src\index.ts:859
+    return new TSError(diagnosticText, diagnosticCodes, diagnostics);
+           ^
+TSError: ⨯ Unable to compile TypeScript:
+src/scripts/verify_tutor_payouts.ts(10,43): error TS6133: 'STUDENT_ATTENDANCE_STATUS' is declared but its value is never read.
+src/scripts/verify_tutor_payouts.ts(72,32): error TS2345: Argument of type '{ sessionDate: Date; durationHours: number; topicCovered: string; studentAttendanceStatus: any; status: ATTENDANCE_STATUS.PENDING; submittedBy: mongoose.Types.ObjectId; tutor: mongoose.Types.ObjectId; }' is not assignable to parameter of type 'IDailyAttendanceRecord'.
+  Property 'submittedAt' is missing in type '{ sessionDate: Date; durationHours: number; topicCovered: string; studentAttendanceStatus: any; status: ATTENDANCE_STATUS.PENDING; submittedBy: mongoose.Types.ObjectId; tutor: mongoose.Types.ObjectId; }' but required in type 'IDailyAttendanceRecord'.
+
+    at createTSError (C:\Users\Rhydham\Desktop\projects\ys-final\v3\web-app\backend\node_modules\ts-node\src\index.ts:859:12)
+    at reportTSError (C:\Users\Rhydham\Desktop\projects\ys-final\v3\web-app\backend\node_modules\ts-node\src\index.ts:863:19)
+    at getOutput (C:\Users\Rhydham\Desktop\projects\ys-final\v3\web-app\backend\node_modules\ts-node\src\index.ts:1077:36)
+    at Object.compile (C:\Users\Rhydham\Desktop\projects\ys-final\v3\web-app\backend\node_modules\ts-node\src\index.ts:1433:41)
+    at Module.m._compile (C:\Users\Rhydham\Desktop\projects\ys-final\v3\web-app\backend\node_modules\ts-node\src\index.ts:1617:30)
+    at Module._extensions..js (node:internal/modules/cjs/loader:1623:10)
+    at Object.require.extensions.<computed> [as .ts] (C:\Users\Rhydham\Desktop\projects\ys-final\v3\web-app\backend\node_modules\ts-node\src\index.ts:1621:12)
+    at Module.load (node:internal/modules/cjs/loader:1266:32)
+    at Function.Module._load (node:internal/modules/cjs/loader:1091:12)
+    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:164:12) {
+  diagnosticCodes: [ 6133, 2345 ]
+}
