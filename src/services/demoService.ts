@@ -89,7 +89,10 @@ export const updateDemoStatus = async (
   rejectionReason: string | undefined,
   updatedBy: string,
   updatedByRole: USER_ROLES | string,
-  coordinatorUserId?: string
+  coordinatorUserId?: string,
+  attendanceStatus?: 'PRESENT' | 'ABSENT',
+  topicCovered?: string,
+  duration?: string
 ) => {
   const lead = await ClassLead.findById(classLeadId);
   if (!lead) throw new ErrorResponse('Class lead not found', 404);
@@ -138,6 +141,9 @@ export const updateDemoStatus = async (
   lead.demoDetails.demoStatus = newStatus as any;
   if (newStatus === DEMO_STATUS.COMPLETED) {
     if (feedback) (lead.demoDetails as any).feedback = feedback;
+    if (attendanceStatus) (lead.demoDetails as any).attendanceStatus = attendanceStatus;
+    if (topicCovered) (lead.demoDetails as any).topicCovered = topicCovered;
+    if (duration) (lead.demoDetails as any).duration = duration;
   }
   if (newStatus === DEMO_STATUS.APPROVED) {
     const tutorProfile = await Tutor.findOne({ user: lead.assignedTutor });
@@ -156,6 +162,9 @@ export const updateDemoStatus = async (
     if (newStatus === DEMO_STATUS.COMPLETED) {
       latestHistory.completedAt = new Date();
       latestHistory.feedback = feedback;
+      if (attendanceStatus) latestHistory.attendanceStatus = attendanceStatus;
+      if (topicCovered) latestHistory.topicCovered = topicCovered;
+      if (duration) latestHistory.duration = duration;
     } else if (newStatus === DEMO_STATUS.APPROVED || newStatus === DEMO_STATUS.REJECTED) {
       latestHistory.resultUpdatedAt = new Date();
       latestHistory.resultUpdatedBy = new mongoose.Types.ObjectId(updatedBy);

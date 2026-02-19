@@ -15,6 +15,9 @@ export interface IDemoHistoryDocument extends Document {
   feedback?: string;
   rejectionReason?: string;
   notes?: string;
+  attendanceStatus?: 'PRESENT' | 'ABSENT';
+  topicCovered?: string;
+  duration?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -34,6 +37,9 @@ const DemoHistorySchema = new Schema<IDemoHistoryDocument>(
     feedback: { type: String },
     rejectionReason: { type: String },
     notes: { type: String },
+    attendanceStatus: { type: String, enum: ['PRESENT', 'ABSENT'] },
+    topicCovered: { type: String },
+    duration: { type: String },
   },
   { timestamps: true }
 );

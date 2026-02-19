@@ -14,6 +14,9 @@ export interface IDemoDetailsEmbedded {
   demoStatus?: DEMO_STATUS | string;
   feedback?: string;
   assignedAt?: Date;
+  attendanceStatus?: 'PRESENT' | 'ABSENT';
+  topicCovered?: string;
+  duration?: string;
 }
 
 export interface IStudentDetail {
@@ -78,6 +81,9 @@ const DemoDetailsSchema = new Schema<IDemoDetailsEmbedded>(
     demoStatus: { type: String, enum: Object.values(DEMO_STATUS) },
     feedback: { type: String },
     assignedAt: { type: Date },
+    attendanceStatus: { type: String, enum: ['PRESENT', 'ABSENT'] },
+    topicCovered: { type: String },
+    duration: { type: String },
   },
   { _id: false }
 );
