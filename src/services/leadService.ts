@@ -58,7 +58,7 @@ export const generateLeadId = (
   return `L${initials}${typeChar}${modeChar}${randomChars}${randomNums}`;
 }
 
-export const createClassLead = async (params: {
+ export const createClassLead = async (params: {
   studentType: 'SINGLE' | 'GROUP';
   studentName?: string;
   studentGender?: 'M' | 'F';
@@ -74,6 +74,7 @@ export const createClassLead = async (params: {
   area?: string;
   address?: string;
   timing: string;
+  weekdays?: string[];
   classesPerMonth?: number;
   classDurationHours?: number;
   preferredTutorGender?: PREFERRED_TUTOR_GENDER | string;
@@ -147,9 +148,13 @@ export const createClassLead = async (params: {
         })),
         grade: params.grade,
         board: params.board,
+        schedule: {
+          daysOfWeek: params.weekdays,
+          timeSlot: params.timing
+        }
       });
       await groupleads.save();
-      lead.groupleads = groupleads._id as any;
+      lead.groupClass = groupleads._id as any;
     } catch (e) {
       console.error('Error creating Groupleads:', e);
       // Don't fail lead creation if Groupleads fails
@@ -160,7 +165,7 @@ export const createClassLead = async (params: {
   await lead.populate([
     { path: 'createdBy', select: 'name email role' },
     { path: 'assignedTutor', select: 'name email phone' },
-    { path: 'groupleads' },
+    { path: 'groupClass' },
   ]);
 
   try {
@@ -294,15 +299,59 @@ export const updateClassLead = async (
     paymentAmount?: number;
     tutorFees?: number;
     notes?: string;
+    studentDetails?: any[];
+    numberOfStudents?: number;
+    weekdays?: string[];
   }>
 ) => {
   if (Object.prototype.hasOwnProperty.call(updateData, 'status')) {
     throw new ErrorResponse('Status cannot be updated via this endpoint', 400);
   }
 
-  const lead = await ClassLead.findById(leadId);
+  const lead = await ClassLead.findById(leadId).populate('groupClass');
   if (!lead) {
     throw new ErrorResponse('Class lead not found', 404);
+  }
+
+  // Update associated Groupleads if studentDetails is provided for a group lead
+  if (lead.studentType === 'GROUP' && updateData.studentDetails) {
+    const Groupleads = mongoose.model('Groupleads');
+    if (lead.groupClass) {
+      await Groupleads.findByIdAndUpdate(lead.groupClass, {
+        students: updateData.studentDetails,
+        numberOfStudents: updateData.numberOfStudents || updateData.studentDetails.length
+      });
+    } else {
+      // If for some reason groupClass is missing but it's a GROUP lead, create it
+      const newGroup = await Groupleads.create({
+        classLead: lead._id,
+        students: updateData.studentDetails,
+        numberOfStudents: updateData.numberOfStudents || updateData.studentDetails.length,
+        schedule: {
+          daysOfWeek: updateData.weekdays || lead.weekdays,
+          timeSlot: updateData.timing || lead.timing
+        }
+      });
+      lead.groupClass = newGroup._id as any;
+    }
+
+    // Re-calculate top-level totals for consistency
+    const totalFees = updateData.studentDetails.reduce((sum: number, s: any) => sum + (Number(s.fees) || 0), 0);
+    const totalTutorFees = updateData.studentDetails.reduce((sum: number, s: any) => sum + (Number(s.tutorFees) || 0), 0);
+    
+    updateData.paymentAmount = totalFees;
+    updateData.tutorFees = totalTutorFees;
+  }
+
+  // Sync weekdays and timing with Groupleads if modified
+  if (lead.studentType === 'GROUP' && lead.groupClass && (updateData.weekdays || updateData.timing)) {
+    const Groupleads = mongoose.model('Groupleads');
+    await Groupleads.findByIdAndUpdate(lead.groupClass, {
+      schedule: {
+        daysOfWeek: updateData.weekdays || lead.weekdays,
+        timeSlot: updateData.timing || lead.timing
+      }
+    });
   }
 
   Object.assign(lead, updateData);

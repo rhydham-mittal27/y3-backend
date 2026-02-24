@@ -50,6 +50,7 @@ export interface IClassLeadDocument extends Document {
   area?: string;
   address?: string;
   timing: string;
+  weekdays?: string[];
   status: CLASS_LEAD_STATUS | string;
   classesPerMonth?: number;
   classDurationHours?: number;
@@ -65,7 +66,7 @@ export interface IClassLeadDocument extends Document {
   notes?: string;
 
   // Group specific fields
-  groupleads?: mongoose.Types.ObjectId;
+  groupClass?: mongoose.Types.ObjectId;
   numberOfStudents?: number;
   studentDetails?: IStudentDetail[];
 
@@ -180,7 +181,6 @@ const ClassLeadSchema: Schema<IClassLeadDocument> = new Schema<IClassLeadDocumen
     },
     board: { 
       type: String, 
-      enum: Object.values(BOARD_TYPE),
       required: [
         function (this: IClassLeadDocument) { return this.studentType === 'SINGLE'; },
         'Board is required for single student'
@@ -192,6 +192,7 @@ const ClassLeadSchema: Schema<IClassLeadDocument> = new Schema<IClassLeadDocumen
     area: { type: String },
     address: { type: String },
     timing: { type: String, required: true },
+    weekdays: { type: [String] },
     status: { type: String, enum: Object.values(CLASS_LEAD_STATUS), default: CLASS_LEAD_STATUS.NEW },
     
     // Group specific fields
@@ -230,7 +231,7 @@ const ClassLeadSchema: Schema<IClassLeadDocument> = new Schema<IClassLeadDocumen
     demoTutor: { type: Schema.Types.ObjectId, ref: 'User' },
     demoDetails: { type: DemoDetailsSchema },
     createdBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
-    groupleads: { type: Schema.Types.ObjectId, ref: 'Groupleads' },
+    groupClass: { type: Schema.Types.ObjectId, ref: 'Groupleads' },
     notes: { type: String },
   },
   { timestamps: true, toJSON: { virtuals: true }, toObject: { virtuals: true } }

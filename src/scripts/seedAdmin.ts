@@ -14,19 +14,31 @@ async function connect() {
 async function main() {
   await connect();
 
-  const email = 'adminseed@gmail.com';
-  const password = 'Password@123';
+  const email = String(process.env.ADMIN_SEED_EMAIL || 'adminseed@gmail.com').toLowerCase().trim();
+  const password = String(process.env.ADMIN_SEED_PASSWORD || 'Password@123');
+  const name = String(process.env.ADMIN_SEED_NAME || 'Seed Admin');
+  const phone = String(process.env.ADMIN_SEED_PHONE || '+919000000000');
+  const updatePassword = String(process.env.ADMIN_SEED_UPDATE_PASSWORD || '').toLowerCase() === 'true';
 
   const existing = await User.findOne({ email }).select('+password');
   if (existing) {
+    const update: any = {
+      role: USER_ROLES.ADMIN,
+      isActive: true,
+    };
+    if (!existing.name && name) update.name = name;
+    if (!existing.phone && phone) update.phone = phone;
+    if (updatePassword) update.password = password;
+
+    await User.updateOne({ _id: existing._id }, { $set: update });
     console.log('[seedAdmin] Admin user already exists:', email);
   } else {
     const admin = await User.create({
-      name: 'Seed Admin',
+      name,
       email,
       password,
       role: USER_ROLES.ADMIN,
-      phone: '+919000000000',
+      phone,
       isActive: true,
     } as any);
     console.log('[seedAdmin] Created admin user:', admin.email);

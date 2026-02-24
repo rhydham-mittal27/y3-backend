@@ -617,8 +617,10 @@ export const createUserWithRole = async (
     userData.name,
     userData.email,
     userData.password,
-    userData.role,
-    userData.phone
+    userData.phone,
+    undefined,
+    undefined,
+    userData.role
   );
   const createdUser: any = regRes?.user ?? regRes;
   const createdUserId: string = createdUser?.id || createdUser?._id?.toString?.();

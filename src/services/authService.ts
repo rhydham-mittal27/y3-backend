@@ -20,6 +20,8 @@ export const registerUser = async (
   email: string,
   password: string,
   phone?: string,
+  city?: string,
+  gender?: 'MALE' | 'FEMALE' | 'OTHER',
   role?: string
 ) => {
   const existing = await User.findOne({ email });
@@ -36,7 +38,7 @@ export const registerUser = async (
     );
   }
 
-  const user = new User({ name, email, password, phone, role });
+  const user = new User({ name, email, password, phone, city, gender, role });
   await user.save();
 
   const accessToken = user.generateAccessToken();

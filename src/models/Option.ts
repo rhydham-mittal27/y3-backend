@@ -26,7 +26,7 @@ const OptionSchema: Schema<IOptionDocument> = new Schema<IOptionDocument>(
   { timestamps: true }
 );
 
-OptionSchema.index({ type: 1, value: 1 }, { unique: true });
+OptionSchema.index({ type: 1, value: 1, parent: 1 }, { unique: true });
 OptionSchema.index({ type: 1, isActive: 1, sortOrder: 1, label: 1 });
 
 const Option: Model<IOptionDocument> =

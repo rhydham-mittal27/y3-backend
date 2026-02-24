@@ -1,6 +1,5 @@
 
 import mongoose, { Schema, Document, Model } from 'mongoose';
-import { BOARD_TYPE } from '../config/constants';
 
 export interface IGroupleadsDocument extends Document {
   name: string;
@@ -60,7 +59,7 @@ const GroupleadsSchema: Schema<IGroupleadsDocument> = new Schema<IGroupleadsDocu
       _id: false
     },
     grade: { type: String },
-    board: { type: String, enum: Object.values(BOARD_TYPE) },
+    board: { type: String },
     status: { 
       type: String, 
       enum: ['ACTIVE', 'PAUSED', 'COMPLETED'], 

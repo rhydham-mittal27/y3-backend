@@ -60,7 +60,7 @@ export const convertLeadToFinalClass = async (params: {
   try {
     session.startTransaction();
 
-    const lead = await ClassLead.findById(classLeadId).populate('groupleads').session(session);
+    const lead = await ClassLead.findById(classLeadId).populate('groupClass').session(session);
     if (!lead) throw new ErrorResponse('Class lead not found', 404);
     if (String(lead.status) !== CLASS_LEAD_STATUS.CONVERTED) {
       throw new ErrorResponse('Class lead must be in CONVERTED status', 400);
@@ -113,10 +113,15 @@ export const convertLeadToFinalClass = async (params: {
       throw new ErrorResponse('Failed to generate unique class name', 500);
     }
 
+    const effectiveSchedule = schedule || {
+      daysOfWeek: lead.weekdays,
+      timeSlot: lead.timing
+    };
+
     const autoTotalSessions =
       typeof totalSessions === 'number'
         ? totalSessions
-        : computeMonthlyTotalSessions(new Date(startDate), schedule);
+        : computeMonthlyTotalSessions(new Date(startDate), effectiveSchedule);
 
     // Generate student IDs and create student profiles
     let studentId: string | undefined;
@@ -185,9 +190,9 @@ export const convertLeadToFinalClass = async (params: {
           parentUserObjectId = parentUser._id;
         }
       }
-    } else if (lead.studentType === 'GROUP' && (lead.groupleads || lead.studentDetails) && lead.grade) {
+    } else if (lead.studentType === 'GROUP' && (lead.groupClass || lead.studentDetails) && lead.grade) {
       // Create individual student profiles for group classes
-      const studentDetailsToUse = (lead.groupleads as any)?.students || lead.studentDetails;
+      const studentDetailsToUse = (lead.groupClass as any)?.students || lead.studentDetails;
       const gradeNumber = parseInt(lead.grade.replace(/\D/g, ''));
       if (!isNaN(gradeNumber) && gradeNumber > 0 && studentDetailsToUse) {
         for (const studentDetail of studentDetailsToUse) {
@@ -281,12 +286,12 @@ export const convertLeadToFinalClass = async (params: {
       coordinator: coordinatorUserIdToUse ? new mongoose.Types.ObjectId(coordinatorUserIdToUse) : undefined,
       parent: parentUserObjectId,
       startDate: new Date(startDate),
-      schedule,
+      schedule: effectiveSchedule,
       totalSessions: autoTotalSessions,
       ratePerSession: calculatedParentRate,
       tutorRatePerSession: calculatedTutorRate,
       completedSessions: 0,
-      studentName: lead.studentType === 'SINGLE' ? lead.studentName : `Group Class (${((lead.groupleads as any)?.students || lead.studentDetails)?.length || 0} students)`,
+      studentName: lead.studentType === 'SINGLE' ? lead.studentName : `Group Class (${((lead.groupClass as any)?.students || lead.studentDetails)?.length || 0} students)`,
       studentGender,
       studentId,
       subject: lead.subject,

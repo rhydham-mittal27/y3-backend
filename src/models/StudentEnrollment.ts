@@ -2,7 +2,7 @@ import mongoose, { Schema, Document, Model } from 'mongoose';
 
 export interface IStudentEnrollmentDocument extends Document {
   student: mongoose.Types.ObjectId;
-  groupleads: mongoose.Types.ObjectId;
+  groupClass: mongoose.Types.ObjectId;
   monthlyFee: number;
   perSessionFee: number;
   sessionsAttended: number;
@@ -20,7 +20,7 @@ const StudentEnrollmentSchema: Schema<IStudentEnrollmentDocument> = new Schema<I
     // Actually, distinct Student model exists? Let's check imports in other files. 
     // Payment.ts uses `import Student from '../models/Student';`
     
-    groupleads: { type: Schema.Types.ObjectId, ref: 'Groupleads', required: true },
+    groupClass: { type: Schema.Types.ObjectId, ref: 'Groupleads', required: true },
     monthlyFee: { type: Number, required: true, min: 0 },
     perSessionFee: { type: Number, required: true, min: 0 },
     sessionsAttended: { type: Number, default: 0 },
@@ -41,8 +41,8 @@ const StudentEnrollmentSchema: Schema<IStudentEnrollmentDocument> = new Schema<I
 );
 
 // Indexes
-StudentEnrollmentSchema.index({ groupleads: 1, status: 1 });
-StudentEnrollmentSchema.index({ student: 1, groupleads: 1 }, { unique: true }); // Prevent duplicate enrollment in same group
+StudentEnrollmentSchema.index({ groupClass: 1, status: 1 });
+StudentEnrollmentSchema.index({ student: 1, groupClass: 1 }, { unique: true }); // Prevent duplicate enrollment in same group
 
 const StudentEnrollment: Model<IStudentEnrollmentDocument> =
   mongoose.models.StudentEnrollment || mongoose.model<IStudentEnrollmentDocument>('StudentEnrollment', StudentEnrollmentSchema);

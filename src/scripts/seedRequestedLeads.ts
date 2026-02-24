@@ -141,7 +141,7 @@ async function main() {
       board: groupLeadData.board,
     });
     await groupleads.save();
-    groupLead.groupleads = groupleads._id as any;
+    groupLead.groupClass = groupleads._id as any;
     await groupLead.save();
     console.log(`[seedRequestedLeads] Created Groupleads for lead: ${groupLead.studentName}`);
   }

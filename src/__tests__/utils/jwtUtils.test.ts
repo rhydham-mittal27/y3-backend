@@ -10,8 +10,8 @@ const originalEnv = process.env;
 beforeAll(() => {
   process.env.JWT_SECRET = 'test-jwt-secret-key-for-testing-only-32chars';
   process.env.JWT_REFRESH_SECRET = 'test-refresh-secret-key-for-testing-only-32chars';
-  process.env.JWT_EXPIRES_IN = '1h';
-  process.env.JWT_REFRESH_EXPIRES_IN = '7d';
+  process.env.JWT_EXPIRE = '7d';
+  process.env.JWT_REFRESH_EXPIRE = '7d';
 });
 
 afterAll(() => {

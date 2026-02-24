@@ -1,5 +1,5 @@
 import { body, param } from 'express-validator';
-import { BOARD_TYPE, TEACHING_MODE, CLASS_LEAD_STATUS } from '../config/constants';
+import { TEACHING_MODE, CLASS_LEAD_STATUS } from '../config/constants';
 
 export const createLeadValidation = [
   body('studentType')
@@ -30,8 +30,8 @@ export const createLeadValidation = [
   body('board')
     .notEmpty()
     .withMessage('Board is required')
-    .isIn(Object.values(BOARD_TYPE) as string[])
-    .withMessage('Invalid board type'),
+    .isString()
+    .trim(),
   body('mode')
     .notEmpty()
     .withMessage('Teaching mode is required')
@@ -116,7 +116,7 @@ export const updateLeadValidation = [
   body('parentPhone').optional().trim().isLength({ min: 7, max: 20 }),
   body('grade').optional().trim().notEmpty(),
   body('subject').optional().isArray({ min: 1 }),
-  body('board').optional().isIn(Object.values(BOARD_TYPE) as string[]),
+  body('board').optional().isString().trim(),
   body('mode').optional().isIn(Object.values(TEACHING_MODE) as string[]),
   body('location').optional().trim(),
   body('city').optional().trim(),

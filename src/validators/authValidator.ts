@@ -22,6 +22,16 @@ export const registerValidation = [
     .optional()
     .isMobilePhone('any')
     .withMessage('Invalid phone number'),
+  body('city')
+    .optional()
+    .isString()
+    .trim()
+    .isLength({ min: 2, max: 100 })
+    .withMessage('City must be 2-100 characters'),
+  body('gender')
+    .optional()
+    .isIn(['MALE', 'FEMALE', 'OTHER'])
+    .withMessage('Invalid gender'),
   body('role')
     .optional()
     .isIn(Object.values(USER_ROLES) as string[])

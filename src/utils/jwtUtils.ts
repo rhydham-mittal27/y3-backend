@@ -11,8 +11,12 @@ export interface TokenPayload {
 export const generateTokens = (userId: string, email: string, role: string) => {
   const accessSecret = process.env.JWT_SECRET as string;
   const refreshSecret = process.env.JWT_REFRESH_SECRET as string;
-  const accessExpiresIn = '7d'; // Force 7 days as requested
-  const refreshExpiresIn = process.env.JWT_REFRESH_EXPIRES_IN as string;
+  const accessExpiresIn = (process.env.JWT_EXPIRE && String(process.env.JWT_EXPIRE).trim().length > 0)
+    ? String(process.env.JWT_EXPIRE).trim()
+    : '7d';
+  const refreshExpiresIn = (process.env.JWT_REFRESH_EXPIRE && String(process.env.JWT_REFRESH_EXPIRE).trim().length > 0)
+    ? String(process.env.JWT_REFRESH_EXPIRE).trim()
+    : '7d';
 
   const accessOptions: jwt.SignOptions = { expiresIn: accessExpiresIn as unknown as jwt.SignOptions['expiresIn'] };
   const refreshOptions: jwt.SignOptions = { expiresIn: refreshExpiresIn as unknown as jwt.SignOptions['expiresIn'] };

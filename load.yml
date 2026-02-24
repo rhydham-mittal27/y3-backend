@@ -1,0 +1,17 @@
+config:
+  target: "http://localhost:5000"
+  phases:
+    - duration: 30
+      arrivalRate: 10
+      rampTo: 100
+      name: "Ramping up the cluster"
+    - duration: 30
+      arrivalRate: 100
+      rampTo: 200
+      name: "Pushing to the limit"
+
+scenarios:
+  - flow:
+      - get:
+          url: "/api/health"
+          

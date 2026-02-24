@@ -378,9 +378,9 @@ export const approveAttendanceSheet = async (sheetId: string, coordinatorUserId:
   let startDate: Date;
   let tutorHistory: any[] = [];
   
-    if (sheet.sheetType === 'GROUP' || sheet.groupleads) {
-      if (!sheet.groupleads) throw new ErrorResponse('Groupleads reference missing in Group Sheet', 500);
-      const group = await Groupleads.findById(sheet.groupleads);
+    if (sheet.sheetType === 'GROUP' || sheet.groupClass) {
+      if (!sheet.groupClass) throw new ErrorResponse('Group reference missing in Group Sheet', 500);
+      const group = await Groupleads.findById(sheet.groupClass);
       if (!group) throw new ErrorResponse('Groupleads not found', 404);
       // entity = group;
       requiredSessions = group.sessionsPerMonth || 8;
@@ -459,7 +459,7 @@ export const approveAttendanceSheet = async (sheetId: string, coordinatorUserId:
   try {
      if (sheet.sheetType === 'GROUP') {
        // 1. Update Student Enrollment Counters
-       if (sheet.groupleads) {
+       if (sheet.groupClass) {
          // For each record, for each studentAttendance
          // We need to aggregate.
          // Loop through records -> studentAttendances

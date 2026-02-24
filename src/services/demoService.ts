@@ -146,6 +146,9 @@ export const updateDemoStatus = async (
     if (duration) (lead.demoDetails as any).duration = duration;
   }
   if (newStatus === DEMO_STATUS.APPROVED) {
+    if (!coordinatorUserId) {
+      throw new ErrorResponse('Coordinator is required to approve and convert the demo', 400);
+    }
     const tutorProfile = await Tutor.findOne({ user: lead.assignedTutor });
     if (tutorProfile) await Tutor.findByIdAndUpdate(tutorProfile._id, { $inc: { demosApproved: 1 } });
     lead.status = CLASS_LEAD_STATUS.CONVERTED;

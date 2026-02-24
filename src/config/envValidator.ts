@@ -52,7 +52,7 @@ const envConfig: EnvConfig = {
   JWT_EXPIRE: {
     required: false,
     type: 'string',
-    default: '1h',
+    default: '7d',
   },
   JWT_REFRESH_EXPIRE: {
     required: false,
