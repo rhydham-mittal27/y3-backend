@@ -471,7 +471,11 @@ export const getAssignedClassesSummary = async (
     classes.map(async (cls: any) => {
       const pendingAttendanceCount = await Attendance.countDocuments({ finalClass: cls._id, status: ATTENDANCE_STATUS.PENDING });
       const overduePayments = await Payment.countDocuments({ finalClass: cls._id, status: PAYMENT_STATUS.PENDING, dueDate: { $lt: now } });
-      const totalSessions = cls.totalSessions || 0;
+      const totalSessions =
+        (cls as any)?.classLead?.classesPerMonth ??
+        (cls as any)?.classesPerMonth ??
+        cls.totalSessions ??
+        0;
       const completedSessions = cls.completedSessions || 0;
       const progressPercentage = totalSessions > 0 ? Math.round((completedSessions / totalSessions) * 100) : 0;
       return {

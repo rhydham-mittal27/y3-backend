@@ -9,6 +9,8 @@ export interface IPaymentDocument extends Document {
   attendance?: mongoose.Types.ObjectId;
   attendanceSheet?: mongoose.Types.ObjectId;
   tutor?: mongoose.Types.ObjectId;
+  cycleMonth?: number;
+  cycleYear?: number;
   amount: number;
   currency: string;
   status: PAYMENT_STATUS | string;
@@ -33,6 +35,8 @@ const PaymentSchema: Schema<IPaymentDocument> = new Schema<IPaymentDocument>(
     attendance: { type: Schema.Types.ObjectId, ref: 'Attendance' },
     attendanceSheet: { type: Schema.Types.ObjectId, ref: 'AttendanceSheet' },
     tutor: { type: Schema.Types.ObjectId, ref: 'User', index: true },
+    cycleMonth: { type: Number, min: 1, max: 12 },
+    cycleYear: { type: Number, min: 2000 },
     amount: { type: Number, required: true, min: 0 },
     currency: { type: String, default: 'INR' },
     status: { type: String, enum: Object.values(PAYMENT_STATUS), default: PAYMENT_STATUS.PENDING },
@@ -59,6 +63,7 @@ PaymentSchema.index({ attendanceSheet: 1 });
 PaymentSchema.index({ tutor: 1, status: 1 });
 PaymentSchema.index({ status: 1, dueDate: 1 });
 PaymentSchema.index({ finalClass: 1 });
+PaymentSchema.index({ finalClass: 1, paymentType: 1, cycleYear: 1, cycleMonth: 1 });
 PaymentSchema.index({ createdAt: 1, status: 1 });
 
 const Payment: Model<IPaymentDocument> =

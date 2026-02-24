@@ -15,6 +15,7 @@ import { createAdvancePaymentForFinalClass } from './paymentService';
 import { generateStudentId } from '../utils/generateStudentId';
 import { sendStudentCredentialsEmail } from './studentEmailService';
 import bcrypt from 'bcryptjs';
+import ClassPlan from '../models/ClassPlan';
 
 const DAYS_ORDER = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY'];
 
@@ -474,6 +475,59 @@ export const getFinalClassById = async (classId: string) => {
   ]);
   if (!cls) throw new ErrorResponse('Final class not found', 404);
   return cls;
+};
+
+export const renewFinalClassForCoordinator = async (params: {
+  classId: string;
+  coordinatorUserId: string;
+  plan?: { monthlyFee: number; sessionsPerMonth: number };
+}) => {
+  const { classId, coordinatorUserId, plan } = params;
+
+  const cls = await FinalClass.findById(classId);
+  if (!cls) throw new ErrorResponse('Final class not found', 404);
+
+  if (!cls.coordinator || String(cls.coordinator) !== String(coordinatorUserId)) {
+    throw new ErrorResponse('Not authorized to renew this class', 403);
+  }
+
+  if (plan && typeof plan.monthlyFee === 'number' && typeof plan.sessionsPerMonth === 'number') {
+    if (plan.monthlyFee < 0) throw new ErrorResponse('Monthly fee cannot be negative', 400);
+    if (plan.sessionsPerMonth <= 0) throw new ErrorResponse('Sessions per month must be greater than 0', 400);
+
+    await ClassPlan.updateMany({ classId: cls._id, status: 'ACTIVE' }, { status: 'ARCHIVED' });
+    await ClassPlan.create({
+      classId: cls._id,
+      parentId: cls.parent,
+      currentTutorId: cls.tutor,
+      monthlyFee: plan.monthlyFee,
+      sessionsPerMonth: plan.sessionsPerMonth,
+      status: 'ACTIVE',
+    });
+
+    (cls as any).monthlyFees = plan.monthlyFee;
+    (cls as any).ratePerSession = plan.monthlyFee / plan.sessionsPerMonth;
+    (cls as any).classesPerMonth = plan.sessionsPerMonth;
+    cls.totalSessions = plan.sessionsPerMonth;
+  }
+
+  cls.completedSessions = 0;
+  await cls.save();
+
+  const next = new Date();
+  next.setMonth(next.getMonth() + 1);
+  const cycle = { month: next.getMonth() + 1, year: next.getFullYear() };
+  const payments = await createAdvancePaymentForFinalClass(String(cls._id), coordinatorUserId, cycle);
+
+  await cls.populate([
+    { path: 'classLead' },
+    { path: 'tutor', select: 'name email phone' },
+    { path: 'coordinator', select: 'name email phone' },
+    { path: 'parent', select: 'name email phone' },
+    { path: 'convertedBy', select: 'name email role' },
+  ]);
+
+  return { cls, payments, cycle };
 };
 
 export const updateFinalClass = async (

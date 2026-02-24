@@ -19,7 +19,8 @@
     "seed:coordinators": "ts-node src/scripts/seedCoordinators.ts",
     "seed:advance-payments": "ts-node src/scripts/seedAdvancePaymentsForExistingClasses.ts",
     "seed:options": "ts-node src/scripts/seedOptions.ts",
-    "seed:fix-payments": "ts-node src/scripts/fix-payments.ts"
+    "seed:fix-payments": "ts-node src/scripts/fix-payments.ts",
+    "backfill:completed-sessions": "ts-node src/scripts/backfillCompletedSessionsFromAttendanceSheets.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.984.0",

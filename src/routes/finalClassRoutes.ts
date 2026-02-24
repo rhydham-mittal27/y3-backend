@@ -15,6 +15,7 @@ import {
   changeTutorController,
   tutorLeavingController,
   repostLeadController,
+  renewFinalClassController,
 } from '../controllers/finalClassController';
 import {
   convertToFinalClassValidation,
@@ -74,6 +75,8 @@ router.post(
 router.put('/:id', authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN, USER_ROLES.COORDINATOR,USER_ROLES.TUTOR), updateFinalClassValidation, updateFinalClassDetails);
 router.patch('/:id/status', authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN), updateClassStatusValidation, updateClassStatus);
 router.patch('/:id/progress', authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN, USER_ROLES.COORDINATOR), updateProgressValidation, updateProgress);
+
+router.post('/:id/renew', authorize(USER_ROLES.COORDINATOR, USER_ROLES.MANAGER, USER_ROLES.ADMIN), classIdValidation, renewFinalClassController);
 
 router.post('/:id/change-tutor', authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN), classIdValidation, changeTutorController);
 router.post('/:id/tutor-leaving', authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN, USER_ROLES.COORDINATOR), classIdValidation, tutorLeavingController);

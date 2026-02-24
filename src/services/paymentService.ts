@@ -92,7 +92,11 @@ export const createPayment = async (attendanceId: string, createdBy: string) => 
   return payment;
 };
 
-export const createAdvancePaymentForFinalClass = async (finalClassId: string, createdBy: string) => {
+export const createAdvancePaymentForFinalClass = async (
+  finalClassId: string,
+  createdBy: string,
+  cycle?: { month: number; year: number }
+) => {
   const finalClass = await FinalClass.findById(finalClassId).populate([{ path: 'classLead' }]);
   if (!finalClass) throw new ErrorResponse('Final class not found', 404);
 
@@ -132,8 +136,11 @@ export const createAdvancePaymentForFinalClass = async (finalClassId: string, cr
   }
 
   const results: any[] = [];
-  const dueDate = new Date(cls.startDate || Date.now());
+  const dueDate = new Date(Date.now());
   dueDate.setDate(dueDate.getDate() + DEFAULT_DUE_DAYS);
+
+  const cycleMonth = cycle?.month;
+  const cycleYear = cycle?.year;
 
   // 2. Create FEES_COLLECTED payments (One per student)
   for (const item of studentsDetails) {
@@ -142,6 +149,8 @@ export const createAdvancePaymentForFinalClass = async (finalClassId: string, cr
         finalClass: finalClass._id, 
         student: new mongoose.Types.ObjectId(item.studentId),
         paymentType: PAYMENT_TYPE.FEES_COLLECTED,
+        ...(typeof cycleMonth === 'number' ? { cycleMonth } : {}),
+        ...(typeof cycleYear === 'number' ? { cycleYear } : {}),
         attendance: { $exists: false } 
       });
 
@@ -155,6 +164,8 @@ export const createAdvancePaymentForFinalClass = async (finalClassId: string, cr
           currency: 'INR',
           status: PAYMENT_STATUS.PENDING,
           paymentType: PAYMENT_TYPE.FEES_COLLECTED,
+          cycleMonth,
+          cycleYear,
           dueDate,
           createdBy: new mongoose.Types.ObjectId(createdBy),
           notes: 'Advance class fees',
@@ -174,6 +185,8 @@ export const createAdvancePaymentForFinalClass = async (finalClassId: string, cr
       const existingPayout = await Payment.findOne({ 
         finalClass: finalClass._id, 
         paymentType: PAYMENT_TYPE.TUTOR_PAYOUT,
+        ...(typeof cycleMonth === 'number' ? { cycleMonth } : {}),
+        ...(typeof cycleYear === 'number' ? { cycleYear } : {}),
         attendance: { $exists: false } 
       });
 
@@ -186,6 +199,8 @@ export const createAdvancePaymentForFinalClass = async (finalClassId: string, cr
           currency: 'INR',
           status: PAYMENT_STATUS.PENDING, // Payout is pending until admin pays
           paymentType: PAYMENT_TYPE.TUTOR_PAYOUT,
+          cycleMonth,
+          cycleYear,
           dueDate, // Maybe different due date for payout? Using same for now.
           createdBy: new mongoose.Types.ObjectId(createdBy),
           notes: 'Advance tutor payout',

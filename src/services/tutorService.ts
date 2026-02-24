@@ -16,7 +16,7 @@ import Payment from '../models/Payment';
 import DemoHistory from '../models/DemoHistory';
 import AttendanceSheet from '../models/AttendanceSheet';
 import { createNotificationWithPreferences } from './notificationService';
-import { PAYMENT_STATUS, DEMO_STATUS } from '../config/constants';
+import { PAYMENT_STATUS, PAYMENT_TYPE, DEMO_STATUS } from '../config/constants';
 
 export const createTutorProfile = async (
   userId: string,
@@ -1335,15 +1335,15 @@ export const getTutorAdvancedAnalytics = async (tutorUserId: string) => {
   // 2. Earnings Analytics
   const [earningsWeek, earningsMonth, totalEarnings] = await Promise.all([
     Payment.aggregate([
-      { $match: { tutor: uid, status: PAYMENT_STATUS.PAID, paymentDate: { $gte: startOfWeek } } },
+      { $match: { tutor: uid, status: PAYMENT_STATUS.PAID, paymentType: PAYMENT_TYPE.TUTOR_PAYOUT, paymentDate: { $gte: startOfWeek } } },
       { $group: { _id: null, total: { $sum: '$amount' } } },
     ]),
     Payment.aggregate([
-      { $match: { tutor: uid, status: PAYMENT_STATUS.PAID, paymentDate: { $gte: startOfMonth } } },
+      { $match: { tutor: uid, status: PAYMENT_STATUS.PAID, paymentType: PAYMENT_TYPE.TUTOR_PAYOUT, paymentDate: { $gte: startOfMonth } } },
       { $group: { _id: null, total: { $sum: '$amount' } } },
     ]),
     Payment.aggregate([
-      { $match: { tutor: uid, status: PAYMENT_STATUS.PAID } },
+      { $match: { tutor: uid, status: PAYMENT_STATUS.PAID, paymentType: PAYMENT_TYPE.TUTOR_PAYOUT } },
       { $group: { _id: null, total: { $sum: '$amount' } } },
     ]),
   ]);
@@ -1362,7 +1362,7 @@ export const getTutorAdvancedAnalytics = async (tutorUserId: string) => {
 
   // 5. Class-wise Earnings
   const classWiseEarnings = await Payment.aggregate([
-    { $match: { tutor: uid, status: PAYMENT_STATUS.PAID } },
+    { $match: { tutor: uid, status: PAYMENT_STATUS.PAID, paymentType: PAYMENT_TYPE.TUTOR_PAYOUT } },
     {
       $group: {
         _id: '$finalClass',

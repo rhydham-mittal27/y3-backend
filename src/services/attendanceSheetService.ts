@@ -242,6 +242,19 @@ export const addDailyAttendance = async (params: {
 
   await sheet.save();
 
+  // Keep FinalClass session progress in sync with attendance submissions (Single Class only)
+  // Only increment up to the planned monthly sessions.
+  if (!isGroup && finalClassId) {
+    await FinalClass.findOneAndUpdate(
+      {
+        _id: new mongoose.Types.ObjectId(finalClassId),
+        completedSessions: { $lt: sessionLimit },
+      },
+      { $inc: { completedSessions: 1 } },
+      { new: true }
+    );
+  }
+
   // Update Tutor Experience & Tier logic
   try {
     if (tutorId) {
@@ -369,79 +382,6 @@ export const approveAttendanceSheet = async (sheetId: string, coordinatorUserId:
   }
   if (sheet.status !== 'PENDING') {
     throw new ErrorResponse('Sheet must be in PENDING status to approve', 400);
-  }
-
-  // Verification Constraint: Check if all planned sessions are marked
-  // let entity: any; // Unused
-  let requiredSessions = 8;
-  let currentTutorId: string | undefined;
-  let startDate: Date;
-  let tutorHistory: any[] = [];
-  
-    if (sheet.sheetType === 'GROUP' || sheet.groupClass) {
-      if (!sheet.groupClass) throw new ErrorResponse('Group reference missing in Group Sheet', 500);
-      const group = await Groupleads.findById(sheet.groupClass);
-      if (!group) throw new ErrorResponse('Groupleads not found', 404);
-      // entity = group;
-      requiredSessions = group.sessionsPerMonth || 8;
-      currentTutorId = group.tutor ? group.tutor.toString() : undefined;
-      startDate = group.createdAt; // Groupleads doesn't have startDate field in schema, use createdAt or we need to add startDate?
-      // User request did not specify startDate for Groupleads. 
-      // We can use createdAt as proxy for start.
-      tutorHistory = []; // No tutor history in Groupleads Schema yet.
-  } else {
-      const finalClass = await FinalClass.findById(sheet.finalClass);
-      if (!finalClass) throw new ErrorResponse('Final class not found', 404);
-      // entity = finalClass;
-      requiredSessions = finalClass.classesPerMonth || 8;
-      currentTutorId = finalClass.tutor.toString();
-      startDate = finalClass.startDate;
-      tutorHistory = finalClass.tutorHistory || [];
-  }
-  
-  if (sheet.records.length < requiredSessions) {
-    // Check for Tutor Change Exception
-    const sheetTutorId = sheet.records[0]?.tutor?.toString();
-    
-    let isException = false;
-
-    // Exception 1: Outgoing Tutor
-    if (sheetTutorId && sheetTutorId !== currentTutorId) {
-       isException = true;
-    }
-
-    // Exception 2: Incoming Tutor
-    if (!isException && sheetTutorId === currentTutorId) {
-        const sheetMonth = sheet.month;
-        const sheetYear = sheet.year;
-        
-        const classStartDate = new Date(startDate);
-        const startMonth = classStartDate.getMonth() + 1;
-        const startYear = classStartDate.getFullYear();
-
-        if (startMonth === sheetMonth && startYear === sheetYear) {
-             isException = true;
-        } 
-        
-        if (!isException && tutorHistory.length > 0) {
-            const historyEntry = tutorHistory.find(
-                (h: any) => h.tutor && h.tutor.toString() === currentTutorId
-            );
-            if (historyEntry) {
-                 const hDate = new Date(historyEntry.startDate);
-                 if ((hDate.getMonth() + 1) === sheetMonth && hDate.getFullYear() === sheetYear) {
-                     isException = true;
-                 }
-            }
-        }
-    }
-
-    if (!isException) {
-        throw new ErrorResponse(
-          `Cannot verify incomplete sheet. This class requires ${requiredSessions} sessions, but only ${sheet.records.length} are marked.`,
-          400
-        );
-    }
   }
 
   sheet.status = 'APPROVED';

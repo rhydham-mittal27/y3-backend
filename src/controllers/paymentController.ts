@@ -23,7 +23,7 @@ import {
   getPaymentFilterOptions,
   createManualPayment,
 } from '../services/paymentService';
-import { COORDINATOR_ACTION_TYPE, USER_ROLES } from '../config/constants';
+import { COORDINATOR_ACTION_TYPE, PAYMENT_TYPE, USER_ROLES } from '../config/constants';
 import { logCoordinatorActivity } from '../services/coordinatorService';
 
 export const createPaymentRecord = asyncHandler(async (req: AuthRequest, res: Response) => {
@@ -140,14 +140,24 @@ export const getMyPaymentsForParent = asyncHandler(async (req: AuthRequest, res:
 });
 
 export const getMyPaymentSummary = asyncHandler(async (req: AuthRequest, res: Response) => {
-  const { status, fromDate, toDate } = req.query as any;
+  const { status, fromDate, toDate, paymentType } = req.query as any;
   const result = await getPaymentsByTutor(
     req.user!.id,
     status as any,
     fromDate ? new Date(fromDate) : undefined,
     toDate ? new Date(toDate) : undefined
   );
-  return res.json(successResponse(result));
+  const type = (paymentType as string | undefined) || PAYMENT_TYPE.TUTOR_PAYOUT;
+  const filtered = {
+    ...result,
+    payments: (result.payments || []).filter((p: any) => String(p.paymentType || PAYMENT_TYPE.FEES_COLLECTED) === String(type)),
+  };
+  (filtered as any).statistics = {
+    totalAmount: (filtered.payments || []).reduce((sum: number, p: any) => sum + (p.amount || 0), 0),
+    paidAmount: (filtered.payments || []).filter((p: any) => String(p.status) === 'PAID').reduce((s: number, p: any) => s + (p.amount || 0), 0),
+    pendingAmount: (filtered.payments || []).filter((p: any) => String(p.status) === 'PENDING').reduce((s: number, p: any) => s + (p.amount || 0), 0),
+  };
+  return res.json(successResponse(filtered));
 });
 
 export const getClassPayments = asyncHandler(async (req: Request, res: Response) => {
@@ -159,7 +169,10 @@ export const getClassPayments = asyncHandler(async (req: Request, res: Response)
 export const generateAdvancePaymentForClass = asyncHandler(async (req: AuthRequest, res: Response) => {
   const classId = req.params.classId as string;
   const createdBy = req.user!.id;
-  const payment = await createAdvancePaymentForFinalClass(classId, createdBy);
+  const now = new Date();
+  const month = req.query.month ? Number(req.query.month) : (now.getMonth() + 1);
+  const year = req.query.year ? Number(req.query.year) : now.getFullYear();
+  const payment = await createAdvancePaymentForFinalClass(classId, createdBy, { month, year });
 
   if (req.user?.role === USER_ROLES.COORDINATOR) {
     try {

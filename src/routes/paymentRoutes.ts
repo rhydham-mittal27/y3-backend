@@ -88,12 +88,12 @@ router.get(
 
   exportPaymentsPDF
 );
-router.get('/tutor/:tutorId', authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN, USER_ROLES.TUTOR), tutorIdParamValidation, getTutorPayments);
 router.get(
   '/tutor/summary',
   authorize(USER_ROLES.TUTOR),
   getMyPaymentSummary
 );
+router.get('/tutor/:tutorId', authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN, USER_ROLES.TUTOR), tutorIdParamValidation, getTutorPayments);
 router.get(
   '/parent/my-payments',
   authorize(USER_ROLES.PARENT),

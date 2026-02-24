@@ -21,6 +21,7 @@ import {
   getClassesByParent,
   changeTutor,
   handleTutorLeaving,
+  renewFinalClassForCoordinator,
 } from '../services/finalClassService';
 import { repostClassAsLead } from '../services/leadService';
 import { logCoordinatorActivity } from '../services/coordinatorService';
@@ -131,6 +132,31 @@ export const updateProgress = asyncHandler(async (req: AuthRequest, res) => {
   const { completedSessions } = req.body;
   const cls = await updateSessionProgress(classId, completedSessions);
   return res.json(successResponse(cls, 'Session progress updated successfully'));
+});
+
+export const renewFinalClassController = asyncHandler(async (req: AuthRequest, res) => {
+  const classId = req.params.id as string;
+  const coordinatorUserId = req.user!.id;
+
+  const monthlyFeeRaw = (req.body as any)?.monthlyFee;
+  const sessionsPerMonthRaw = (req.body as any)?.sessionsPerMonth;
+
+  const plan =
+    typeof monthlyFeeRaw !== 'undefined' && typeof sessionsPerMonthRaw !== 'undefined'
+      ? {
+          monthlyFee: Number(monthlyFeeRaw),
+          sessionsPerMonth: Number(sessionsPerMonthRaw),
+        }
+      : undefined;
+
+  const result = await renewFinalClassForCoordinator({ classId, coordinatorUserId, plan });
+
+  return res.status(200).json(
+    successResponse(
+      result,
+      'Class renewed successfully'
+    )
+  );
 });
 
 export const createOneTimeRescheduleController = asyncHandler(async (req: AuthRequest, res) => {
