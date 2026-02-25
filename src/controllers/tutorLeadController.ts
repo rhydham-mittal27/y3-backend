@@ -5,7 +5,9 @@ import { successResponse } from '../utils/responseFormatter';
 import User from '../models/User';
 import Tutor from '../models/Tutor';
 import generateTeacherId from '../utils/generateTeacherId';
-import { USER_ROLES } from '../config/constants';
+import { TEACHING_MODE, USER_ROLES } from '../config/constants';
+import { sendLoginOtp } from '../services/authService';
+import crypto from 'crypto';
 
 function parseExperience(experience: string | undefined): { hours: number; years: number } {
   if (!experience) return { hours: 0, years: 0 };
@@ -163,4 +165,98 @@ export const createTutorLeadRegistrationController = asyncHandler(async (req: Re
 
   const returnTeacherId = tutor.teacherId || String(tutor._id);
   return res.status(201).json(successResponse({ teacherId: returnTeacherId }, 'Tutor registered successfully'));
+});
+
+export const createTutorLeadOtpLaterController = asyncHandler(async (req: Request, res: Response) => {
+  const {
+    name,
+    phone,
+    email,
+    teachingMode,
+    city,
+    areas,
+    boards,
+    classes,
+    extracurriculars,
+    experience,
+    note,
+  } = req.body as any;
+
+  const normalizedEmail = String(email || '').toLowerCase().trim();
+  if (!name || !normalizedEmail || !phone) {
+    throw new ErrorResponse('Name, email and phone are required', 400);
+  }
+
+  let preferredMode: string | undefined;
+  const modeLower = String(teachingMode || '').toLowerCase();
+  if (modeLower === 'online') preferredMode = TEACHING_MODE.ONLINE;
+  else if (modeLower === 'offline') preferredMode = TEACHING_MODE.OFFLINE;
+  else if (modeLower === 'both') preferredMode = TEACHING_MODE.HYBRID;
+  else preferredMode = TEACHING_MODE.OFFLINE;
+
+  // If user already exists, just trigger OTP flow
+  const existing = await User.findOne({ email: normalizedEmail });
+  if (existing) {
+    const otpRes = await sendLoginOtp(normalizedEmail);
+    return res.status(200).json(successResponse({ otp: otpRes }, 'OTP sent successfully'));
+  }
+
+  const existingPhone = await User.findOne({ phone: String(phone) });
+  if (existingPhone) {
+    throw new ErrorResponse('An account with this phone number already exists', 409);
+  }
+
+  const password = crypto.randomBytes(16).toString('hex');
+
+  const user = new User({
+    name: String(name).trim(),
+    email: normalizedEmail,
+    password,
+    phone: String(phone).trim(),
+    city: city ? String(city).trim() : undefined,
+    preferredMode,
+    role: USER_ROLES.TUTOR,
+  } as any);
+  await user.save();
+
+  const preferredLocations: string[] = [];
+  const preferredCities: string[] = [];
+  if (city) {
+    preferredLocations.push(String(city));
+    preferredCities.push(String(city));
+  }
+  if (Array.isArray(areas)) {
+    areas.forEach((a: any) => {
+      if (a && String(a).trim()) preferredLocations.push(String(a).trim());
+    });
+  }
+
+  const { hours: experienceHours, years: yearsOfExperience } = parseExperience(String(experience || ''));
+
+  const tutorPayload: any = {
+    user: user._id,
+    experienceHours,
+    yearsOfExperience,
+    preferredLocations,
+    preferredCities,
+    preferredMode,
+    subjects: ['All Subjects'],
+    qualifications: Array.isArray(boards) && boards.length ? boards.map(String) : [],
+    extracurricularActivities: Array.isArray(extracurriculars) ? extracurriculars.map(String) : [],
+    skills: Array.isArray(classes) ? classes.map(String) : [],
+    languagesKnown: [],
+    bio: note ? String(note).slice(0, 500) : undefined,
+  };
+
+  // Generate teacherId
+  const candidate = generateTeacherId(undefined, city ? String(city) : undefined);
+  const exists = await Tutor.findOne({ teacherId: candidate }).lean();
+  if (!exists) {
+    tutorPayload.teacherId = candidate;
+  }
+
+  await Tutor.create(tutorPayload);
+
+  const otpRes = await sendLoginOtp(normalizedEmail);
+  return res.status(201).json(successResponse({ otp: otpRes }, 'Tutor application submitted. OTP sent.'));
 });
