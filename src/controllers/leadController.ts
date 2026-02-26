@@ -20,6 +20,19 @@ import {
 import { getManagerByUserId } from '../services/managerService';
 import { USER_ROLES } from '../config/constants';
 
+const resolveSiteLeadOwnerUserId = async (): Promise<string | undefined> => {
+  const explicit = String(process.env.SITE_LEAD_OWNER_USER_ID || '').trim();
+  if (explicit) return explicit;
+
+  const legacy = String(process.env.PUBLIC_LEAD_MANAGER_USER_ID || '').trim();
+  if (legacy) return legacy;
+
+  const admin = await User.findOne({ role: USER_ROLES.ADMIN }).select('_id').lean();
+  if (admin && admin._id) return String(admin._id);
+
+  return undefined;
+};
+
 export const createLead = asyncHandler(async (req: AuthRequest, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
@@ -135,12 +148,9 @@ export const getLeads = asyncHandler(async (req: AuthRequest, res) => {
       createdBy = req.user!.id;
       createdByName = undefined; // Clear other creator filters
     } else {
-      // If they CAN view site leads, show admin leads + their own leads
-      // Get all admin user IDs
-      const adminUsers = await User.find({ role: 'ADMIN' }).select('_id');
-      const adminIds = adminUsers.map(u => u._id.toString());
-      // Combine admin IDs with the current manager's ID
-      createdByIds = [...adminIds, req.user!.id];
+      // If they CAN view site leads, show site leads + their own leads
+      const siteOwnerId = await resolveSiteLeadOwnerUserId();
+      createdByIds = siteOwnerId ? [siteOwnerId, req.user!.id] : [req.user!.id];
       // Clear any createdBy filter from query params
       createdBy = undefined;
       createdByName = undefined;

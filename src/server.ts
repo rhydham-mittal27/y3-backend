@@ -45,6 +45,7 @@ import noteRoutes from './routes/noteRoutes';
 import subjectRoutes from './routes/subjectRoutes';
 import optionRoutes from './routes/optionRoutes';
 import classPlanRoutes from './routes/classPlanRoutes';
+import publicLandingRoutes from './routes/publicLandingRoutes';
 
 // Load environment variables
 dotenv.config();
@@ -155,6 +156,7 @@ if (isRateLimitingEnabled) {
 if (isRateLimitingEnabled) {
   app.use('/api/leads', writeLimiter, leadRoutes);
   app.use('/api/public/leads', writeLimiter, publicLeadRoutes);
+  app.use('/api/public/landing', writeLimiter, publicLandingRoutes);
   app.use('/api/announcements', writeLimiter, announcementRoutes);
   app.use('/api/notifications', writeLimiter, notificationRoutes);
   app.use('/api/demos', writeLimiter, demoRoutes);
@@ -178,6 +180,7 @@ if (isRateLimitingEnabled) {
 } else {
   app.use('/api/leads', leadRoutes);
   app.use('/api/public/leads', publicLeadRoutes);
+  app.use('/api/public/landing', publicLandingRoutes);
   app.use('/api/announcements', announcementRoutes);
   app.use('/api/notifications', notificationRoutes);
   app.use('/api/demos', demoRoutes);
