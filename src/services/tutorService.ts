@@ -246,12 +246,62 @@ export const getPublicTutorProfile = async (teacherId: string) => {
 
   if (!tutor) throw new ErrorResponse('Tutor not found', 404);
 
+  // Calculate real teaching hours from attendance data
+  const tutorUserId = new mongoose.Types.ObjectId(
+    String(((tutor.user as any)?._id) || tutor.user)
+  );
+
+  const allTutorClasses = await FinalClass.find({
+    $or: [
+      { tutor: tutorUserId },
+      { tutorUser: tutorUserId },
+    ],
+  })
+    .select('classLead')
+    .populate({ path: 'classLead', select: 'classDurationHours' });
+
+  const classIdMap = new Map<string, any>();
+  const classIds: mongoose.Types.ObjectId[] = [];
+  for (const cls of allTutorClasses as any[]) {
+    const id = cls._id as mongoose.Types.ObjectId;
+    classIds.push(id);
+    classIdMap.set(String(id), cls);
+  }
+
+  let totalClassHours = 0;
+
+  if (classIds.length > 0) {
+    const attendanceCounts = await AttendanceSheet.aggregate([
+      {
+        $match: {
+          finalClass: { $in: classIds },
+        },
+      },
+      {
+        $group: {
+          _id: '$finalClass',
+          count: { $sum: '$totalSessionsTaken' },
+        },
+      },
+    ]);
+
+    for (const row of attendanceCounts as any[]) {
+      const cls = classIdMap.get(String(row._id));
+      if (!cls) continue;
+      const duration = (cls.classLead as any)?.classDurationHours || 0;
+      const count = row.count || 0;
+      if (duration > 0 && count > 0) {
+        totalClassHours += duration * count;
+      }
+    }
+  }
+
   // Return only safe fields
   return {
     _id: tutor._id,
     teacherId: tutor.teacherId,
     user: tutor.user,
-    experienceHours: tutor.experienceHours,
+    experienceHours: totalClassHours,
     subjects: tutor.subjects,
     qualifications: tutor.qualifications,
     extracurricularActivities: tutor.extracurricularActivities,
@@ -264,7 +314,7 @@ export const getPublicTutorProfile = async (teacherId: string) => {
     preferredLocations: tutor.preferredLocations,
     preferredCities: tutor.preferredCities,
     tier: tutor.tier,
-    documents: (tutor.documents || []).filter(d => d.documentType === 'PROFILE_PHOTO' || d.verifiedAt),
+    documents: (tutor.documents || []).filter(d => d.documentType === 'PROFILE_PHOTO'),
     createdAt: tutor.createdAt,
     approvalRatio: tutor.approvalRatio,
     bio: tutor.bio,

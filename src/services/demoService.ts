@@ -106,7 +106,8 @@ export const updateDemoStatus = async (
   // const isManagerOrAdmin = [USER_ROLES.MANAGER, USER_ROLES.ADMIN].includes(updatedByRole as USER_ROLES);
 
   if (isTutor) {
-    if (String(lead.assignedTutor) !== String(updatedBy)) {
+    const assignedId = (lead.assignedTutor as any)?._id?.toString() || lead.assignedTutor?.toString();
+    if (assignedId !== String(updatedBy)) {
       throw new ErrorResponse('You are not the assigned tutor for this demo', 403);
     }
     if (!(currentStatus === DEMO_STATUS.SCHEDULED && newStatus === DEMO_STATUS.COMPLETED)) {
@@ -115,7 +116,7 @@ export const updateDemoStatus = async (
   }
 
   // Validate that demo can only be marked after scheduled time
-  if ([DEMO_STATUS.COMPLETED, DEMO_STATUS.APPROVED, DEMO_STATUS.REJECTED].includes(newStatus)) {
+  if (newStatus === DEMO_STATUS.COMPLETED) {
     const demoDate = (lead.demoDetails as any)?.demoDate;
     const demoTime = (lead.demoDetails as any)?.demoTime;
     
