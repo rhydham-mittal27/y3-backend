@@ -13,6 +13,7 @@ import {
   getInterestedTutors,
   getRecommendedTutorsForLead,
   deactivateAnnouncement,
+  getMyExpressedInterests,
 } from '../services/announcementService';
 import {
   sendCoordinatorAnnouncement,
@@ -109,6 +110,12 @@ export const deactivateAnnouncementController = asyncHandler(async (req, res) =>
   const { id } = req.params as { id: string };
   const updated = await deactivateAnnouncement(id);
   return res.status(200).json(successResponse(updated, 'Announcement deactivated'));
+});
+
+export const getMyExpressedInterestsController = asyncHandler(async (req: AuthRequest, res) => {
+  const tutorUserId = req.user!.id;
+  const interests = await getMyExpressedInterests(tutorUserId);
+  return res.status(200).json(successResponse(interests));
 });
 
 export const sendCoordinatorAnnouncementController = asyncHandler(async (req: AuthRequest, res) => {

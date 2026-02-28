@@ -35,6 +35,7 @@ export interface IManagerDocument extends Document {
   permissions?: {
     canViewSiteLeads?: boolean;
     canVerifyTutors?: boolean;
+    canVerifyCoordinators?: boolean;
     canCreateLeads?: boolean;
 
   };
@@ -103,6 +104,7 @@ const ManagerSchema: Schema<IManagerDocument> = new Schema<IManagerDocument>(
       type: {
         canViewSiteLeads: { type: Boolean, default: true },
         canVerifyTutors: { type: Boolean, default: true },
+        canVerifyCoordinators: { type: Boolean, default: true },
         canCreateLeads: { type: Boolean, default: true },
 
       },

@@ -8,6 +8,7 @@ import Manager from '../models/Manager';
 export type ManagerPermissionKey =
   | 'canViewSiteLeads'
   | 'canVerifyTutors'
+  | 'canVerifyCoordinators'
   | 'canCreateLeads'
 
 

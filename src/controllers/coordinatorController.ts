@@ -19,6 +19,10 @@ import {
   getCoordinatorPaymentSummary,
   getCoordinatorProfileMetrics,
   getEligibleCoordinatorUsers,
+  getCoordinatorsForVerification,
+  updateCoordinatorVerificationStatus,
+  uploadCoordinatorDocument,
+  deleteCoordinatorDocument,
 } from '../services/coordinatorService';
 
 export const createCoordinatorProfile = asyncHandler(async (req: AuthRequest, res) => {
@@ -167,7 +171,8 @@ export const getPaymentSummary = asyncHandler(async (req: AuthRequest, res) => {
 
 // Coordinator: Profile Metrics (date filtered)
 export const getProfileMetrics = asyncHandler(async (req: AuthRequest, res) => {
-  const userId = req.user?.id as string;
+  // Admin/Manager can pass ?userId= to view any coordinator's metrics
+  const userId = ((req.query.userId as string) || req.user?.id) as string;
   const fromDateStr = (req.query.fromDate as string) || undefined;
   const toDateStr = (req.query.toDate as string) || undefined;
   const fromDate = fromDateStr ? new Date(fromDateStr) : undefined;
@@ -180,6 +185,51 @@ export const getProfileMetrics = asyncHandler(async (req: AuthRequest, res) => {
 export const getEligibleUsers = asyncHandler(async (_req: AuthRequest, res) => {
   const users = await getEligibleCoordinatorUsers();
   return res.json(successResponse(users));
+});
+
+export const getPendingCoordinatorVerifications = asyncHandler(async (_req: AuthRequest, res) => {
+  const coordinators = await getCoordinatorsForVerification();
+  return res.json(successResponse(coordinators));
+});
+
+export const updateCoordinatorVerificationStatusController = asyncHandler(async (req: AuthRequest, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    throw new ErrorResponse(errors.array()[0].msg, 400);
+  }
+
+  const { status, verificationNotes } = req.body as { status: string; verificationNotes?: string };
+  const coordinator = await updateCoordinatorVerificationStatus(
+    req.params.id as string,
+    status as any,
+    verificationNotes,
+    String(req.user!.id)
+  );
+  return res.json(successResponse(coordinator, 'Verification status updated successfully'));
+});
+
+export const uploadCoordinatorDocumentController = asyncHandler(async (req: AuthRequest, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    throw new ErrorResponse(errors.array()[0].msg, 400);
+  }
+
+  const file = (req as any).file as any | undefined;
+  if (!file) throw new ErrorResponse('No file uploaded', 400);
+
+  const coordinator = await uploadCoordinatorDocument(req.params.id as string, String(req.body.documentType), file);
+  return res.json(successResponse(coordinator, 'Document uploaded successfully'));
+});
+
+export const deleteCoordinatorDocumentController = asyncHandler(async (req: AuthRequest, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    throw new ErrorResponse(errors.array()[0].msg, 400);
+  }
+
+  const index = parseInt(req.params.documentIndex, 10);
+  const coordinator = await deleteCoordinatorDocument(req.params.id as string, index);
+  return res.json(successResponse(coordinator, 'Document deleted successfully'));
 });
 
 export default {
@@ -198,4 +248,8 @@ export default {
   getPaymentSummary,
   getProfileMetrics,
   getEligibleUsers,
+  getPendingCoordinatorVerifications,
+  updateCoordinatorVerificationStatusController,
+  uploadCoordinatorDocumentController,
+  deleteCoordinatorDocumentController,
 };

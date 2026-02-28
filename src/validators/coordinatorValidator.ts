@@ -1,5 +1,5 @@
 import { body, param, query } from 'express-validator';
-import { FINAL_CLASS_STATUS } from '../config/constants';
+import { FINAL_CLASS_STATUS, VERIFICATION_STATUS, DOCUMENT_TYPES } from '../config/constants';
 
 export const createCoordinatorValidation = [
   body('userId').notEmpty().withMessage('User ID is required').isMongoId().withMessage('Invalid user ID'),
@@ -20,6 +20,34 @@ export const updateCoordinatorValidation = [
 ];
 
 export const coordinatorIdValidation = [param('id').isMongoId().withMessage('Invalid coordinator ID')];
+
+export const updateCoordinatorVerificationStatusValidation = [
+  param('id').isMongoId().withMessage('Invalid coordinator ID'),
+  body('status')
+    .notEmpty()
+    .withMessage('Status is required')
+    .isIn(Object.values(VERIFICATION_STATUS))
+    .withMessage('Invalid verification status'),
+  body('verificationNotes')
+    .optional()
+    .trim()
+    .isLength({ max: 1000 })
+    .withMessage('Verification notes must not exceed 1000 characters'),
+];
+
+export const uploadCoordinatorDocumentValidation = [
+  param('id').isMongoId().withMessage('Invalid coordinator ID'),
+  body('documentType')
+    .notEmpty()
+    .withMessage('Document type is required')
+    .isIn(DOCUMENT_TYPES as unknown as string[])
+    .withMessage('Invalid document type'),
+];
+
+export const deleteCoordinatorDocumentValidation = [
+  param('id').isMongoId().withMessage('Invalid coordinator ID'),
+  param('documentIndex').isInt({ min: 0 }).withMessage('Invalid document index'),
+];
 
 export const userIdParamValidation = [param('userId').isMongoId().withMessage('Invalid user ID')];
 
@@ -43,6 +71,9 @@ export default {
   createCoordinatorValidation,
   updateCoordinatorValidation,
   coordinatorIdValidation,
+  updateCoordinatorVerificationStatusValidation,
+  uploadCoordinatorDocumentValidation,
+  deleteCoordinatorDocumentValidation,
   userIdParamValidation,
   assignedClassesQueryValidation,
 };

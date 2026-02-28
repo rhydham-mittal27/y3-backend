@@ -18,6 +18,7 @@ export const createManagerProfile = async (
   permissions?: {
     canViewSiteLeads?: boolean;
     canVerifyTutors?: boolean;
+    canVerifyCoordinators?: boolean;
     canCreateLeads?: boolean;
   }
 ) => {

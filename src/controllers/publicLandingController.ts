@@ -76,6 +76,15 @@ export const createLandingParentLead = asyncHandler(async (req, res) => {
   const normalizedClass = classLevel ? String(classLevel).trim() : undefined;
   const normalizedSubject = subject ? String(subject).trim() : undefined;
 
+  // Build a clean human-readable notes string (no JSON)
+  const noteParts: string[] = [];
+  if (normalizedCity) noteParts.push(`City: ${normalizedCity}`);
+  if (normalizedClass) noteParts.push(`Class: ${normalizedClass}`);
+  if (normalizedSubject) noteParts.push(`Subject: ${normalizedSubject}`);
+  if (studentGender) noteParts.push(`Student Gender: ${studentGender}`);
+  noteParts.push('Source: Website Landing Page');
+  const notes = noteParts.join(' | ');
+
   const lead = await createClassLead({
     studentType: 'SINGLE',
     studentName: normalizedParentName || 'Unknown',
@@ -88,9 +97,9 @@ export const createLandingParentLead = asyncHandler(async (req, res) => {
     mode: TEACHING_MODE.OFFLINE,
     city: normalizedCity,
     timing: 'Flexible',
-    leadSource: LEAD_SOURCE.OTHER,
+    leadSource: LEAD_SOURCE.SITE,
     paymentReceived: false,
-    notes: JSON.stringify({ source: 'landing_parent_demo', raw: req.body }),
+    notes,
     createdBy: createdByUserId,
   });
 

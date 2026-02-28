@@ -9,6 +9,7 @@ import {
   getInterestedTutorsForAnnouncement,
   getRecommendedTutorsForLeadController,
   deactivateAnnouncementController,
+  getMyExpressedInterestsController,
 } from '../controllers/announcementController';
 import {
   sendCoordinatorAnnouncementController,
@@ -40,6 +41,7 @@ router.get(
   getTutorAvailableAnnouncementsController
 );
 router.get('/lead/:leadId', authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN), leadIdValidation, getAnnouncementByLead);
+router.get('/tutor/my-interests', authorize(USER_ROLES.TUTOR), getMyExpressedInterestsController);
 router.get('/:id', authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN, USER_ROLES.TUTOR), announcementIdValidation, getAnnouncement);
 router.post('/:id/interest', authorize(USER_ROLES.TUTOR), expressInterestValidation, expressInterestInAnnouncement);
 router.get('/:id/interested-tutors', authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN), announcementIdValidation, getInterestedTutorsForAnnouncement);

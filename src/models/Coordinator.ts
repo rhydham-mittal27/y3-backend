@@ -1,4 +1,5 @@
 import mongoose, { Schema, Document, Model } from 'mongoose';
+import { VERIFICATION_STATUS } from '../config/constants';
 
 export interface ICoordinatorDocument extends Document {
   _id: mongoose.Types.ObjectId;
@@ -10,6 +11,18 @@ export interface ICoordinatorDocument extends Document {
   specialization?: string[];
   joiningDate: Date;
   performanceScore: number;
+  verificationStatus: VERIFICATION_STATUS | string;
+  verificationNotes?: string;
+  verifiedBy?: mongoose.Types.ObjectId;
+  verifiedAt?: Date;
+  documents?: {
+    documentType: 'AADHAAR' | 'PROFILE_PHOTO' | 'EXPERIENCE_PROOF' | 'DEGREE' | 'CERTIFICATE' | 'OTHER';
+    documentUrl: string;
+    uploadedAt: Date;
+    verifiedAt?: Date;
+    s3Key?: string;
+    s3Bucket?: string;
+  }[];
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -45,6 +58,28 @@ const CoordinatorSchema: Schema<ICoordinatorDocument> = new Schema<ICoordinatorD
     specialization: { type: [String] },
     joiningDate: { type: Date, default: Date.now },
     performanceScore: { type: Number, default: 0, min: 0, max: 100 },
+    verificationStatus: {
+      type: String,
+      enum: Object.values(VERIFICATION_STATUS),
+      default: VERIFICATION_STATUS.PENDING,
+    },
+    verificationNotes: { type: String, trim: true },
+    verifiedBy: { type: Schema.Types.ObjectId, ref: 'User' },
+    verifiedAt: { type: Date },
+    documents: [
+      {
+        documentType: {
+          type: String,
+          enum: ['AADHAAR', 'PROFILE_PHOTO', 'EXPERIENCE_PROOF', 'DEGREE', 'CERTIFICATE', 'OTHER'],
+          required: true,
+        },
+        documentUrl: { type: String, required: true },
+        uploadedAt: { type: Date, default: Date.now },
+        verifiedAt: { type: Date },
+        s3Key: { type: String },
+        s3Bucket: { type: String },
+      },
+    ],
     isActive: { type: Boolean, default: true },
     settings: {
       type: {

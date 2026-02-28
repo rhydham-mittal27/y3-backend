@@ -411,48 +411,60 @@ export const getStudentProfile = asyncHandler(async (req: AuthRequest, res) => {
   const isStaff = ['ADMIN', 'MANAGER', 'COORDINATOR'].includes(userRole || '');
 
   if (isStaff) {
-    // Find classes where this student is enrolled
-    const classes = await FinalClass.find({
-      $or: [
-        { studentId: student.studentId },
-        { studentName: student.name }
-      ]
-    })
-    .populate('tutor', 'name email phone')
-    .populate('coordinator', 'name email')
-    .populate('classLead'); // Populate full classLead for demoDetails
+    // Use direct finalClass reference from student document for accurate, duplicate-free lookup
+    const finalClassId = student.finalClass;
+    
+    let classes: any[] = [];
+    if (finalClassId) {
+      const cls = await FinalClass.findById(finalClassId)
+        .populate({ path: 'tutor', select: 'name email phone' })
+        .populate({ path: 'coordinator', select: 'name email phone' })
+        .populate({ path: 'classLead' }); // Populate full classLead for demoDetails
 
-    // Get payment summary
-    const payments = await Payment.find({
-      $or: [
-        { studentId: student.studentId },
-        { studentName: student.name }
-      ]
-    }).sort({ month: -1 });
+      if (cls) {
+        classes = [cls];
+      }
+    }
+
+    // Get payment summary via finalClass reference (correct approach)
+    const payments = finalClassId
+      ? await Payment.find({ finalClass: finalClassId }).sort({ cycleYear: -1, cycleMonth: -1 })
+      : [];
 
     // Get attendance summary (stat only)
-    const attendanceStats = await Attendance.aggregate([
-      { $match: { 
-          $or: [
-            { studentId: student.studentId },
-            { studentName: student.name }
-          ]
-      }},
-      { $group: {
-          _id: '$studentAttendanceStatus',
-          count: { $sum: 1 }
-      }}
-    ]);
+    const attendanceStats = finalClassId
+      ? await Attendance.aggregate([
+          { $match: { finalClass: new mongoose.Types.ObjectId(String(finalClassId)) } },
+          { $group: { _id: '$studentAttendanceStatus', count: { $sum: 1 } } },
+        ])
+      : [];
 
-    // Get tests
-    const classIds = classes.map(c => c._id);
-    const tests = await Test.find({ finalClass: { $in: classIds } }).sort({ testDate: -1 });
+    // Get tests for this class
+    const tests = finalClassId
+      ? await Test.find({ finalClass: finalClassId }).sort({ testDate: -1 })
+      : [];
+
+    // Populate classLead to get parent contact details (email, phone)
+    const ClassLead = require('../models/ClassLead').default;
+    const studentClassLead = student.classLead 
+      ? await ClassLead.findById(student.classLead).select('parentEmail parentPhone parentName address location city area')
+      : null;
 
     const enrichedStudent = student.toObject();
     (enrichedStudent as any).classes = classes;
     (enrichedStudent as any).payments = payments;
     (enrichedStudent as any).attendanceStats = attendanceStats;
-    (enrichedStudent as any).tests = tests; // Add tests to response
+    (enrichedStudent as any).tests = tests;
+
+    // Merge parent contact info from classLead
+    if (studentClassLead) {
+      (enrichedStudent as any).email = studentClassLead.parentEmail || null;
+      (enrichedStudent as any).phone = studentClassLead.parentPhone || null;
+      (enrichedStudent as any).address = studentClassLead.address || studentClassLead.location || 
+        [studentClassLead.area, studentClassLead.city].filter(Boolean).join(', ') || null;
+      (enrichedStudent as any).parentName = studentClassLead.parentName || null;
+    }
+
     return res.json(successResponse(enrichedStudent));
   }
 

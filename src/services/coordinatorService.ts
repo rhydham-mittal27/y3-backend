@@ -3,7 +3,7 @@ import Coordinator from '../models/Coordinator';
 import User from '../models/User';
 import FinalClass from '../models/FinalClass';
 import ErrorResponse from '../utils/errorResponse';
-import { USER_ROLES, MANAGER_ACTION_TYPE, FINAL_CLASS_STATUS, PAYMENT_STATUS, ATTENDANCE_STATUS, COORDINATOR_ACTION_TYPE, PAYMENT_TYPE } from '../config/constants';
+import { USER_ROLES, MANAGER_ACTION_TYPE, FINAL_CLASS_STATUS, PAYMENT_STATUS, ATTENDANCE_STATUS, COORDINATOR_ACTION_TYPE, PAYMENT_TYPE, VERIFICATION_STATUS } from '../config/constants';
 import { logManagerActivity } from './managerService';
 import Manager from '../models/Manager';
 import Payment from '../models/Payment';
@@ -11,6 +11,10 @@ import Attendance from '../models/Attendance';
 import Test from '../models/Test';
 import CoordinatorActivityLog from '../models/CoordinatorActivityLog';
 import { getPendingApprovalsForCoordinator } from './attendanceService';
+import { DOCUMENT_TYPES } from '../config/constants';
+import { uploadFileToS3 } from './s3Service';
+import { S3_CONFIG } from '../config/s3';
+import { deleteFileFromS3 } from './s3Service';
 
 export const logCoordinatorActivity = async (
   coordinatorUserId: string,
@@ -71,6 +75,90 @@ export const createCoordinator = async (
       );
     } catch {}
   }
+  return coordinator;
+};
+
+export const uploadCoordinatorDocument = async (
+  coordinatorId: string,
+  documentType: string,
+  file: any
+) => {
+  const coordinator: any = await Coordinator.findById(coordinatorId);
+  if (!coordinator) throw new ErrorResponse('Coordinator not found', 404);
+
+  if (!(DOCUMENT_TYPES as readonly string[]).includes(documentType)) {
+    throw new ErrorResponse('Invalid document type', 400);
+  }
+
+  const buffer: Buffer | undefined = file?.buffer;
+  const originalname: string = file?.originalname || 'document';
+  const mimetype: string = file?.mimetype || 'application/octet-stream';
+
+  if (!buffer) {
+    throw new ErrorResponse('Invalid file upload', 400);
+  }
+
+  const uploadResult = await uploadFileToS3(
+    buffer,
+    originalname,
+    mimetype,
+    S3_CONFIG.FOLDERS.DOCUMENTS
+  );
+
+  const doc = {
+    documentType,
+    documentUrl: uploadResult.url,
+    uploadedAt: new Date(),
+    s3Key: uploadResult.key,
+    s3Bucket: uploadResult.bucket,
+  } as any;
+
+  const previousStatus = coordinator.verificationStatus as VERIFICATION_STATUS;
+  if (!Array.isArray(coordinator.documents)) coordinator.documents = [];
+  coordinator.documents.push(doc);
+
+  if (coordinator.documents.length === 1 && previousStatus === VERIFICATION_STATUS.PENDING) {
+    coordinator.verificationStatus = VERIFICATION_STATUS.UNDER_REVIEW;
+  }
+
+  if (previousStatus === VERIFICATION_STATUS.REJECTED) {
+    coordinator.verificationStatus = VERIFICATION_STATUS.UNDER_REVIEW;
+    coordinator.verifiedBy = undefined;
+    coordinator.verifiedAt = undefined;
+  }
+
+  await coordinator.save();
+  await coordinator.populate([
+    { path: 'user', select: 'name email phone role' },
+    { path: 'verifiedBy', select: 'name email phone role' },
+  ]);
+  return coordinator;
+};
+
+export const deleteCoordinatorDocument = async (
+  coordinatorId: string,
+  documentIndex: number
+) => {
+  const coordinator: any = await Coordinator.findById(coordinatorId);
+  if (!coordinator) throw new ErrorResponse('Coordinator not found', 404);
+
+  if (!Array.isArray(coordinator.documents) || documentIndex < 0 || documentIndex >= coordinator.documents.length) {
+    throw new ErrorResponse('Invalid document index', 400);
+  }
+
+  const doc: any = coordinator.documents[documentIndex];
+  if (doc?.s3Key) {
+    try {
+      await deleteFileFromS3(doc.s3Key);
+    } catch {}
+  }
+
+  coordinator.documents.splice(documentIndex, 1);
+  await coordinator.save();
+  await coordinator.populate([
+    { path: 'user', select: 'name email phone role' },
+    { path: 'verifiedBy', select: 'name email phone role' },
+  ]);
   return coordinator;
 };
 
@@ -662,6 +750,68 @@ export const getEligibleCoordinatorUsers = async () => {
   return users;
 };
 
+export const getCoordinatorsForVerification = async () => {
+  const coordinators = await Coordinator.find({
+    verificationStatus: { $in: [VERIFICATION_STATUS.PENDING, VERIFICATION_STATUS.UNDER_REVIEW] as any },
+  })
+    .sort({ updatedAt: 1 })
+    .populate([
+      { path: 'user', select: 'name email phone role' },
+      { path: 'verifiedBy', select: 'name email phone role' },
+    ]);
+
+  return coordinators;
+};
+
+export const updateCoordinatorVerificationStatus = async (
+  coordinatorId: string,
+  newStatus: VERIFICATION_STATUS,
+  verificationNotes: string | undefined,
+  verifiedBy: string
+) => {
+  const coordinator: any = await Coordinator.findById(coordinatorId);
+  if (!coordinator) throw new ErrorResponse('Coordinator not found', 404);
+
+  const current = coordinator.verificationStatus as VERIFICATION_STATUS;
+  const valid = (from: VERIFICATION_STATUS, to: VERIFICATION_STATUS) => {
+    if (from === VERIFICATION_STATUS.PENDING && to === VERIFICATION_STATUS.UNDER_REVIEW) return true;
+    if (from === VERIFICATION_STATUS.PENDING && (to === VERIFICATION_STATUS.VERIFIED || to === VERIFICATION_STATUS.REJECTED)) return true;
+    if (from === VERIFICATION_STATUS.UNDER_REVIEW && (to === VERIFICATION_STATUS.VERIFIED || to === VERIFICATION_STATUS.REJECTED)) return true;
+    return false;
+  };
+
+  if (!valid(current, newStatus)) {
+    throw new ErrorResponse(`Invalid status transition from ${current} to ${newStatus}`, 400);
+  }
+
+  coordinator.verificationStatus = newStatus;
+  coordinator.verificationNotes = verificationNotes;
+
+  if (newStatus === VERIFICATION_STATUS.VERIFIED || newStatus === VERIFICATION_STATUS.REJECTED) {
+    coordinator.verifiedBy = new mongoose.Types.ObjectId(verifiedBy);
+    coordinator.verifiedAt = new Date();
+  }
+
+  await coordinator.save();
+
+  await coordinator.populate([
+    { path: 'user', select: 'name email phone role' },
+    { path: 'verifiedBy', select: 'name email phone role' },
+  ]);
+
+  try {
+    await logManagerActivity(
+      verifiedBy,
+      MANAGER_ACTION_TYPE.UPDATE_COORDINATOR,
+      `Updated coordinator verification status for ${(coordinator as any).user?.name || ''} - status: ${newStatus}`,
+      { entityType: 'Coordinator', entityId: String(coordinator._id), entityName: (coordinator as any).user?.name },
+      { oldStatus: current, newStatus, verificationNotes }
+    );
+  } catch {}
+
+  return coordinator;
+};
+
 export default {
   createCoordinator,
   getAllCoordinators,
@@ -675,4 +825,8 @@ export default {
   getCoordinatorPaymentSummary,
   getCoordinatorProfileMetrics,
   getEligibleCoordinatorUsers,
+  getCoordinatorsForVerification,
+  updateCoordinatorVerificationStatus,
+  uploadCoordinatorDocument,
+  deleteCoordinatorDocument,
 };

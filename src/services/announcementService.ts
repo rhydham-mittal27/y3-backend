@@ -174,6 +174,30 @@ export const getAnnouncementByLeadId = async (classLeadId: string) => {
   return announcement;
 };
 
+// Returns all announcements (all time) where this tutor expressed interest
+export const getMyExpressedInterests = async (tutorUserId: string) => {
+  const announcements = await Announcement.find({
+    'interestedTutors.tutor': new mongoose.Types.ObjectId(tutorUserId),
+  })
+    .sort({ 'interestedTutors.interestedAt': -1 })
+    .populate('classLead', 'studentName parentName grade subject board mode area city tutorFees classesPerMonth status')
+    .lean();
+
+  return announcements.map((ann: any) => {
+    const myEntry = ann.interestedTutors?.find(
+      (ti: any) => String(ti.tutor) === String(tutorUserId)
+    );
+    return {
+      _id: ann._id,
+      classLead: ann.classLead,
+      isActive: ann.isActive,
+      postedAt: ann.postedAt,
+      interestedAt: myEntry?.interestedAt,
+      notes: myEntry?.notes,
+    };
+  });
+};
+
 export const expressInterest = async (announcementId: string, tutorUserId: string, notes?: string) => {
   const announcement = await Announcement.findById(announcementId);
   if (!announcement) throw new ErrorResponse('Announcement not found', 404);
@@ -529,6 +553,7 @@ export default {
   getTutorAvailableAnnouncements,
   getAnnouncementById,
   getAnnouncementByLeadId,
+  getMyExpressedInterests,
   expressInterest,
   getInterestedTutors,
   deactivateAnnouncement,
