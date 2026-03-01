@@ -131,7 +131,6 @@ AdminSchema.virtual('averageActionsPerDay').get(function (this: IAdminDocument) 
 });
 
 // Indexes
-AdminSchema.index({ user: 1 }, { unique: true });
 AdminSchema.index({ isActive: 1 });
 AdminSchema.index({ isActive: 1, systemActionsPerformed: 1 });
 

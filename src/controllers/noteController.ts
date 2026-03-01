@@ -4,7 +4,7 @@ import asyncHandler from '../utils/asyncHandler';
 import ErrorResponse from '../utils/errorResponse';
 import { successResponse } from '../utils/responseFormatter';
 import { AuthRequest } from '../types';
-import { listNotes, listNotesForParent, createFolder, uploadNoteFile } from '../services/noteService';
+import { listNotes, listNotesForParent, listNotesForTutor, createFolder, uploadNoteFile } from '../services/noteService';
 
 export const getNotesController = asyncHandler(async (req: AuthRequest, res: Response) => {
   const ownerId = String(req.user!.id);
@@ -18,7 +18,7 @@ export const getTutorNotesController = asyncHandler(async (req: AuthRequest, res
   const ownerId = String(req.user!.id);
   const parentIdRaw = (req.query.parentId as string) || '';
   const parentId = parentIdRaw && parentIdRaw.trim().length > 0 ? parentIdRaw.trim() : null;
-  const items = await listNotes(ownerId, parentId);
+  const items = await listNotesForTutor(ownerId, parentId);
   return res.json(successResponse(items));
 });
 
@@ -48,9 +48,11 @@ export const uploadNoteFileController = asyncHandler(async (req: AuthRequest, re
   const ownerId = String(req.user!.id);
   const parentId = (req.body.parentId as string) || null;
   const grade = (req.body.grade as string) || null;
+  const board = (req.body.board as string) || null;
+  const subject = (req.body.subject as string) || null;
   const file = (req as any).file as any | undefined;
   if (!file) throw new ErrorResponse('No file uploaded', 400);
 
-  const note = await uploadNoteFile(ownerId, file, parentId || null, grade);
+  const note = await uploadNoteFile(ownerId, file, { parentId, grade, board, subject });
   return res.status(201).json(successResponse(note, 'File uploaded'));
 });

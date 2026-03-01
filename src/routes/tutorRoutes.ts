@@ -124,7 +124,7 @@ router.delete(
 
 router.post(
   '/:id/documents',
-  authorize(USER_ROLES.TUTOR, USER_ROLES.MANAGER, USER_ROLES.ADMIN),
+  authorize(USER_ROLES.TUTOR),
   uploadDocument,
   uploadDocumentValidation,
   uploadDocumentController
@@ -132,7 +132,7 @@ router.post(
 
 router.delete(
   '/:id/documents/:documentIndex',
-  authorize(USER_ROLES.TUTOR, USER_ROLES.MANAGER, USER_ROLES.ADMIN),
+  authorize(USER_ROLES.TUTOR),
   deleteDocumentValidation,
   deleteDocumentController
 );
@@ -147,7 +147,7 @@ router.patch(
 
 router.patch(
   '/:id/verification-fee',
-  authorize(USER_ROLES.TUTOR, USER_ROLES.MANAGER, USER_ROLES.ADMIN),
+  authorize(USER_ROLES.TUTOR, USER_ROLES.MANAGER, USER_ROLES.ADMIN, USER_ROLES.COORDINATOR),
   uploadDocument, // reuse multer middleware for file upload
   require('../controllers/tutorController').updateVerificationFeeStatusController
 );

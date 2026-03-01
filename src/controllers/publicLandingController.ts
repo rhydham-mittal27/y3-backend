@@ -66,6 +66,8 @@ export const createLandingParentLead = asyncHandler(async (req, res) => {
     class: classLevel,
     subject,
     studentGender,
+    teachingMode,
+    notes: userNotes,
   } = req.body as any;
 
   const createdByUserId = await resolveSiteLeadOwnerUserId();
@@ -82,6 +84,7 @@ export const createLandingParentLead = asyncHandler(async (req, res) => {
   if (normalizedClass) noteParts.push(`Class: ${normalizedClass}`);
   if (normalizedSubject) noteParts.push(`Subject: ${normalizedSubject}`);
   if (studentGender) noteParts.push(`Student Gender: ${studentGender}`);
+  if (userNotes) noteParts.push(`User Notes: ${userNotes}`);
   noteParts.push('Source: Website Landing Page');
   const notes = noteParts.join(' | ');
 
@@ -94,7 +97,7 @@ export const createLandingParentLead = asyncHandler(async (req, res) => {
     grade: normalizedClass || 'Unknown',
     subject: normalizedSubject ? [normalizedSubject] : ['All Subjects'],
     board: BOARD_TYPE.CBSE,
-    mode: TEACHING_MODE.OFFLINE,
+    mode: mapTeachingMode(teachingMode),
     city: normalizedCity,
     timing: 'Flexible',
     leadSource: LEAD_SOURCE.SITE,

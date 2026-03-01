@@ -43,9 +43,6 @@ AnnouncementSchema.virtual('interestCount').get(function (this: IAnnouncementDoc
   return this.interestedTutors?.length || 0;
 });
 
-// Indexes
-AnnouncementSchema.index({ classLead: 1 }, { unique: true });
-AnnouncementSchema.index({ isActive: 1, postedAt: -1 });
 AnnouncementSchema.index({ 'interestedTutors.tutor': 1 });
 
 const Announcement: Model<IAnnouncementDocument> =

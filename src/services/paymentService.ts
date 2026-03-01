@@ -3,8 +3,9 @@ import Payment from '../models/Payment';
 import Attendance from '../models/Attendance';
 import FinalClass from '../models/FinalClass';
 import Student from '../models/Student';
+import Tutor from '../models/Tutor';
 import ErrorResponse from '../utils/errorResponse';
-import { PAYMENT_STATUS, PAYMENT_METHOD, PAYMENT_TYPE, ATTENDANCE_STATUS, MANAGER_ACTION_TYPE } from '../config/constants';
+import { PAYMENT_STATUS, PAYMENT_METHOD, PAYMENT_TYPE, ATTENDANCE_STATUS, MANAGER_ACTION_TYPE, VERIFICATION_FEE_AMOUNT } from '../config/constants';
 import logger, { logError } from '../utils/logger';
 import { logManagerActivity } from './managerService';
 import Manager from '../models/Manager';
@@ -180,6 +181,34 @@ export const createAdvancePaymentForFinalClass = async (
   // 3. Create TUTOR_PAYOUT payment (One for the tutor)
   // Only if tutor fees are defined
   let tutorPayoutAmount = lead?.tutorFees || (cls.tutorMonthlyFees) || 0;
+  // If tutor chose to deduct verification fee from first payout, reduce payout and record the deduction
+  try {
+    const tutorDoc = await Tutor.findOne({ user: cls.tutor });
+    if (tutorDoc && String(tutorDoc.verificationFeeStatus) === 'DEDUCT_FROM_FIRST_MONTH' && VERIFICATION_FEE_AMOUNT > 0) {
+      const fee = VERIFICATION_FEE_AMOUNT;
+      // Create a paid verification-fee payment record representing the deduction
+      try {
+        const dueDate2 = new Date();
+        await Payment.create({
+          tutor: cls.tutor,
+          amount: fee,
+          currency: 'INR',
+          status: PAYMENT_STATUS.PAID,
+          paymentType: PAYMENT_TYPE.TUTOR_VERIFICATION_FEES,
+          dueDate: dueDate2,
+          notes: 'Verification fee deducted from first payout',
+          createdBy: new mongoose.Types.ObjectId(createdBy),
+        } as any);
+      } catch (err: any) {
+        // non-fatal
+      }
+
+      tutorPayoutAmount = Math.max(0, tutorPayoutAmount - fee);
+      // Optionally clear the flag so we don't deduct again (leave to admin/business rules)
+    }
+  } catch (err) {
+    // ignore errors here to avoid breaking payment creation
+  }
   
   if (tutorPayoutAmount > 0) {
       const existingPayout = await Payment.findOne({ 
@@ -648,6 +677,11 @@ export const getPaymentStatistics = async (fromDate?: Date, toDate?: Date, tutor
                 $sum: {
                   $cond: [{ $eq: ['$paymentType', PAYMENT_TYPE.MISCELLANEOUS] }, '$amount', 0]
                 }
+              },
+              verificationFees: {
+                $sum: {
+                  $cond: [{ $eq: ['$paymentType', PAYMENT_TYPE.TUTOR_VERIFICATION_FEES] }, '$amount', 0]
+                }
               }
             }
           }
@@ -676,6 +710,11 @@ export const getPaymentStatistics = async (fromDate?: Date, toDate?: Date, tutor
                 $sum: {
                   $cond: [{ $eq: ['$paymentType', PAYMENT_TYPE.MISCELLANEOUS] }, '$amount', 0]
                 }
+              },
+              verificationFees: {
+                $sum: {
+                  $cond: [{ $eq: ['$paymentType', PAYMENT_TYPE.TUTOR_VERIFICATION_FEES] }, '$amount', 0]
+                }
               }
             }
           }
@@ -687,32 +726,40 @@ export const getPaymentStatistics = async (fromDate?: Date, toDate?: Date, tutor
   const [result] = await Payment.aggregate(pipeline);
   
   const totalClasses = result.totalClasses[0]?.count || 0;
-  const financials = result.financials[0] || { feesCollected: 0, tutorPayouts: 0, miscellaneous: 0 };
+  const financials = result.financials[0] || { feesCollected: 0, tutorPayouts: 0, miscellaneous: 0, verificationFees: 0 };
   const feesCollected = financials.feesCollected || 0;
   const tutorPayouts = financials.tutorPayouts || 0;
   const miscellaneous = financials.miscellaneous || 0;
+  const verificationFees = financials.verificationFees || 0;
   const serviceCharge = feesCollected - tutorPayouts;
+  const finalRevenue = serviceCharge + verificationFees; // Item 24
   const netProfit = serviceCharge - miscellaneous;
 
-  const monthly = result.monthlyFinancials[0] || { feesCollected: 0, tutorPayouts: 0, miscellaneous: 0 };
+  const monthly = result.monthlyFinancials[0] || { feesCollected: 0, tutorPayouts: 0, miscellaneous: 0, verificationFees: 0 };
   const monthlyFees = monthly.feesCollected || 0;
   const monthlyPayouts = monthly.tutorPayouts || 0;
   const monthlyMisc = monthly.miscellaneous || 0;
+  const monthlyVerification = monthly.verificationFees || 0;
   const monthlyServiceCharge = monthlyFees - monthlyPayouts;
+  const monthlyFinalRevenue = monthlyServiceCharge + monthlyVerification;
   const monthlyNetProfit = monthlyServiceCharge - monthlyMisc;
 
   return {
-    totalClasses,
+    totalClasses: totalClasses,
     feesCollected,
     totalPayouts: tutorPayouts,
     miscellaneous,
+    verificationFees,
     serviceCharge,
+    finalRevenue,
     netProfit,
     monthly: {
       feesCollected: monthlyFees,
       tutorPayouts: monthlyPayouts,
       miscellaneous: monthlyMisc,
+      verificationFees: monthlyVerification,
       serviceCharge: monthlyServiceCharge,
+      finalRevenue: monthlyFinalRevenue,
       netProfit: monthlyNetProfit
     }
   };

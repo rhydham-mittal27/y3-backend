@@ -261,7 +261,6 @@ export const getPublicLead = asyncHandler(async (req, res) => {
     
     // Preferences
     preferredTutorGender: lead.preferredTutorGender,
-    notes: lead.notes,
     
     // Financials
     tutorFees: lead.tutorFees, 

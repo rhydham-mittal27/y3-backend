@@ -96,6 +96,49 @@ export const getMyProfileForEditController = asyncHandler(async (req: AuthReques
 });
 
 export const updateMyProfileController = asyncHandler(async (req: AuthRequest, res: Response) => {
+  const tutorUser = await getTutorByUserId(String(req.user!.id));
+
+  // Lock permanent identity fields for verified tutors
+  if (tutorUser && (tutorUser as any).verificationStatus === 'VERIFIED') {
+    const lockedFieldsMapping: Record<string, string> = {
+      fullName: 'name',
+      email: 'email',
+      phoneNumber: 'phone',
+      permanentAddress: 'permanentAddress',
+      residentialAddress: 'residentialAddress'
+    };
+
+    const changedLockedFields = Object.entries(lockedFieldsMapping).filter(([frontendKey, backendKey]) => {
+      // Only check if the field is present in the request body
+      if (!(frontendKey in req.body)) return false;
+      
+      const newValue = req.body[frontendKey];
+      let oldValue: any;
+
+      if (['fullName', 'email', 'phoneNumber'].includes(frontendKey)) {
+        // These fields map to the user sub-document
+        oldValue = (tutorUser as any).user?.[backendKey];
+      } else {
+        // These fields map directly to the tutor document
+        oldValue = (tutorUser as any)[backendKey];
+      }
+
+      // If the field is not provided in DB yet, any non-empty value is a change
+      // If it is provided, compare values while being robust to nulls/types
+      const normalizedNew = String(newValue || '').trim();
+      const normalizedOld = String(oldValue || '').trim();
+      
+      return normalizedNew !== normalizedOld;
+    }).map(([frontendKey]) => frontendKey);
+
+    if (changedLockedFields.length > 0) {
+      throw new ErrorResponse(
+        `Cannot update the following fields after verification: ${changedLockedFields.join(', ')}`,
+        403
+      );
+    }
+  }
+
   const tutor = await updateMyProfile(String(req.user!.id), req.body);
   return res.json(successResponse(tutor, 'Profile updated successfully'));
 });
@@ -121,6 +164,21 @@ export const uploadDocumentController = asyncHandler(async (req: Request, res: R
 
   const file = (req as any).file as any | undefined;
   if (!file) throw new ErrorResponse('No file uploaded', 400);
+
+  // Item 27: Enforce document upload rules based on tutor verification status
+  const existingTutor = await getTutorById(req.params.id);
+  if (!existingTutor) throw new ErrorResponse('Tutor not found', 404);
+
+  const status = (existingTutor as any).verificationStatus;
+
+  if (status === 'VERIFIED') {
+    throw new ErrorResponse('Documents cannot be changed after verification', 403);
+  }
+
+  if (status === 'PENDING' && Array.isArray((existingTutor as any).documents) && (existingTutor as any).documents.length > 0) {
+    throw new ErrorResponse('Documents already submitted. They are under review and cannot be replaced until a decision is made.', 403);
+  }
+  // REJECTED status or no documents yet → allow upload
 
   const tutor = await uploadDocumentService(req.params.id, String(req.body.documentType), file);
   return res.json(successResponse(tutor, 'Document uploaded successfully'));

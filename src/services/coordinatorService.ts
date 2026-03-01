@@ -558,7 +558,7 @@ export const getAssignedClassesSummary = async (
   const enriched = await Promise.all(
     classes.map(async (cls: any) => {
       const pendingAttendanceCount = await Attendance.countDocuments({ finalClass: cls._id, status: ATTENDANCE_STATUS.PENDING });
-      const overduePayments = await Payment.countDocuments({ finalClass: cls._id, status: PAYMENT_STATUS.PENDING, dueDate: { $lt: now } });
+      const overduePaymentsCount = await Payment.countDocuments({ finalClass: cls._id, status: PAYMENT_STATUS.PENDING, dueDate: { $lt: now } });
       const totalSessions =
         (cls as any)?.classLead?.classesPerMonth ??
         (cls as any)?.classesPerMonth ??
@@ -566,12 +566,25 @@ export const getAssignedClassesSummary = async (
         0;
       const completedSessions = cls.completedSessions || 0;
       const progressPercentage = totalSessions > 0 ? Math.round((completedSessions / totalSessions) * 100) : 0;
+      // Compose session progress string
+      const sessionProgress = `${completedSessions}/${totalSessions} (${progressPercentage}%)`;
+      // Subjects array (ensure array)
+      const subjects = Array.isArray(cls.subject) ? cls.subject : (cls.subject ? [cls.subject] : []);
+      // Tutor name
+      let tutorName = '';
+      if (cls.tutor && typeof cls.tutor === 'object' && cls.tutor.name) tutorName = cls.tutor.name;
+      else if (cls.tutorName) tutorName = cls.tutorName;
       return {
         ...cls.toObject(),
+        subjects,
+        tutorName,
+        sessionProgress,
+        pendingAttendanceCount,
+        overduePaymentsCount,
         metrics: {
           progressPercentage,
           pendingAttendanceCount,
-          overduePaymentsCount: overduePayments,
+          overduePaymentsCount,
         },
       };
     })

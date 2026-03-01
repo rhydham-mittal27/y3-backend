@@ -16,7 +16,7 @@ import Payment from '../models/Payment';
 import DemoHistory from '../models/DemoHistory';
 import AttendanceSheet from '../models/AttendanceSheet';
 import { createNotificationWithPreferences } from './notificationService';
-import { PAYMENT_STATUS, PAYMENT_TYPE, DEMO_STATUS } from '../config/constants';
+import { PAYMENT_STATUS, PAYMENT_TYPE, DEMO_STATUS, VERIFICATION_FEE_AMOUNT } from '../config/constants';
 
 export const createTutorProfile = async (
   userId: string,
@@ -442,6 +442,7 @@ export const updateMyProfile = async (userId: string, updateData: {
   bio?: string;
   languagesKnown?: string[];
   skills?: string[];
+  whatsappCommunityJoined?: boolean;
 }) => {
   const user = await User.findById(userId);
   if (!user) throw new ErrorResponse('User not found', 404);
@@ -487,6 +488,10 @@ export const updateMyProfile = async (userId: string, updateData: {
     languagesKnown: updateData.languagesKnown,
     skills: updateData.skills,
   };
+
+  if (typeof updateData.whatsappCommunityJoined === 'boolean') {
+    tutorUpdateData.whatsappCommunityJoined = updateData.whatsappCommunityJoined;
+  }
 
   if (tutor) {
     // Update existing tutor
@@ -815,8 +820,42 @@ export const updateVerificationFeeStatus = async (
         console.error('Failed to upload payment proof', err);
         throw new ErrorResponse('Failed to upload payment proof', 500);
     }
+    
+    // Create a paid Payment record for bookkeeping
+    try {
+      const dueDate = verificationFeePaymentDate || new Date();
+      await Payment.create({
+        tutor: tutor.user,
+        amount: VERIFICATION_FEE_AMOUNT,
+        currency: 'INR',
+        status: PAYMENT_STATUS.PAID,
+        paymentType: PAYMENT_TYPE.TUTOR_VERIFICATION_FEES,
+        dueDate,
+        paymentDate: verificationFeePaymentDate,
+        paymentProof: verificationFeePaymentProof,
+        createdBy: tutor.user,
+      } as any);
+    } catch (err: any) {
+      console.error('Failed to create verification fee payment record', err);
+      // non-fatal: continue
+    }
   } else if (feeStatus === 'DEDUCT_FROM_FIRST_MONTH') {
-      // Clear proof if switching to deduct? optional. lets keep it simple.
+      // Create a pending verification fee record to be deducted from first payout (bookkeeping)
+      try {
+        const dueDate = new Date();
+        await Payment.create({
+          tutor: tutor.user,
+          amount: VERIFICATION_FEE_AMOUNT,
+          currency: 'INR',
+          status: PAYMENT_STATUS.PENDING,
+          paymentType: PAYMENT_TYPE.TUTOR_VERIFICATION_FEES,
+          dueDate,
+          notes: 'Deduct from first payout',
+          createdBy: tutor.user,
+        } as any);
+      } catch (err: any) {
+        console.error('Failed to create deduction verification fee record', err);
+      }
   }
 
   tutor.verificationFeeStatus = feeStatus;

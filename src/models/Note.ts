@@ -12,6 +12,7 @@ export interface INoteDocument extends Document {
   mimeType?: string;
   url?: string;
   subject?: string;
+  board?: string;
   chapter?: string;
   classId?: mongoose.Types.ObjectId;
   createdAt: Date;
@@ -28,6 +29,7 @@ const NoteSchema: Schema<INoteDocument> = new Schema(
     mimeType: { type: String },
     url: { type: String },
     subject: { type: String, trim: true },
+    board: { type: String, trim: true },
     chapter: { type: String, trim: true },
     classId: { type: Schema.Types.ObjectId, ref: 'FinalClass', default: null },
   },
@@ -35,6 +37,8 @@ const NoteSchema: Schema<INoteDocument> = new Schema(
 );
 
 NoteSchema.index({ owner: 1, parent: 1, name: 1 });
+NoteSchema.index({ board: 1, grade: 1, subject: 1, parent: 1 });
+NoteSchema.index({ classId: 1 });
 
 const Note: Model<INoteDocument> =
   mongoose.models.Note || mongoose.model<INoteDocument>('Note', NoteSchema);
