@@ -102,6 +102,13 @@ router.get(
   getTutor
 );
 
+router.get(
+  '/:tutorId/classes',
+  authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN, USER_ROLES.TUTOR, USER_ROLES.PARENT),
+  tutorIdParamValidation,
+  require('../controllers/finalClassController').getTutorClasses
+);
+
 router.put(
   '/:id',
   authorize(USER_ROLES.TUTOR, USER_ROLES.MANAGER, USER_ROLES.ADMIN),
