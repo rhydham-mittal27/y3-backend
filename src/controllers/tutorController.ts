@@ -165,22 +165,30 @@ export const uploadDocumentController = asyncHandler(async (req: Request, res: R
   const file = (req as any).file as any | undefined;
   if (!file) throw new ErrorResponse('No file uploaded', 400);
 
+  const documentType = String(req.body.documentType);
+
   // Item 27: Enforce document upload rules based on tutor verification status
   const existingTutor = await getTutorById(req.params.id);
   if (!existingTutor) throw new ErrorResponse('Tutor not found', 404);
 
   const status = (existingTutor as any).verificationStatus;
 
-  if (status === 'VERIFIED') {
+  // Profile photo should always be changeable (even after verification)
+  if (status === 'VERIFIED' && documentType !== 'PROFILE_PHOTO') {
     throw new ErrorResponse('Documents cannot be changed after verification', 403);
   }
 
-  if (status === 'PENDING' && Array.isArray((existingTutor as any).documents) && (existingTutor as any).documents.length > 0) {
+  if (
+    status === 'PENDING' &&
+    documentType !== 'PROFILE_PHOTO' &&
+    Array.isArray((existingTutor as any).documents) &&
+    (existingTutor as any).documents.length > 0
+  ) {
     throw new ErrorResponse('Documents already submitted. They are under review and cannot be replaced until a decision is made.', 403);
   }
   // REJECTED status or no documents yet → allow upload
 
-  const tutor = await uploadDocumentService(req.params.id, String(req.body.documentType), file);
+  const tutor = await uploadDocumentService(req.params.id, documentType, file);
   return res.json(successResponse(tutor, 'Document uploaded successfully'));
 });
 

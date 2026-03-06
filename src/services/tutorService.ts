@@ -619,18 +619,34 @@ export const uploadDocument = async (
   try {
     const previousStatus = tutor.verificationStatus as VERIFICATION_STATUS;
 
-    tutor.documents.push(doc);
-
-    // If this is the first ever document and tutor was pending, move to UNDER_REVIEW
-    if (tutor.documents.length === 1 && previousStatus === VERIFICATION_STATUS.PENDING) {
-      tutor.verificationStatus = VERIFICATION_STATUS.UNDER_REVIEW;
+    // Profile photo should be replaceable: remove previous profile photo (and delete from S3)
+    if (documentType === 'PROFILE_PHOTO' && Array.isArray(tutor.documents) && tutor.documents.length > 0) {
+      const previousPhotos = (tutor.documents as any[]).filter((d) => d?.documentType === 'PROFILE_PHOTO');
+      for (const p of previousPhotos) {
+        if (p?.s3Key) {
+          try {
+            await deleteFileFromS3(p.s3Key);
+          } catch { }
+        }
+      }
+      tutor.documents = (tutor.documents as any[]).filter((d) => d?.documentType !== 'PROFILE_PHOTO') as any;
     }
 
-    // If verification was previously rejected, any new upload should trigger re-review
-    if (previousStatus === VERIFICATION_STATUS.REJECTED) {
-      tutor.verificationStatus = VERIFICATION_STATUS.UNDER_REVIEW;
-      tutor.verifiedBy = undefined as any;
-      tutor.verifiedAt = undefined;
+    tutor.documents.push(doc);
+
+    // Only verification documents should affect verificationStatus
+    if (documentType !== 'PROFILE_PHOTO') {
+      // If this is the first ever document and tutor was pending, move to UNDER_REVIEW
+      if (tutor.documents.length === 1 && previousStatus === VERIFICATION_STATUS.PENDING) {
+        tutor.verificationStatus = VERIFICATION_STATUS.UNDER_REVIEW;
+      }
+
+      // If verification was previously rejected, any new upload should trigger re-review
+      if (previousStatus === VERIFICATION_STATUS.REJECTED) {
+        tutor.verificationStatus = VERIFICATION_STATUS.UNDER_REVIEW;
+        tutor.verifiedBy = undefined as any;
+        tutor.verifiedAt = undefined;
+      }
     }
 
     await tutor.save();
@@ -1447,7 +1463,10 @@ export const getTutorAdvancedAnalytics = async (tutorUserId: string) => {
   const demos = await DemoHistory.find({ tutor: uid });
   const totalDemos = demos.length;
   const approvedDemos = demos.filter(d => d.status === DEMO_STATUS.APPROVED).length;
+  const rejectedDemos = demos.filter(d => d.status === DEMO_STATUS.REJECTED).length;
   const demoApprovalRate = totalDemos > 0 ? (approvedDemos / totalDemos) * 100 : 0;
+  const decidedDemos = approvedDemos + rejectedDemos;
+  const demoRemovalRate = decidedDemos > 0 ? (rejectedDemos / decidedDemos) * 100 : 0;
 
   // 5. Class-wise Earnings
   const classWiseEarnings = await Payment.aggregate([
@@ -1479,6 +1498,35 @@ export const getTutorAdvancedAnalytics = async (tutorUserId: string) => {
     { $sort: { totalAmount: -1 } },
   ]);
 
+  // 6. Teaching hours (current month)
+  // Attendance has been moving to AttendanceSheet.records, so compute from sheets.
+  const teachingHoursAgg = await AttendanceSheet.aggregate([
+    {
+      $match: {
+        // Only sheets that have at least one record in the requested time window
+        // We'll filter precisely after unwind.
+      },
+    },
+    { $unwind: '$records' },
+    {
+      $match: {
+        'records.tutor': uid,
+        'records.status': {
+          $in: [ATTENDANCE_STATUS.APPROVED, ATTENDANCE_STATUS.PARENT_APPROVED, ATTENDANCE_STATUS.COORDINATOR_APPROVED],
+        },
+        'records.sessionDate': { $gte: startOfMonth },
+      },
+    },
+    {
+      $group: {
+        _id: null,
+        total: { $sum: '$records.durationHours' },
+      },
+    },
+  ]);
+
+  const totalTeachingHours = Number(teachingHoursAgg?.[0]?.total || 0);
+
   return {
     sessions: {
       completedThisWeek: completedWeek,
@@ -1489,11 +1537,14 @@ export const getTutorAdvancedAnalytics = async (tutorUserId: string) => {
       thisMonth: earningsMonth[0]?.total || 0,
       total: totalEarnings[0]?.total || 0,
     },
+    totalTeachingHours,
     newClassesCount,
     demos: {
       total: totalDemos,
       approved: approvedDemos,
+      removed: rejectedDemos,
       approvalRate: Number(demoApprovalRate.toFixed(2)),
+      removalRate: Number(demoRemovalRate.toFixed(2)),
     },
     classWiseEarnings,
   };

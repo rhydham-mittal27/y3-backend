@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router } from "express";
 import {
   createTutorProfileController,
   getTutors,
@@ -24,7 +24,7 @@ import {
   getCoordinatorTutorsController,
   getPublicTutorReviewsController,
   getPublicTutorProfileController,
-} from '../controllers/tutorController';
+} from "../controllers/tutorController";
 import {
   createTutorValidation,
   updateTutorValidation,
@@ -38,180 +38,232 @@ import {
   approveTierChangeValidation,
   submitTutorFeedbackValidation,
   tutorIdParamValidation,
-} from '../validators/tutorValidator';
-import protect from '../middlewares/auth';
-import authorize from '../middlewares/authorize';
-import { requireManagerPermissions } from '../middlewares/managerPermissions';
-import { uploadDocument } from '../middlewares/fileUpload';
-import { USER_ROLES } from '../config/constants';
+} from "../validators/tutorValidator";
+import protect from "../middlewares/auth";
+import authorize from "../middlewares/authorize";
+import { requireManagerPermissions } from "../middlewares/managerPermissions";
+import { uploadDocument } from "../middlewares/fileUpload";
+import { USER_ROLES } from "../config/constants";
 
 const router = Router();
 
 // Public read-only route for showing tutor reviews on public profiles (teacherId or internal id)
-router.get('/public/:teacherKey/reviews', getPublicTutorReviewsController);
+router.get("/public/:teacherKey/reviews", getPublicTutorReviewsController);
 
 // Public read-only route for showing tutor profile details by teacherId
-router.get('/public/:teacherId', getPublicTutorProfileController);
+router.get("/public/:teacherId", getPublicTutorProfileController);
 
 router.use(protect);
 
 router.post(
-  '/',
+  "/",
   authorize(USER_ROLES.TUTOR, USER_ROLES.MANAGER, USER_ROLES.ADMIN),
   createTutorValidation,
-  createTutorProfileController
+  createTutorProfileController,
 );
 
-router.get('/subjects', authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN, USER_ROLES.TUTOR), require('../controllers/tutorController').getSubjectsController);
-
-router.get('/verifiers', authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN), require('../controllers/tutorController').getVerifiersController);
-
-router.get('/', authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN), getTutors);
-
-router.get('/my-profile', authorize(USER_ROLES.TUTOR), getMyProfile);
-
-router.get('/my-profile/for-edit', authorize(USER_ROLES.TUTOR), getMyProfileForEditController);
-
-router.put('/my-profile', authorize(USER_ROLES.TUTOR), updateMyProfileController);
+router.get(
+  "/subjects",
+  authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN, USER_ROLES.TUTOR),
+  require("../controllers/tutorController").getSubjectsController,
+);
 
 router.get(
-  '/pending-verifications',
+  "/verifiers",
   authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN),
-  requireManagerPermissions('canVerifyTutors'),
-  getPendingVerifications
+  require("../controllers/tutorController").getVerifiersController,
 );
 
-router.get(
-  '/status/:status',
-  authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN),
-  statusParamValidation,
-  getTutorsByStatus
-);
+router.get("/", authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN), getTutors);
+
+router.get("/my-profile", authorize(USER_ROLES.TUTOR), getMyProfile);
 
 router.get(
-  '/user/:userId',
-  authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN, USER_ROLES.TUTOR, USER_ROLES.PARENT),
-  userIdParamValidation,
-  getTutorByUser
-);
-
-router.get(
-  '/:id',
-  authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN, USER_ROLES.TUTOR, USER_ROLES.PARENT),
-  tutorIdValidation,
-  getTutor
-);
-
-router.get(
-  '/:tutorId/classes',
-  authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN, USER_ROLES.TUTOR, USER_ROLES.PARENT),
-  tutorIdParamValidation,
-  require('../controllers/finalClassController').getTutorClasses
+  "/my-profile/for-edit",
+  authorize(USER_ROLES.TUTOR),
+  getMyProfileForEditController,
 );
 
 router.put(
-  '/:id',
+  "/my-profile",
+  authorize(USER_ROLES.TUTOR),
+  updateMyProfileController,
+);
+
+router.get(
+  "/pending-verifications",
+  authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN),
+  requireManagerPermissions("canVerifyTutors"),
+  getPendingVerifications,
+);
+
+router.get(
+  "/status/:status",
+  authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN),
+  statusParamValidation,
+  getTutorsByStatus,
+);
+
+router.get(
+  "/user/:userId",
+  authorize(
+    USER_ROLES.MANAGER,
+    USER_ROLES.ADMIN,
+    USER_ROLES.TUTOR,
+    USER_ROLES.PARENT,
+  ),
+  userIdParamValidation,
+  getTutorByUser,
+);
+
+router.get(
+  "/:id",
+  authorize(
+    USER_ROLES.MANAGER,
+    USER_ROLES.ADMIN,
+    USER_ROLES.TUTOR,
+    USER_ROLES.PARENT,
+  ),
+  tutorIdValidation,
+  getTutor,
+);
+
+router.get(
+  "/:tutorId/classes",
+  authorize(
+    USER_ROLES.MANAGER,
+    USER_ROLES.ADMIN,
+    USER_ROLES.TUTOR,
+    USER_ROLES.PARENT,
+  ),
+  tutorIdParamValidation,
+  require("../controllers/finalClassController").getTutorClasses,
+);
+
+router.put(
+  "/:id",
   authorize(USER_ROLES.TUTOR, USER_ROLES.MANAGER, USER_ROLES.ADMIN),
   updateTutorValidation,
-  updateTutorProfileController
+  updateTutorProfileController,
 );
 
 router.patch(
-  '/:tutorId/settings',
+  "/:tutorId/settings",
   authorize(USER_ROLES.TUTOR, USER_ROLES.MANAGER, USER_ROLES.ADMIN),
-  updateTutorSettingsController
+  updateTutorSettingsController,
 );
 
 router.delete(
-  '/:id',
+  "/:id",
   authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN),
   tutorIdValidation,
-  deleteTutorProfileController
+  deleteTutorProfileController,
 );
 
 router.post(
-  '/:id/documents',
+  "/:id/documents",
   authorize(USER_ROLES.TUTOR),
   uploadDocument,
   uploadDocumentValidation,
-  uploadDocumentController
+  uploadDocumentController,
 );
 
 router.delete(
-  '/:id/documents/:documentIndex',
+  "/:id/documents/:documentIndex",
   authorize(USER_ROLES.TUTOR),
   deleteDocumentValidation,
-  deleteDocumentController
+  deleteDocumentController,
 );
 
 router.patch(
-  '/:id/verification-status',
+  "/:id/verification-status",
   authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN),
-  requireManagerPermissions('canVerifyTutors'),
+  requireManagerPermissions("canVerifyTutors"),
   updateVerificationStatusValidation,
-  updateVerificationStatusController
+  updateVerificationStatusController,
 );
 
 router.patch(
-  '/:id/verification-fee',
-  authorize(USER_ROLES.TUTOR, USER_ROLES.MANAGER, USER_ROLES.ADMIN, USER_ROLES.COORDINATOR),
+  "/:id/verification-fee",
+  authorize(
+    USER_ROLES.TUTOR,
+    USER_ROLES.MANAGER,
+    USER_ROLES.ADMIN,
+    USER_ROLES.COORDINATOR,
+  ),
   uploadDocument, // reuse multer middleware for file upload
-  require('../controllers/tutorController').updateVerificationFeeStatusController
+  require("../controllers/tutorController")
+    .updateVerificationFeeStatusController,
 );
 
 // Tier management and feedback routes
 router.post(
-  '/tier/request',
+  "/tier/request",
   authorize(USER_ROLES.COORDINATOR, USER_ROLES.MANAGER, USER_ROLES.ADMIN),
   requestTierChangeValidation,
-  requestTierChangeController
+  requestTierChangeController,
 );
 
 router.patch(
-  '/:tutorId/tier/approve',
+  "/:tutorId/tier/approve",
   authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN),
   approveTierChangeValidation,
-  approveTierChangeController
+  approveTierChangeController,
 );
 
 router.post(
-  '/feedback',
+  "/feedback",
   authorize(USER_ROLES.PARENT),
   submitTutorFeedbackValidation,
-  submitTutorFeedbackController
+  submitTutorFeedbackController,
 );
 
 router.get(
-  '/:tutorId/feedback',
-  authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN, USER_ROLES.COORDINATOR, USER_ROLES.TUTOR),
+  "/:tutorId/feedback",
+  authorize(
+    USER_ROLES.MANAGER,
+    USER_ROLES.ADMIN,
+    USER_ROLES.COORDINATOR,
+    USER_ROLES.TUTOR,
+  ),
   tutorIdParamValidation,
-  getTutorFeedbackController
+  getTutorFeedbackController,
 );
 
 router.get(
-  '/:tutorId/performance',
-  authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN, USER_ROLES.COORDINATOR, USER_ROLES.TUTOR),
+  "/:tutorId/performance",
+  authorize(
+    USER_ROLES.MANAGER,
+    USER_ROLES.ADMIN,
+    USER_ROLES.COORDINATOR,
+    USER_ROLES.TUTOR,
+  ),
   tutorIdParamValidation,
-  getTutorPerformanceMetricsController
+  getTutorPerformanceMetricsController,
 );
 router.get(
-  '/:tutorId/advanced-analytics',
-  authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN, USER_ROLES.COORDINATOR, USER_ROLES.TUTOR),
+  "/:tutorId/advanced-analytics",
+  authorize(
+    USER_ROLES.MANAGER,
+    USER_ROLES.ADMIN,
+    USER_ROLES.COORDINATOR,
+    USER_ROLES.TUTOR,
+  ),
   tutorIdParamValidation,
-  getTutorAdvancedAnalyticsController
+  getTutorAdvancedAnalyticsController,
 );
 
 router.get(
-  '/:id/stats',
+  "/:id/stats",
   authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN),
   tutorIdValidation,
-  require('../controllers/tutorController').getTutorStatsController
+  require("../controllers/tutorController").getTutorStatsController,
 );
 
 router.get(
-  '/coordinator/tutors',
+  "/coordinator/tutors",
   authorize(USER_ROLES.COORDINATOR),
-  getCoordinatorTutorsController
+  getCoordinatorTutorsController,
 );
 
 export default router;
