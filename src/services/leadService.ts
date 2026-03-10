@@ -83,6 +83,7 @@ export const generateLeadId = (
   paymentAmount?: number;
   tutorFees?: number;
   notes?: string;
+  internalNotes?: string;
   numberOfStudents?: number;
   studentDetails?: Array<{
     name: string;
@@ -162,11 +163,13 @@ export const generateLeadId = (
   }
 
   await lead.save();
-  await lead.populate([
-    { path: 'createdBy', select: 'name email role' },
-    { path: 'assignedTutor', select: 'name email phone' },
-    { path: 'groupClass' },
-  ]);
+  const leadWithInternalNotes = await ClassLead.findById(lead._id)
+    .select('+internalNotes')
+    .populate([
+      { path: 'createdBy', select: 'name email role' },
+      { path: 'assignedTutor', select: 'name email phone' },
+      { path: 'groupClass' },
+    ]);
 
   try {
     await Manager.findOneAndUpdate({ user: new mongoose.Types.ObjectId(createdBy) }, { $inc: { classLeadsCreated: 1 } });
@@ -178,7 +181,7 @@ export const generateLeadId = (
       { grade: lead.grade, subject: lead.subject, board: lead.board, mode: lead.mode, leadId }
     );
   } catch {}
-  return lead;
+  return (leadWithInternalNotes as any) || lead;
 };
 
 export const getAllClassLeads = async (args: {
@@ -247,6 +250,7 @@ export const getAllClassLeads = async (args: {
 
   const [leads, total] = await Promise.all([
     ClassLead.find(query)
+      .select('+internalNotes')
       .skip(skip)
       .limit(limit)
       .sort(sort)
@@ -271,7 +275,9 @@ export const getAllClassLeads = async (args: {
 };
 
 export const getClassLeadById = async (leadId: string) => {
-  const lead = await ClassLead.findById(leadId).populate([
+  const lead = await ClassLead.findById(leadId)
+    .select('+internalNotes')
+    .populate([
     { path: 'createdBy', select: 'name email role' },
     { path: 'assignedTutor', select: 'name email phone' },
     { path: 'groupClass' },
@@ -299,6 +305,7 @@ export const updateClassLead = async (
     paymentAmount?: number;
     tutorFees?: number;
     notes?: string;
+    internalNotes?: string;
     studentDetails?: any[];
     numberOfStudents?: number;
     weekdays?: string[];
@@ -308,7 +315,7 @@ export const updateClassLead = async (
     throw new ErrorResponse('Status cannot be updated via this endpoint', 400);
   }
 
-  const lead = await ClassLead.findById(leadId).populate('groupClass');
+  const lead = await ClassLead.findById(leadId).select('+internalNotes').populate('groupClass');
   if (!lead) {
     throw new ErrorResponse('Class lead not found', 404);
   }
@@ -356,10 +363,13 @@ export const updateClassLead = async (
 
   Object.assign(lead, updateData);
   await lead.save();
-  await lead.populate([
-    { path: 'createdBy', select: 'name email role' },
-    { path: 'assignedTutor', select: 'name email phone' },
-  ]);
+  const populated = await ClassLead.findById(lead._id)
+    .select('+internalNotes')
+    .populate([
+      { path: 'createdBy', select: 'name email role' },
+      { path: 'assignedTutor', select: 'name email phone' },
+      { path: 'groupClass' },
+    ]);
   try {
     const createdBy = String((lead.createdBy as any)?._id || lead.createdBy);
     await logManagerActivity(
@@ -370,7 +380,7 @@ export const updateClassLead = async (
       updateData
     );
   } catch {}
-  return lead;
+  return (populated as any) || lead;
 };
 
 export const updateClassLeadStatus = async (
@@ -559,6 +569,7 @@ export const deleteClassLead = async (leadId: string) => {
 
 export const getLeadsByManager = async (managerId: string) => {
   const leads = await ClassLead.find({ createdBy: managerId })
+    .select('+internalNotes')
     .sort({ createdAt: -1 })
     .populate([
       { path: 'createdBy', select: 'name email role' },

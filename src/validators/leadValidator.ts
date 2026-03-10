@@ -63,6 +63,11 @@ export const createLeadValidation = [
     .withMessage('Timing is required')
     .isLength({ min: 2, max: 100 })
     .withMessage('Timing must be 2-100 characters'),
+  body('weekdays')
+    .optional()
+    .isArray()
+    .withMessage('Weekdays must be an array')
+    .custom((arr) => Array.isArray(arr) && arr.every((d) => typeof d === 'string' && d.trim().length > 0)),
   body('classesPerMonth').optional().isInt({ min: 1 }).withMessage('Classes per month must be a positive integer'),
   body('classDurationHours').optional().isFloat({ min: 0.5 }).withMessage('Class duration must be at least 0.5 hours'),
   
@@ -107,6 +112,7 @@ export const createLeadValidation = [
     .withMessage('Student tutor fees must be a non-negative number'),
   
   body('notes').optional().trim().isLength({ max: 500 }).withMessage('Notes must not exceed 500 characters'),
+  body('internalNotes').optional().trim().isLength({ max: 2000 }).withMessage('Internal notes must not exceed 2000 characters'),
 ];
 
 export const updateLeadValidation = [
@@ -123,11 +129,13 @@ export const updateLeadValidation = [
   body('area').optional().trim(),
   body('address').optional().trim(),
   body('timing').optional().trim().isLength({ min: 2, max: 100 }),
+  body('weekdays').optional().isArray(),
   body('classesPerMonth').optional().isInt({ min: 1 }),
   body('classDurationHours').optional().isFloat({ min: 0.5 }),
   body('paymentAmount').optional().isFloat({ min: 0 }),
   body('tutorFees').optional().isFloat({ min: 0 }),
   body('notes').optional().trim().isLength({ max: 500 }),
+  body('internalNotes').optional().trim().isLength({ max: 2000 }),
 ];
 
 export const updateStatusValidation = [

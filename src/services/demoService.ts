@@ -141,6 +141,7 @@ export const updateDemoStatus = async (
 
   lead.demoDetails.demoStatus = newStatus as any;
   if (newStatus === DEMO_STATUS.COMPLETED) {
+    lead.status = CLASS_LEAD_STATUS.DEMO_COMPLETED;
     if (feedback) (lead.demoDetails as any).feedback = feedback;
     if (attendanceStatus) (lead.demoDetails as any).attendanceStatus = attendanceStatus;
     if (topicCovered) (lead.demoDetails as any).topicCovered = topicCovered;

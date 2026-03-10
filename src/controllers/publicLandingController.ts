@@ -63,11 +63,14 @@ export const createLandingParentLead = asyncHandler(async (req, res) => {
     parentName,
     phone,
     city,
+    area,
+    board,
     class: classLevel,
     subject,
+    extracurricular,
     studentGender,
     teachingMode,
-    notes: userNotes,
+    note,
   } = req.body as any;
 
   const createdByUserId = await resolveSiteLeadOwnerUserId();
@@ -75,30 +78,29 @@ export const createLandingParentLead = asyncHandler(async (req, res) => {
   const normalizedParentName = parentName ? String(parentName).trim() : undefined;
   const normalizedPhone = normalizePhone(phone);
   const normalizedCity = city ? String(city).trim() : undefined;
+  const normalizedArea = area ? String(area).trim() : undefined;
+  const normalizedBoard = board ? String(board).trim() : undefined;
   const normalizedClass = classLevel ? String(classLevel).trim() : undefined;
   const normalizedSubject = subject ? String(subject).trim() : undefined;
+  const normalizedExtracurricular = extracurricular ? String(extracurricular).trim() : undefined;
 
-  // Build a clean human-readable notes string (no JSON)
-  const noteParts: string[] = [];
-  if (normalizedCity) noteParts.push(`City: ${normalizedCity}`);
-  if (normalizedClass) noteParts.push(`Class: ${normalizedClass}`);
-  if (normalizedSubject) noteParts.push(`Subject: ${normalizedSubject}`);
-  if (studentGender) noteParts.push(`Student Gender: ${studentGender}`);
-  if (userNotes) noteParts.push(`User Notes: ${userNotes}`);
-  noteParts.push('Source: Website Landing Page');
-  const notes = noteParts.join(' | ');
+  const baseNotes = note ? String(note).trim() : '';
+  const notes = normalizedExtracurricular
+    ? [baseNotes, `Extracurricular: ${normalizedExtracurricular}`].filter(Boolean).join(' | ')
+    : baseNotes;
 
   const lead = await createClassLead({
     studentType: 'SINGLE',
-    studentName: normalizedParentName || 'Unknown',
+    studentName: 'Student',
     studentGender: String(studentGender || 'M').toUpperCase() === 'F' ? 'F' : 'M',
     parentName: normalizedParentName,
     parentPhone: normalizedPhone,
     grade: normalizedClass || 'Unknown',
     subject: normalizedSubject ? [normalizedSubject] : ['All Subjects'],
-    board: BOARD_TYPE.CBSE,
+    board: normalizedBoard || BOARD_TYPE.CBSE,
     mode: mapTeachingMode(teachingMode),
     city: normalizedCity,
+    area: normalizedArea,
     timing: 'Flexible',
     leadSource: LEAD_SOURCE.SITE,
     paymentReceived: false,

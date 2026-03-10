@@ -64,6 +64,7 @@ export interface IClassLeadDocument extends Document {
   demoDetails?: IDemoDetailsEmbedded;
   createdBy: mongoose.Types.ObjectId;
   notes?: string;
+  internalNotes?: string;
 
   // Group specific fields
   groupClass?: mongoose.Types.ObjectId;
@@ -233,6 +234,7 @@ const ClassLeadSchema: Schema<IClassLeadDocument> = new Schema<IClassLeadDocumen
     createdBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     groupClass: { type: Schema.Types.ObjectId, ref: 'Groupleads' },
     notes: { type: String },
+    internalNotes: { type: String, select: false },
   },
   { timestamps: true, toJSON: { virtuals: true }, toObject: { virtuals: true } }
 );

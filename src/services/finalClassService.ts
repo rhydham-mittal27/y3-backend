@@ -58,8 +58,19 @@ export const convertLeadToFinalClass = async (params: {
 }) => {
   const { classLeadId, coordinatorUserId, parentUserId, startDate, schedule, totalSessions, ratePerSession, notes, convertedBy, attendanceSubmissionWindow, monthlyFees, tutorMonthlyFees } = params;
   const session = await mongoose.startSession();
+  let useTransaction = false;
   try {
-    session.startTransaction();
+    try {
+      const admin = mongoose.connection?.db?.admin?.();
+      const hello = admin ? await admin.command({ hello: 1 }) : null;
+      useTransaction = Boolean((hello as any)?.setName) || String((hello as any)?.msg || '').toLowerCase().includes('isdbgrid');
+    } catch {
+      useTransaction = false;
+    }
+
+    if (useTransaction) {
+      session.startTransaction();
+    }
 
     const lead = await ClassLead.findById(classLeadId).populate('groupClass').session(session);
     if (!lead) throw new ErrorResponse('Class lead not found', 404);
@@ -374,9 +385,11 @@ export const convertLeadToFinalClass = async (params: {
       });
     }
     
-    await Notification.insertMany(notifications, { session, ordered: true });
+    await Notification.insertMany(notifications, useTransaction ? { session, ordered: true } : { ordered: true });
 
-    await session.commitTransaction();
+    if (useTransaction) {
+      await session.commitTransaction();
+    }
 
     await created.populate([
       { path: 'classLead' },
@@ -400,7 +413,11 @@ export const convertLeadToFinalClass = async (params: {
     const createdObj = created.toObject();
     return { ...createdObj, advancePaymentCreated };
   } catch (err) {
-    await session.abortTransaction();
+    if (useTransaction) {
+      try {
+        await session.abortTransaction();
+      } catch {}
+    }
     throw err;
   } finally {
     session.endSession();
@@ -609,15 +626,27 @@ export const updateFinalClassStatus = async (
   actualEndDate?: Date
 ) => {
   const session = await mongoose.startSession();
+  let useTransaction = false;
   try {
-    session.startTransaction();
+    try {
+      const admin = mongoose.connection?.db?.admin?.();
+      const hello = admin ? await admin.command({ hello: 1 }) : null;
+      useTransaction = Boolean((hello as any)?.setName) || String((hello as any)?.msg || '').toLowerCase().includes('isdbgrid');
+    } catch {
+      useTransaction = false;
+    }
+
+    if (useTransaction) {
+      session.startTransaction();
+    }
     const cls = await FinalClass.findById(classId).session(session);
     if (!cls) throw new ErrorResponse('Final class not found', 404);
 
     const current = cls.status as FINAL_CLASS_STATUS;
     if (current === newStatus) {
-      await session.commitTransaction();
-      session.endSession();
+      if (useTransaction) {
+        await session.commitTransaction();
+      }
       return cls;
     }
     
@@ -636,8 +665,9 @@ export const updateFinalClassStatus = async (
     }
 
     await cls.save({ session });
-    await session.commitTransaction();
-
+    if (useTransaction) {
+      await session.commitTransaction();
+    }
     await cls.populate([
       { path: 'classLead' },
       { path: 'tutor', select: 'name email phone' },
@@ -647,8 +677,12 @@ export const updateFinalClassStatus = async (
     ]);
 
     return cls;
-  } catch (err) {
-    await session.abortTransaction();
+  } catch (err: any) {
+    if (useTransaction) {
+      try {
+        await session.abortTransaction();
+      } catch {}
+    }
     throw err;
   } finally {
     session.endSession();
