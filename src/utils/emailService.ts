@@ -1,43 +1,58 @@
-import { config } from 'dotenv';
-import nodemailer from 'nodemailer';
-config()
+import { config } from "dotenv";
+import nodemailer from "nodemailer";
+config();
 
 const getTransporterConfigs = () => {
   const configs = [];
 
   // Primary
-  if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS && process.env.SMTP_FROM) {
+  if (
+    process.env.SMTP_HOST &&
+    process.env.SMTP_USER &&
+    process.env.SMTP_PASS &&
+    process.env.SMTP_FROM
+  ) {
     configs.push({
       host: process.env.SMTP_HOST,
       port: Number(process.env.SMTP_PORT || 587),
       user: process.env.SMTP_USER,
       pass: process.env.SMTP_PASS,
       from: process.env.SMTP_FROM,
-      label: 'Primary'
+      label: "Primary",
     });
   }
 
   // Backup 1
-  if (process.env.SMTP_BACKUP1_HOST && process.env.SMTP_BACKUP1_USER && process.env.SMTP_BACKUP1_PASS && process.env.SMTP_BACKUP1_FROM) {
+  if (
+    process.env.SMTP_BACKUP1_HOST &&
+    process.env.SMTP_BACKUP1_USER &&
+    process.env.SMTP_BACKUP1_PASS &&
+    process.env.SMTP_BACKUP1_FROM
+  ) {
     configs.push({
       host: process.env.SMTP_BACKUP1_HOST,
       port: Number(process.env.SMTP_BACKUP1_PORT || 587),
       user: process.env.SMTP_BACKUP1_USER,
       pass: process.env.SMTP_BACKUP1_PASS,
       from: process.env.SMTP_BACKUP1_FROM,
-      label: 'Backup 1'
+      label: "Backup 1",
     });
   }
 
   // Backup 2
-  if (process.env.SMTP_BACKUP2_HOST && process.env.SMTP_BACKUP2_USER && process.env.SMTP_BACKUP2_PASS && process.env.SMTP_BACKUP2_FROM) {
+  if (
+    process.env.SMTP_BACKUP2_HOST &&
+    process.env.SMTP_BACKUP2_USER &&
+    process.env.SMTP_BACKUP2_PASS &&
+    process.env.SMTP_BACKUP2_FROM
+  ) {
     configs.push({
       host: process.env.SMTP_BACKUP2_HOST,
       port: Number(process.env.SMTP_BACKUP2_PORT || 587),
       user: process.env.SMTP_BACKUP2_USER,
       pass: process.env.SMTP_BACKUP2_PASS,
       from: process.env.SMTP_BACKUP2_FROM,
-      label: 'Backup 2'
+      label: "Backup 2",
     });
   }
 
@@ -48,26 +63,36 @@ const getResendOtpTransporterConfigs = () => {
   const configs = [];
 
   // Resend OTP Primary
-  if (process.env.SMTP_RESEND_HOST && process.env.SMTP_RESEND_USER && process.env.SMTP_RESEND_PASS && process.env.SMTP_RESEND_FROM) {
+  if (
+    process.env.SMTP_RESEND_HOST &&
+    process.env.SMTP_RESEND_USER &&
+    process.env.SMTP_RESEND_PASS &&
+    process.env.SMTP_RESEND_FROM
+  ) {
     configs.push({
       host: process.env.SMTP_RESEND_HOST,
       port: Number(process.env.SMTP_RESEND_PORT || 587),
       user: process.env.SMTP_RESEND_USER,
       pass: process.env.SMTP_RESEND_PASS,
       from: process.env.SMTP_RESEND_FROM,
-      label: 'Resend OTP Primary'
+      label: "Resend OTP Primary",
     });
   }
 
   // Resend OTP Backup
-  if (process.env.SMTP_RESEND_BACKUP_HOST && process.env.SMTP_RESEND_BACKUP_USER && process.env.SMTP_RESEND_BACKUP_PASS && process.env.SMTP_RESEND_BACKUP_FROM) {
+  if (
+    process.env.SMTP_RESEND_BACKUP_HOST &&
+    process.env.SMTP_RESEND_BACKUP_USER &&
+    process.env.SMTP_RESEND_BACKUP_PASS &&
+    process.env.SMTP_RESEND_BACKUP_FROM
+  ) {
     configs.push({
       host: process.env.SMTP_RESEND_BACKUP_HOST,
       port: Number(process.env.SMTP_RESEND_BACKUP_PORT || 587),
       user: process.env.SMTP_RESEND_BACKUP_USER,
       pass: process.env.SMTP_RESEND_BACKUP_PASS,
       from: process.env.SMTP_RESEND_BACKUP_FROM,
-      label: 'Resend OTP Backup'
+      label: "Resend OTP Backup",
     });
   }
 
@@ -85,9 +110,11 @@ const getResendOtpTransporterConfigs = () => {
  */
 export const sendEmail = async (to: string, subject: string, html: string) => {
   const configs = getTransporterConfigs();
-  
+
   if (configs.length === 0) {
-    throw new Error('SMTP is not configured. Please set SMTP_HOST, SMTP_USER, SMTP_PASS, SMTP_FROM');
+    throw new Error(
+      "SMTP is not configured. Please set SMTP_HOST, SMTP_USER, SMTP_PASS, SMTP_FROM",
+    );
   }
 
   let lastError: any;
@@ -95,12 +122,12 @@ export const sendEmail = async (to: string, subject: string, html: string) => {
   for (const config of configs) {
     try {
       const transporter = nodemailer.createTransport({
-        host: config.host,
-        port: config.port,
-        secure: false, 
+        host: process.env.SES_SMTP_HOST,
+        port: 587,
+        secure: false,
         auth: {
-          user: config.user,
-          pass: config.pass,
+          user: process.env.SES_SMTP_USER,
+          pass: process.env.SES_SMTP_PASS,
         },
       });
 
@@ -111,30 +138,39 @@ export const sendEmail = async (to: string, subject: string, html: string) => {
         html,
       });
 
-      console.log(`[Email] Sent successfully using ${config.label} account (${config.from})`);
+      console.log(
+        `[Email] Sent successfully using ${config.label} account (${config.from})`,
+      );
       return info; // Success, exit function
-      
     } catch (error: any) {
-      console.warn(`[Email] Failed to send using ${config.label} account: ${error.message}`);
+      console.warn(
+        `[Email] Failed to send using ${config.label} account: ${error.message}`,
+      );
       lastError = error;
       // Continue to next config in loop
     }
   }
 
   // If we reach here, all attempts failed
-  console.error('[Email] All email providers failed.');
-  throw lastError || new Error('All email sending attempts failed');
+  console.error("[Email] All email providers failed.");
+  throw lastError || new Error("All email sending attempts failed");
 };
 
 /**
  * Send email using resend OTP SMTP configuration
  * Used for: Resend OTP requests to avoid rate limits on primary account
  */
-export const sendResendOtpEmail = async (to: string, subject: string, html: string) => {
+export const sendResendOtpEmail = async (
+  to: string,
+  subject: string,
+  html: string,
+) => {
   const configs = getResendOtpTransporterConfigs();
-  
+
   if (configs.length === 0) {
-    throw new Error('SMTP is not configured. Please set SMTP_HOST or SMTP_RESEND_HOST');
+    throw new Error(
+      "SMTP is not configured. Please set SMTP_HOST or SMTP_RESEND_HOST",
+    );
   }
 
   let lastError: any;
@@ -144,7 +180,7 @@ export const sendResendOtpEmail = async (to: string, subject: string, html: stri
       const transporter = nodemailer.createTransport({
         host: config.host,
         port: config.port,
-        secure: false, 
+        secure: false,
         auth: {
           user: config.user,
           pass: config.pass,
@@ -158,17 +194,20 @@ export const sendResendOtpEmail = async (to: string, subject: string, html: stri
         html,
       });
 
-      console.log(`[Resend OTP Email] Sent successfully using ${config.label} account (${config.from})`);
+      console.log(
+        `[Resend OTP Email] Sent successfully using ${config.label} account (${config.from})`,
+      );
       return info; // Success, exit function
-      
     } catch (error: any) {
-      console.warn(`[Resend OTP Email] Failed to send using ${config.label} account: ${error.message}`);
+      console.warn(
+        `[Resend OTP Email] Failed to send using ${config.label} account: ${error.message}`,
+      );
       lastError = error;
       // Continue to next config in loop
     }
   }
 
   // If we reach here, all attempts failed
-  console.error('[Resend OTP Email] All email providers failed.');
-  throw lastError || new Error('All resend OTP email sending attempts failed');
+  console.error("[Resend OTP Email] All email providers failed.");
+  throw lastError || new Error("All resend OTP email sending attempts failed");
 };
