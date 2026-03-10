@@ -10,12 +10,31 @@ import FinalClass from '../models/FinalClass';
 
 export const listNotes = async (ownerId: string, parentId?: string | null) => {
   // 1. Fetch Notes (Files & Custom Folders)
-  const noteQuery: any = { owner: new mongoose.Types.ObjectId(ownerId) };
+  // If browsing inside a virtual folder (Option), notes are matched by curriculum tags and stored at root (parent=null).
+  // If browsing inside a physical folder (Note), notes are matched by parent id and (by default) owned by the current user.
+  const noteQuery: any = {};
+
   if (parentId) {
-    noteQuery.parent = new mongoose.Types.ObjectId(parentId);
+    const parentIsOption = await Option.exists({ _id: parentId });
+    if (parentIsOption) {
+      const pathFilter = await extractCurriculumFromOption(parentId);
+      const taggedQuery: any = { parent: null };
+      if (pathFilter.boards.length > 0) taggedQuery.board = { $in: pathFilter.boards };
+      if (pathFilter.grades.length > 0) taggedQuery.grade = { $in: pathFilter.grades };
+      if (pathFilter.subjects.length > 0) taggedQuery.subject = { $in: pathFilter.subjects };
+
+      // Backward compatibility: older uploads stored files with parent=<OptionId>.
+      const legacyQuery: any = { parent: new mongoose.Types.ObjectId(parentId) };
+      noteQuery.$or = [taggedQuery, legacyQuery];
+    } else {
+      noteQuery.owner = new mongoose.Types.ObjectId(ownerId);
+      noteQuery.parent = new mongoose.Types.ObjectId(parentId);
+    }
   } else {
+    noteQuery.owner = new mongoose.Types.ObjectId(ownerId);
     noteQuery.parent = null;
   }
+
   const notes = await Note.find(noteQuery).sort({ type: -1, name: 1 }).lean();
 
   // 2. Fetch Dynamic Options (Virtual Folders)
@@ -204,12 +223,14 @@ export const listNotesForStudent = async (studentUserId: string, parentId?: stri
   if (parentId) {
     const parentIsOption = await Option.exists({ _id: parentId });
     if (parentIsOption) {
-      query.parent = null; 
-      
       const pathFilter = await extractCurriculumFromOption(parentId);
-      if (pathFilter.boards.length > 0) query.board = { $in: pathFilter.boards };
-      if (pathFilter.grades.length > 0) query.grade = { $in: pathFilter.grades };
-      if (pathFilter.subjects.length > 0) query.subject = { $in: pathFilter.subjects };
+      const taggedQuery: any = { parent: null };
+      if (pathFilter.boards.length > 0) taggedQuery.board = { $in: pathFilter.boards };
+      if (pathFilter.grades.length > 0) taggedQuery.grade = { $in: pathFilter.grades };
+      if (pathFilter.subjects.length > 0) taggedQuery.subject = { $in: pathFilter.subjects };
+
+      const legacyQuery: any = { parent: new mongoose.Types.ObjectId(parentId) };
+      query.$or = [taggedQuery, legacyQuery];
     } else {
       query.parent = new mongoose.Types.ObjectId(parentId);
     }
@@ -283,11 +304,14 @@ export const listNotesForParent = async (parentUserId: string, parentId?: string
   if (parentId) {
     const parentIsOption = await Option.exists({ _id: parentId });
     if (parentIsOption) {
-      query.parent = null;
       const pathFilter = await extractCurriculumFromOption(parentId);
-      if (pathFilter.boards.length > 0) query.board = { $in: pathFilter.boards };
-      if (pathFilter.grades.length > 0) query.grade = { $in: pathFilter.grades };
-      if (pathFilter.subjects.length > 0) query.subject = { $in: pathFilter.subjects };
+      const taggedQuery: any = { parent: null };
+      if (pathFilter.boards.length > 0) taggedQuery.board = { $in: pathFilter.boards };
+      if (pathFilter.grades.length > 0) taggedQuery.grade = { $in: pathFilter.grades };
+      if (pathFilter.subjects.length > 0) taggedQuery.subject = { $in: pathFilter.subjects };
+
+      const legacyQuery: any = { parent: new mongoose.Types.ObjectId(parentId) };
+      query.$or = [taggedQuery, legacyQuery];
     } else {
       query.parent = new mongoose.Types.ObjectId(parentId);
     }
@@ -324,7 +348,6 @@ export const listNotesForTutor = async (tutorUserId: string, parentId?: string |
     if (parentIsOption) {
       // Inside a virtual folder (Board/Grade/Subject)
       // We show physical notes that match the current curriculum context
-      query.parent = null; 
       const pathFilter = await extractCurriculumFromOption(parentId);
       
       // Notes MUST match the virtual folder's board, grade, or subject
@@ -334,7 +357,9 @@ export const listNotesForTutor = async (tutorUserId: string, parentId?: string |
       if (pathFilter.subjects.length > 0) conditions.push({ subject: { $in: pathFilter.subjects } });
       
       if (conditions.length > 0) {
-        query.$or = conditions;
+        const taggedQuery: any = { parent: null, $or: conditions };
+        const legacyQuery: any = { parent: new mongoose.Types.ObjectId(parentId) };
+        query.$or = [taggedQuery, legacyQuery];
       } else {
         // If it's a virtual folder but has no curriculum tags somehow
         return [...virtualFolders];
@@ -402,14 +427,31 @@ export const uploadNoteFile = async (ownerId: string, file: any, metadata: { par
     throw new ErrorResponse('Failed to upload note file to storage', 500);
   }
 
+  let parentToStore: mongoose.Types.ObjectId | null = metadata.parentId ? new mongoose.Types.ObjectId(metadata.parentId) : null;
+  let gradeToStore: string | undefined = metadata.grade || undefined;
+  let boardToStore: string | undefined = metadata.board || undefined;
+  let subjectToStore: string | undefined = metadata.subject || undefined;
+
+  // If uploading inside a virtual folder (Option), store file at root (parent=null) and tag it by curriculum path.
+  if (metadata.parentId) {
+    const parentIsOption = await Option.exists({ _id: metadata.parentId });
+    if (parentIsOption) {
+      parentToStore = null;
+      const pathFilter = await extractCurriculumFromOption(metadata.parentId);
+      if (!boardToStore && pathFilter.boards.length > 0) boardToStore = pathFilter.boards[0];
+      if (!gradeToStore && pathFilter.grades.length > 0) gradeToStore = pathFilter.grades[0];
+      if (!subjectToStore && pathFilter.subjects.length > 0) subjectToStore = pathFilter.subjects[0];
+    }
+  }
+
   const note = await Note.create({
     owner: new mongoose.Types.ObjectId(ownerId),
     name: originalname,
     type: 'FILE',
-    parent: metadata.parentId ? new mongoose.Types.ObjectId(metadata.parentId) : null,
-    grade: metadata.grade || undefined,
-    board: metadata.board || undefined,
-    subject: metadata.subject || undefined,
+    parent: parentToStore,
+    grade: gradeToStore,
+    board: boardToStore,
+    subject: subjectToStore,
     mimeType: mimetype,
     url: uploadResult.url,
     s3Key: uploadResult.key,

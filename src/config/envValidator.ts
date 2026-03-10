@@ -62,7 +62,7 @@ const envConfig: EnvConfig = {
   ALLOWED_ORIGIN: {
     required: false,
     type: 'string',
-    default: '*',
+    default: '',
   },
   LOG_LEVEL: {
     required: false,
