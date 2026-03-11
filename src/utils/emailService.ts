@@ -1,7 +1,7 @@
-import { config } from "dotenv";
+import * as dotenv from "dotenv";
 import nodemailer from "nodemailer";
-import brevoTransport from "nodemailer-brevo-transport";
-config();
+const brevoTransport = require("nodemailer-brevo-transport");
+dotenv.config();
 
 const getTransporterConfigs = () => {
   const configs = [];
@@ -102,7 +102,7 @@ export const sendEmail = async (to: string, subject: string, html: string) => {
 
   let lastError: any;
 
-  for (const config of configs) {
+  for (const emailConfig of configs) {
     try {
       if (!process.env.BREVO_API_KEY) {
         throw new Error("BREVO_API_KEY is not defined in environment variables");
@@ -111,23 +111,24 @@ export const sendEmail = async (to: string, subject: string, html: string) => {
       const transporter = nodemailer.createTransport(
         new brevoTransport({ apiKey: process.env.BREVO_API_KEY })
       );
+
       const info = await transporter.sendMail({
-        from: config.from || process.env.BREVO_FROM,
+        from: (emailConfig as any).from || process.env.BREVO_FROM,
         to,
         subject,
         html,
       });
 
       console.log(
-        `[Email] Sent successfully using ${config.label} account (${config.from})`,
+        `[Email] Sent successfully using ${emailConfig.label} account (${(emailConfig as any).from})`,
       );
       return info; // Success, exit function
     } catch (error: any) {
       console.warn(
-        `[Email] Failed to send using ${config.label} account: ${error.message}`,
+        `[Email] Failed to send using ${emailConfig.label} account: ${error.message}`,
       );
       lastError = error;
-      // Continue to next config in loop
+      // Continue to next emailConfig in loop
     }
   }
 
@@ -155,7 +156,7 @@ export const sendResendOtpEmail = async (
 
   let lastError: any;
 
-  for (const config of configs) {
+  for (const emailConfig of configs) {
     try {
       if (!process.env.BREVO_API_KEY) {
         throw new Error("BREVO_API_KEY is not defined in environment variables");
@@ -166,22 +167,22 @@ export const sendResendOtpEmail = async (
       );
 
       const info = await transporter.sendMail({
-        from: config.from || process.env.BREVO_FROM,
+        from: (emailConfig as any).from || process.env.BREVO_FROM,
         to,
         subject,
         html,
       });
 
       console.log(
-        `[Resend OTP Email] Sent successfully using ${config.label} account (${config.from})`,
+        `[Resend OTP Email] Sent successfully using ${emailConfig.label} account (${(emailConfig as any).from})`,
       );
       return info; // Success, exit function
     } catch (error: any) {
       console.warn(
-        `[Resend OTP Email] Failed to send using ${config.label} account: ${error.message}`,
+        `[Resend OTP Email] Failed to send using ${emailConfig.label} account: ${error.message}`,
       );
       lastError = error;
-      // Continue to next config in loop
+      // Continue to next emailConfig in loop
     }
   }
 
