@@ -7,16 +7,16 @@ const getTransporterConfigs = () => {
 
   // Primary
   if (
-    process.env.SES_SMTP_HOST &&
-    process.env.SES_SMTP_USER &&
-    process.env.SES_SMTP_PASS
+    process.env.BREVO_SMTP_HOST &&
+    process.env.BREVO_SMTP_USER &&
+    process.env.BREVO_SMTP_PASS
   ) {
     configs.push({
-      host: process.env.SES_SMTP_HOST,
-      port: Number(process.env.SES_SMTP_PORT || 587),
-      user: process.env.SES_SMTP_USER,
-      pass: process.env.SES_SMTP_PASS,
-      from: process.env.SES_FROM,
+      host: process.env.BREVO_SMTP_HOST,
+      port: Number(process.env.BREVO_SMTP_PORT || 587),
+      user: process.env.BREVO_SMTP_USER,
+      pass: process.env.BREVO_SMTP_PASS,
+      from: process.env.BREVO_FROM,
       label: "Primary",
     });
   }
@@ -121,12 +121,12 @@ export const sendEmail = async (to: string, subject: string, html: string) => {
   for (const config of configs) {
     try {
       const transporter = nodemailer.createTransport({
-        host: process.env.SES_SMTP_HOST,
+        host: process.env.BREVO_SMTP_HOST,
         port: 587,
         secure: false,
         auth: {
-          user: process.env.SES_SMTP_USER,
-          pass: process.env.SES_SMTP_PASS,
+          user: process.env.BREVO_SMTP_USER,
+          pass: process.env.BREVO_SMTP_PASS,
         },
       });
 
