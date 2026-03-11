@@ -22,6 +22,7 @@ export interface IFinalClassDocument extends Document {
   status: FINAL_CLASS_STATUS;
   tutorHistory?: ITutorHistory[];
   schedule?: {
+    startDate?: Date;
     daysOfWeek?: string[];
     timeSlot?: string;
   };
@@ -63,6 +64,7 @@ const FinalClassSchema: Schema<IFinalClassDocument> = new Schema<IFinalClassDocu
     actualEndDate: { type: Date },
     status: { type: String, enum: Object.values(FINAL_CLASS_STATUS), default: FINAL_CLASS_STATUS.ACTIVE },
     schedule: {
+      startDate: { type: Date },
       daysOfWeek: { type: [String] },
       timeSlot: { type: String },
     },

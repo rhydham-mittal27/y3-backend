@@ -17,6 +17,7 @@ export const convertToFinalClassValidation = [
 export const updateFinalClassValidation = [
   param('id').isMongoId().withMessage('Invalid class ID'),
   body('schedule').optional().isObject(),
+  body('schedule.startDate').optional().isISO8601().withMessage('Invalid schedule start date'),
   body('schedule.daysOfWeek').optional().isArray(),
   body('schedule.timeSlot').optional().trim().isLength({ min: 2, max: 100 }),
   body('totalSessions').optional().isInt({ min: 0 }),

@@ -46,6 +46,7 @@ import subjectRoutes from './routes/subjectRoutes';
 import optionRoutes from './routes/optionRoutes';
 import classPlanRoutes from './routes/classPlanRoutes';
 import publicLandingRoutes from './routes/publicLandingRoutes';
+import classSessionRoutes from './routes/classSessionRoutes';
 
 // Load environment variables
 dotenv.config();
@@ -189,6 +190,7 @@ if (isRateLimitingEnabled) {
   app.use('/api/subjects', writeLimiter, subjectRoutes);
   app.use('/api/options', writeLimiter, optionRoutes);
   app.use('/api/class-plans', writeLimiter, classPlanRoutes);
+  app.use('/api/class-sessions', writeLimiter, classSessionRoutes);
 } else {
   app.use('/api/leads', leadRoutes);
   app.use('/api/public/leads', publicLeadRoutes);
@@ -213,6 +215,7 @@ if (isRateLimitingEnabled) {
   app.use('/api/subjects', subjectRoutes);
   app.use('/api/options', optionRoutes);
   app.use('/api/class-plans', classPlanRoutes);
+  app.use('/api/class-sessions', classSessionRoutes);
 }
 
 // Read operations - lenient rate limiting

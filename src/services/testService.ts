@@ -4,7 +4,7 @@ import FinalClass from '../models/FinalClass';
 import { createNotificationWithPreferences } from './notificationService';
 import ErrorResponse from '../utils/errorResponse';
 import { TEST_STATUS, FINAL_CLASS_STATUS, USER_ROLES } from '../config/constants';
-import { uploadFileToS3 } from '../services/s3Service';
+import { uploadFileToS3Structured } from '../services/s3Service';
 import { S3_CONFIG } from '../config/s3';
 
 export const scheduleTest = async (params: {
@@ -107,11 +107,11 @@ export const uploadTestAnswerSheet = async (params: {
 
   let uploadResult: { key: string; url: string; bucket: string };
   try {
-    uploadResult = await uploadFileToS3(
+    uploadResult = await uploadFileToS3Structured(
       buffer,
       originalname,
       mimetype,
-      S3_CONFIG.FOLDERS.ANSWER_SHEETS
+      { entityType: 'classes', entityId: String((finalClass as any)?._id || (test as any)?.finalClass?._id || test.finalClass), folder: S3_CONFIG.FOLDERS.ANSWER_SHEETS }
     );
   } catch (err: any) {
     throw new ErrorResponse('Failed to upload answer sheet to storage', 500);
@@ -127,7 +127,7 @@ export const uploadTestAnswerSheet = async (params: {
     (test as any).obtainedMarks = obtainedMarks;
   }
 
-  (test as any).answerSheetUrl = uploadResult.url;
+  (test as any).answerSheetUrl = uploadResult.key;
   (test as any).answerSheetName = originalname;
   (test as any).answerSheetMimeType = mimetype;
   (test as any).answerSheetS3Key = uploadResult.key;
@@ -253,17 +253,17 @@ export const uploadTestPaper = async (params: {
 
   let uploadResult: { key: string; url: string; bucket: string };
   try {
-    uploadResult = await uploadFileToS3(
+    uploadResult = await uploadFileToS3Structured(
       buffer,
       originalname,
       mimetype,
-      S3_CONFIG.FOLDERS.TEST_PAPERS
+      { entityType: 'classes', entityId: String((finalClass as any)?._id || (test as any)?.finalClass?._id || test.finalClass), folder: S3_CONFIG.FOLDERS.TEST_PAPERS }
     );
   } catch (err: any) {
     throw new ErrorResponse('Failed to upload test paper to storage', 500);
   }
 
-  test.paperUrl = uploadResult.url;
+  test.paperUrl = uploadResult.key;
   test.paperName = originalname;
   test.paperMimeType = mimetype;
   (test as any).paperS3Key = uploadResult.key;

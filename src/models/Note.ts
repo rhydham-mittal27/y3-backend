@@ -11,6 +11,7 @@ export interface INoteDocument extends Document {
   grade?: string; // e.g. "Class 6" for class-based sharing
   mimeType?: string;
   url?: string;
+  s3Key?: string;
   subject?: string;
   board?: string;
   chapter?: string;
@@ -28,6 +29,7 @@ const NoteSchema: Schema<INoteDocument> = new Schema(
     grade: { type: String, trim: true },
     mimeType: { type: String },
     url: { type: String },
+    s3Key: { type: String },
     subject: { type: String, trim: true },
     board: { type: String, trim: true },
     chapter: { type: String, trim: true },

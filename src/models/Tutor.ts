@@ -1,5 +1,6 @@
 import mongoose, { Schema, Document, Model } from 'mongoose';
 import { TEACHING_MODE, VERIFICATION_STATUS, TUTOR_TIER } from '../config/constants';
+import { getS3PublicUrlForKey } from '../config/s3';
 
 export interface IDocumentEmbedded {
   documentType: 'AADHAAR' | 'CERTIFICATE' | 'EXPERIENCE_PROOF' | 'DEGREE' | 'PROFILE_PHOTO' | 'OTHER';
@@ -8,6 +9,8 @@ export interface IDocumentEmbedded {
   publicId?: string;
   resourceType?: string;
   verifiedAt?: Date;
+  s3Key?: string;
+  s3Bucket?: string;
 }
 
 export interface ITutorDocument extends Document {
@@ -93,9 +96,21 @@ const DocumentSchema = new Schema<IDocumentEmbedded>(
     publicId: { type: String },
     resourceType: { type: String },
     verifiedAt: { type: Date },
+    s3Key: { type: String },
+    s3Bucket: { type: String },
   },
   { _id: false }
 );
+
+const withPublicUrl = (raw: any) => {
+  if (!raw) return raw;
+  const out = { ...raw };
+  const val = out.documentUrl;
+  if (typeof val === 'string' && val.length > 0 && !/^https?:\/\//i.test(val)) {
+    out.documentUrl = getS3PublicUrlForKey(val);
+  }
+  return out;
+};
 
 const TutorSchema: Schema<ITutorDocument> = new Schema<ITutorDocument>(
   {
@@ -175,7 +190,33 @@ const TutorSchema: Schema<ITutorDocument> = new Schema<ITutorDocument>(
       completedSessions: { type: Number, default: 0 },
     },
   },
-  { timestamps: true, toJSON: { virtuals: true }, toObject: { virtuals: true } }
+  {
+    timestamps: true,
+    toJSON: {
+      virtuals: true,
+      transform: (_doc, ret: any) => {
+        if (Array.isArray(ret?.documents)) {
+          ret.documents = ret.documents.map(withPublicUrl);
+        }
+        if (typeof ret?.verificationFeePaymentProof === 'string' && ret.verificationFeePaymentProof.length > 0 && !/^https?:\/\//i.test(ret.verificationFeePaymentProof)) {
+          ret.verificationFeePaymentProof = getS3PublicUrlForKey(ret.verificationFeePaymentProof);
+        }
+        return ret;
+      },
+    },
+    toObject: {
+      virtuals: true,
+      transform: (_doc, ret: any) => {
+        if (Array.isArray(ret?.documents)) {
+          ret.documents = ret.documents.map(withPublicUrl);
+        }
+        if (typeof ret?.verificationFeePaymentProof === 'string' && ret.verificationFeePaymentProof.length > 0 && !/^https?:\/\//i.test(ret.verificationFeePaymentProof)) {
+          ret.verificationFeePaymentProof = getS3PublicUrlForKey(ret.verificationFeePaymentProof);
+        }
+        return ret;
+      },
+    },
+  }
 );
 
 // Virtuals

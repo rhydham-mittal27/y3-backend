@@ -20,7 +20,9 @@
     "seed:advance-payments": "ts-node src/scripts/seedAdvancePaymentsForExistingClasses.ts",
     "seed:options": "ts-node src/scripts/seedOptions.ts",
     "seed:fix-payments": "ts-node src/scripts/fix-payments.ts",
-    "backfill:completed-sessions": "ts-node src/scripts/backfillCompletedSessionsFromAttendanceSheets.ts"
+    "backfill:completed-sessions": "ts-node src/scripts/backfillCompletedSessionsFromAttendanceSheets.ts",
+    "migrate:s3-urls-to-keys": "ts-node src/scripts/migrateS3UrlsToKeys.ts",
+    "migrate:set-startdate-today": "ts-node src/scripts/setStartDateTodayForExistingClasses.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.984.0",

@@ -16,7 +16,7 @@ const getTransporterConfigs = () => {
       port: Number(process.env.SES_SMTP_PORT || 587),
       user: process.env.SES_SMTP_USER,
       pass: process.env.SES_SMTP_PASS,
-      from: process.env.SMTP_FROM,
+      from: process.env.SES_FROM,
       label: "Primary",
     });
   }

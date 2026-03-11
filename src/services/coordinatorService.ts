@@ -12,7 +12,7 @@ import Test from '../models/Test';
 import CoordinatorActivityLog from '../models/CoordinatorActivityLog';
 import { getPendingApprovalsForCoordinator } from './attendanceService';
 import { DOCUMENT_TYPES } from '../config/constants';
-import { uploadFileToS3 } from './s3Service';
+import { uploadFileToS3Structured } from './s3Service';
 import { S3_CONFIG } from '../config/s3';
 import { deleteFileFromS3 } from './s3Service';
 
@@ -98,16 +98,16 @@ export const uploadCoordinatorDocument = async (
     throw new ErrorResponse('Invalid file upload', 400);
   }
 
-  const uploadResult = await uploadFileToS3(
+  const uploadResult = await uploadFileToS3Structured(
     buffer,
     originalname,
     mimetype,
-    S3_CONFIG.FOLDERS.DOCUMENTS
+    { entityType: 'coordinators', entityId: coordinatorId, folder: S3_CONFIG.FOLDERS.DOCUMENTS }
   );
 
   const doc = {
     documentType,
-    documentUrl: uploadResult.url,
+    documentUrl: uploadResult.key,
     uploadedAt: new Date(),
     s3Key: uploadResult.key,
     s3Bucket: uploadResult.bucket,

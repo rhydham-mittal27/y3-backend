@@ -10,7 +10,7 @@ import Tutor from '../models/Tutor';
 import ErrorResponse from '../utils/errorResponse';
 import dashboardService from './dashboardService';
 import { CLASS_LEAD_STATUS, MANAGER_ACTION_TYPE, PAYMENT_STATUS, USER_ROLES, VERIFICATION_STATUS } from '../config/constants';
-import { uploadFileToS3 } from './s3Service';
+import { uploadFileToS3Structured } from './s3Service';
 import { S3_CONFIG } from '../config/s3';
 
 export const createManagerProfile = async (
@@ -445,16 +445,16 @@ export const uploadManagerDocument = async (
   const originalname: string = file.originalname;
   const mimetype: string = file.mimetype;
 
-  const uploadResult = await uploadFileToS3(
+  const uploadResult = await uploadFileToS3Structured(
     buffer,
     originalname,
     mimetype,
-    S3_CONFIG.FOLDERS.DOCUMENTS
+    { entityType: 'managers', entityId: userId, folder: S3_CONFIG.FOLDERS.DOCUMENTS }
   );
 
   const doc = {
     documentType,
-    documentUrl: uploadResult.url,
+    documentUrl: uploadResult.key,
     uploadedAt: new Date(),
     s3Key: uploadResult.key,
     s3Bucket: uploadResult.bucket,

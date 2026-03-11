@@ -27,4 +27,8 @@ export const S3_CONFIG = {
   },
 };
 
+export const getS3PublicUrlForKey = (key: string): string => {
+  return `https://${S3_CONFIG.BUCKET_NAME}.s3.${S3_CONFIG.REGION}.amazonaws.com/${key}`;
+};
+
 export default s3Client;

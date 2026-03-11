@@ -4,6 +4,8 @@ import { s3Client, S3_CONFIG } from '../config/s3';
 import { v4 as uuidv4 } from 'uuid';
 import path from 'path';
 
+export type S3EntityType = 'students' | 'tutors' | 'classes' | 'coordinators' | 'managers' | 'tests' | 'notes' | 'payments' | 'users';
+
 /**
  * Generate a unique filename for S3 storage
  */
@@ -14,6 +16,71 @@ export const generateUniqueFilename = (originalName: string): string => {
   const timestamp = Date.now();
   const uniqueId = uuidv4().split('-')[0];
   return `${sanitized}-${timestamp}-${uniqueId}${ext}`;
+};
+
+export const getPublicUrlForKey = (key: string): string => {
+  return `https://${S3_CONFIG.BUCKET_NAME}.s3.${S3_CONFIG.REGION}.amazonaws.com/${key}`;
+};
+
+export const buildStructuredS3Key = (args: {
+  entityType: S3EntityType;
+  entityId: string;
+  folder: string;
+  filename: string;
+}): string => {
+  const uniqueFilename = generateUniqueFilename(args.filename);
+  const safeEntityId = String(args.entityId).trim();
+  const safeFolder = String(args.folder).replace(/^\/+|\/+$/g, '');
+  return `${S3_CONFIG.FOLDER_PREFIX}/${args.entityType}/${safeEntityId}/${safeFolder}/${uniqueFilename}`;
+};
+
+export const uploadFileToS3Structured = async (
+  buffer: Buffer,
+  filename: string,
+  mimetype: string,
+  args: { entityType: S3EntityType; entityId: string; folder: string }
+): Promise<{ key: string; url: string; bucket: string }> => {
+  const key = buildStructuredS3Key({
+    entityType: args.entityType,
+    entityId: args.entityId,
+    folder: args.folder,
+    filename,
+  });
+
+  try {
+    const command = new PutObjectCommand({
+      Bucket: S3_CONFIG.BUCKET_NAME,
+      Key: key,
+      Body: buffer,
+      ContentType: mimetype,
+    });
+
+    await s3Client.send(command);
+
+    const url = getPublicUrlForKey(key);
+
+    return {
+      key,
+      url,
+      bucket: S3_CONFIG.BUCKET_NAME,
+    };
+  } catch (error: any) {
+    console.error('[S3Service] Upload failed:', error);
+    throw new Error(`Failed to upload file to S3: ${error.message}`);
+  }
+};
+
+export const getObjectFromS3 = async (key: string) => {
+  try {
+    const command = new GetObjectCommand({
+      Bucket: S3_CONFIG.BUCKET_NAME,
+      Key: key,
+    });
+    return await s3Client.send(command);
+  } catch (error: any) {
+    console.error('[S3Service] Failed to fetch object:', key, error);
+    throw new Error(`Failed to fetch object from S3: ${error.message}`);
+  }
 };
 
 /**
@@ -45,7 +112,7 @@ export const uploadFileToS3 = async (
     await s3Client.send(command);
 
     // Generate public URL (for public buckets) or use presigned URL for private buckets
-    const url = `https://${S3_CONFIG.BUCKET_NAME}.s3.${S3_CONFIG.REGION}.amazonaws.com/${key}`;
+    const url = getPublicUrlForKey(key);
 
     return {
       key,
@@ -125,8 +192,12 @@ export const fileExistsInS3 = async (key: string): Promise<boolean> => {
 
 export default {
   uploadFileToS3,
+  uploadFileToS3Structured,
   deleteFileFromS3,
   getPresignedUrl,
+  getObjectFromS3,
   fileExistsInS3,
   generateUniqueFilename,
+  buildStructuredS3Key,
+  getPublicUrlForKey,
 };

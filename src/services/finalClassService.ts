@@ -16,6 +16,7 @@ import { generateStudentId } from '../utils/generateStudentId';
 import { sendStudentCredentialsEmail } from './studentEmailService';
 import bcrypt from 'bcryptjs';
 import ClassPlan from '../models/ClassPlan';
+import { generateClassSessionsForCycle } from './classSessionService';
 
 const DAYS_ORDER = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY'];
 
@@ -550,7 +551,7 @@ export const renewFinalClassForCoordinator = async (params: {
 export const updateFinalClass = async (
   classId: string,
   updateData: Partial<{
-    schedule: { daysOfWeek?: string[]; timeSlot?: string };
+    schedule: { startDate?: Date; daysOfWeek?: string[]; timeSlot?: string };
     totalSessions: number;
     endDate?: Date;
     notes?: string;
@@ -598,7 +599,7 @@ export const updateFinalClass = async (
     }
   }
   if (updateData.schedule && !('totalSessions' in updateData)) {
-    const mergedSchedule: { daysOfWeek?: string[]; timeSlot?: string } = {
+    const mergedSchedule: { startDate?: Date; daysOfWeek?: string[]; timeSlot?: string } = {
       ...((cls as any).schedule || {}),
       ...updateData.schedule,
     };
@@ -610,6 +611,25 @@ export const updateFinalClass = async (
     Object.assign(cls, rest);
   }
   await cls.save();
+
+  // Best-effort: generate planned ClassSessions for the cycle containing the schedule start date.
+  // This enables month-based timetable rendering from stored sessions.
+  if (updateData.schedule) {
+    try {
+      const sched: any = (cls as any).schedule || {};
+      const anchor = sched.startDate ? new Date(sched.startDate) : new Date();
+      const cycleMonth = anchor.getMonth() + 1;
+      const cycleYear = anchor.getFullYear();
+      await generateClassSessionsForCycle({
+        classId: String(cls._id),
+        cycleMonth,
+        cycleYear,
+      });
+    } catch {
+      // ignore generation errors on update path
+    }
+  }
+
   await cls.populate([
     { path: 'classLead' },
     { path: 'tutor', select: 'name email phone' },

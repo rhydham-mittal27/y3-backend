@@ -305,6 +305,7 @@ export interface IDemoHistory {
 }
 
 export interface ISchedule {
+  startDate?: string | Date;
   daysOfWeek?: string[];
   timeSlot?: string;
 }

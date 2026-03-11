@@ -2,11 +2,57 @@ import mongoose from 'mongoose';
 import Note from '../models/Note';
 import Student from '../models/Student';
 import ErrorResponse from '../utils/errorResponse';
-import { uploadFileToS3 } from '../services/s3Service';
-import { S3_CONFIG } from '../config/s3';
+import { uploadFileToS3Structured } from '../services/s3Service';
+import { getS3PublicUrlForKey, S3_CONFIG } from '../config/s3';
+import { getPresignedUrl } from '../services/s3Service';
 
 import Option from '../models/Option';
 import FinalClass from '../models/FinalClass';
+
+const resolveFileUrl = async (val: any): Promise<any> => {
+  if (typeof val !== 'string' || val.trim().length === 0) return val;
+  const tryPresignKey = async (key: string): Promise<string | null> => {
+    try {
+      return await getPresignedUrl(key);
+    } catch (err: any) {
+      console.error('[NoteService] Failed to presign key:', key, err?.message || err);
+      return null;
+    }
+  };
+
+  // If it's already a key, presign it
+  if (!/^https?:\/\//i.test(val)) {
+    const presigned = await tryPresignKey(val);
+    return presigned || getS3PublicUrlForKey(val);
+  }
+
+  // If it's a URL (S3/CloudFront/custom), try extracting a likely S3 key from pathname and presign
+  try {
+    const u = new URL(val);
+    let key = decodeURIComponent(u.pathname.replace(/^\//, ''));
+
+    // Handle path-style S3 URLs: /<bucket>/<key>
+    const parts = key.split('/').filter(Boolean);
+    if (parts.length > 1 && parts[0] === S3_CONFIG.BUCKET_NAME) {
+      key = parts.slice(1).join('/');
+    }
+
+    // Only presign if it looks like one of our stored keys
+    const looksLikeKey =
+      key.startsWith(`${S3_CONFIG.FOLDER_PREFIX}/`) ||
+      key.startsWith('uploads/');
+
+    if (looksLikeKey) {
+      const presigned = await tryPresignKey(key);
+      if (presigned) return presigned;
+    }
+  } catch {
+    // ignore
+  }
+
+  // Fallback: return original URL
+  return val;
+};
 
 export const listNotes = async (ownerId: string, parentId?: string | null) => {
   // 1. Fetch Notes (Files & Custom Folders)
@@ -21,7 +67,11 @@ export const listNotes = async (ownerId: string, parentId?: string | null) => {
       const taggedQuery: any = { parent: null };
       if (pathFilter.boards.length > 0) taggedQuery.board = { $in: pathFilter.boards };
       if (pathFilter.grades.length > 0) taggedQuery.grade = { $in: pathFilter.grades };
+      else taggedQuery.grade = null;
       if (pathFilter.subjects.length > 0) taggedQuery.subject = { $in: pathFilter.subjects };
+      else taggedQuery.subject = null;
+      if (pathFilter.chapters.length > 0) taggedQuery.chapter = { $in: pathFilter.chapters };
+      else taggedQuery.chapter = null;
 
       // Backward compatibility: older uploads stored files with parent=<OptionId>.
       const legacyQuery: any = { parent: new mongoose.Types.ObjectId(parentId) };
@@ -61,14 +111,16 @@ export const listNotes = async (ownerId: string, parentId?: string | null) => {
     isVirtual: true // Flag to indicate it's from Options (optional usage)
   }));
 
-  const physicalNotes = notes.map((n: any) => ({
-    id: String(n._id),
-    name: n.name,
-    type: n.type,
-    mimeType: n.mimeType,
-    grade: n.grade,
-    url: n.url,
-  }));
+  const physicalNotes = await Promise.all(
+    notes.map(async (n: any) => ({
+      id: String(n._id),
+      name: n.name,
+      type: n.type,
+      mimeType: n.mimeType,
+      grade: n.grade,
+      url: n.type === 'FILE' ? `/api/notes/files/${String(n._id)}` : null,
+    }))
+  );
 
   // Return combined list (Folders first)
   return [...virtualFolders, ...physicalNotes];
@@ -77,7 +129,7 @@ export const listNotes = async (ownerId: string, parentId?: string | null) => {
 // ----------------------------------------------------------------------
 // Helper to extract curriculum context from an Option hierarchy
 const extractCurriculumFromOption = async (optionId: string | null) => {
-  const filter: { boards: string[], grades: string[], subjects: string[] } = { boards: [], grades: [], subjects: [] };
+  const filter: { boards: string[], grades: string[], subjects: string[], chapters: string[] } = { boards: [], grades: [], subjects: [], chapters: [] };
   if (!optionId) return filter;
 
   let currentId: string | null = optionId;
@@ -87,6 +139,15 @@ const extractCurriculumFromOption = async (optionId: string | null) => {
     if (opt.type === 'BOARD') filter.boards.push(String(opt.value));
     if (opt.type === 'GRADE') filter.grades.push(String(opt.value));
     if (opt.type === 'SUBJECT') filter.subjects.push(String(opt.value));
+    if (opt.type === 'CHAPTER') filter.chapters.push(String(opt.value));
+
+     // Backward compatibility: some datasets store chapters as children of SUBJECT with a different type
+     if (opt.type !== 'BOARD' && opt.type !== 'GRADE' && opt.type !== 'SUBJECT' && opt.type !== 'CHAPTER' && opt.parent) {
+       const parentOpt: any = await Option.findById(opt.parent).lean();
+       if (parentOpt && parentOpt.type === 'SUBJECT') {
+         filter.chapters.push(String(opt.value));
+       }
+     }
     currentId = opt.parent ? String(opt.parent) : null;
   }
   return filter;
@@ -104,6 +165,8 @@ const getVirtualFolders = async (parentId?: string | null, filter?: { boards?: s
         optionQuery.value = { $in: filter?.grades || [] };
       } else if (parentOpt.type === 'GRADE') {
         optionQuery.value = { $in: filter?.subjects || [] };
+      } else if (parentOpt.type === 'SUBJECT') {
+        // Chapters are not restricted by student/parent meta at the moment
       }
     }
   } else {
@@ -227,7 +290,11 @@ export const listNotesForStudent = async (studentUserId: string, parentId?: stri
       const taggedQuery: any = { parent: null };
       if (pathFilter.boards.length > 0) taggedQuery.board = { $in: pathFilter.boards };
       if (pathFilter.grades.length > 0) taggedQuery.grade = { $in: pathFilter.grades };
+      else taggedQuery.grade = null;
       if (pathFilter.subjects.length > 0) taggedQuery.subject = { $in: pathFilter.subjects };
+      else taggedQuery.subject = null;
+      if (pathFilter.chapters.length > 0) taggedQuery.chapter = { $in: pathFilter.chapters };
+      else taggedQuery.chapter = null;
 
       const legacyQuery: any = { parent: new mongoose.Types.ObjectId(parentId) };
       query.$or = [taggedQuery, legacyQuery];
@@ -241,14 +308,16 @@ export const listNotesForStudent = async (studentUserId: string, parentId?: stri
 
   const notes = await Note.find(query).sort({ type: -1, name: 1 }).lean();
 
-  const physicalNotes = notes.map((n: any) => ({
-    id: String(n._id),
-    name: n.name,
-    type: n.type,
-    mimeType: n.mimeType,
-    grade: n.grade,
-    url: n.url,
-  }));
+  const physicalNotes = await Promise.all(
+    notes.map(async (n: any) => ({
+      id: String(n._id),
+      name: n.name,
+      type: n.type,
+      mimeType: n.mimeType,
+      grade: n.grade,
+      url: n.type === 'FILE' ? `/api/notes/files/${String(n._id)}` : null,
+    }))
+  );
 
   return [...virtualFolders, ...physicalNotes];
 };
@@ -308,7 +377,11 @@ export const listNotesForParent = async (parentUserId: string, parentId?: string
       const taggedQuery: any = { parent: null };
       if (pathFilter.boards.length > 0) taggedQuery.board = { $in: pathFilter.boards };
       if (pathFilter.grades.length > 0) taggedQuery.grade = { $in: pathFilter.grades };
+      else taggedQuery.grade = null;
       if (pathFilter.subjects.length > 0) taggedQuery.subject = { $in: pathFilter.subjects };
+      else taggedQuery.subject = null;
+      if (pathFilter.chapters.length > 0) taggedQuery.chapter = { $in: pathFilter.chapters };
+      else taggedQuery.chapter = null;
 
       const legacyQuery: any = { parent: new mongoose.Types.ObjectId(parentId) };
       query.$or = [taggedQuery, legacyQuery];
@@ -322,14 +395,16 @@ export const listNotesForParent = async (parentUserId: string, parentId?: string
 
   const notes = await Note.find(query).sort({ type: -1, name: 1 }).lean();
   
-  const physicalNotes = notes.map((n: any) => ({
-    id: String(n._id),
-    name: n.name,
-    type: n.type,
-    mimeType: n.mimeType,
-    grade: n.grade,
-    url: n.url,
-  }));
+  const physicalNotes = await Promise.all(
+    notes.map(async (n: any) => ({
+      id: String(n._id),
+      name: n.name,
+      type: n.type,
+      mimeType: n.mimeType,
+      grade: n.grade,
+      url: n.type === 'FILE' ? `/api/notes/files/${String(n._id)}` : null,
+    }))
+  );
 
   return [...virtualFolders, ...physicalNotes];
 };
@@ -350,14 +425,17 @@ export const listNotesForTutor = async (tutorUserId: string, parentId?: string |
       // We show physical notes that match the current curriculum context
       const pathFilter = await extractCurriculumFromOption(parentId);
       
-      // Notes MUST match the virtual folder's board, grade, or subject
-      const conditions: any[] = [];
-      if (pathFilter.boards.length > 0) conditions.push({ board: { $in: pathFilter.boards } });
-      if (pathFilter.grades.length > 0) conditions.push({ grade: { $in: pathFilter.grades } });
-      if (pathFilter.subjects.length > 0) conditions.push({ subject: { $in: pathFilter.subjects } });
-      
-      if (conditions.length > 0) {
-        const taggedQuery: any = { parent: null, $or: conditions };
+      // Notes MUST match the virtual folder's curriculum context (intersection)
+      const taggedQuery: any = { parent: null };
+      if (pathFilter.boards.length > 0) taggedQuery.board = { $in: pathFilter.boards };
+      if (pathFilter.grades.length > 0) taggedQuery.grade = { $in: pathFilter.grades };
+      else taggedQuery.grade = null;
+      if (pathFilter.subjects.length > 0) taggedQuery.subject = { $in: pathFilter.subjects };
+      else taggedQuery.subject = null;
+      if (pathFilter.chapters.length > 0) taggedQuery.chapter = { $in: pathFilter.chapters };
+      else taggedQuery.chapter = null;
+
+      if (Object.keys(taggedQuery).length > 1) {
         const legacyQuery: any = { parent: new mongoose.Types.ObjectId(parentId) };
         query.$or = [taggedQuery, legacyQuery];
       } else {
@@ -377,14 +455,16 @@ export const listNotesForTutor = async (tutorUserId: string, parentId?: string |
 
   const notes = await Note.find(query).sort({ type: -1, name: 1 }).lean();
 
-  const physicalNotes = notes.map((n: any) => ({
-    id: String(n._id),
-    name: n.name,
-    type: n.type,
-    mimeType: n.mimeType,
-    grade: n.grade,
-    url: n.url,
-  }));
+  const physicalNotes = await Promise.all(
+    notes.map(async (n: any) => ({
+      id: String(n._id),
+      name: n.name,
+      type: n.type,
+      mimeType: n.mimeType,
+      grade: n.grade,
+      url: n.type === 'FILE' ? `/api/notes/files/${String(n._id)}` : null,
+    }))
+  );
 
   return [...virtualFolders, ...physicalNotes];
 };
@@ -417,11 +497,11 @@ export const uploadNoteFile = async (ownerId: string, file: any, metadata: { par
 
   let uploadResult: { key: string; url: string; bucket: string };
   try {
-    uploadResult = await uploadFileToS3(
+    uploadResult = await uploadFileToS3Structured(
       buffer,
       originalname,
       mimetype,
-      S3_CONFIG.FOLDERS.NOTES
+      { entityType: 'users', entityId: ownerId, folder: S3_CONFIG.FOLDERS.NOTES }
     );
   } catch (err: any) {
     throw new ErrorResponse('Failed to upload note file to storage', 500);
@@ -431,6 +511,7 @@ export const uploadNoteFile = async (ownerId: string, file: any, metadata: { par
   let gradeToStore: string | undefined = metadata.grade || undefined;
   let boardToStore: string | undefined = metadata.board || undefined;
   let subjectToStore: string | undefined = metadata.subject || undefined;
+  let chapterToStore: string | undefined = (metadata as any).chapter || undefined;
 
   // If uploading inside a virtual folder (Option), store file at root (parent=null) and tag it by curriculum path.
   if (metadata.parentId) {
@@ -441,6 +522,7 @@ export const uploadNoteFile = async (ownerId: string, file: any, metadata: { par
       if (!boardToStore && pathFilter.boards.length > 0) boardToStore = pathFilter.boards[0];
       if (!gradeToStore && pathFilter.grades.length > 0) gradeToStore = pathFilter.grades[0];
       if (!subjectToStore && pathFilter.subjects.length > 0) subjectToStore = pathFilter.subjects[0];
+      if (!chapterToStore && pathFilter.chapters.length > 0) chapterToStore = pathFilter.chapters[0];
     }
   }
 
@@ -452,8 +534,9 @@ export const uploadNoteFile = async (ownerId: string, file: any, metadata: { par
     grade: gradeToStore,
     board: boardToStore,
     subject: subjectToStore,
+    chapter: chapterToStore,
     mimeType: mimetype,
-    url: uploadResult.url,
+    url: uploadResult.key,
     s3Key: uploadResult.key,
   } as any);
 
@@ -463,6 +546,6 @@ export const uploadNoteFile = async (ownerId: string, file: any, metadata: { par
     type: note.type,
     mimeType: note.mimeType,
     grade: note.grade,
-    url: note.url,
+    url: await resolveFileUrl((note as any).url),
   };
 };

@@ -4,7 +4,7 @@ import User from '../models/User';
 import Notification from '../models/Notification';
 import ErrorResponse from '../utils/errorResponse';
 import { DOCUMENT_TYPES, USER_ROLES, VERIFICATION_STATUS, MANAGER_ACTION_TYPE, TUTOR_TIER, FINAL_CLASS_STATUS, TEST_STATUS, ATTENDANCE_STATUS } from '../config/constants';
-import { uploadFileToS3, deleteFileFromS3 } from '../services/s3Service';
+import { uploadFileToS3Structured, deleteFileFromS3 } from '../services/s3Service';
 import { S3_CONFIG } from '../config/s3';
 import { logManagerActivity } from './managerService';
 import Manager from '../models/Manager';
@@ -589,11 +589,11 @@ export const uploadDocument = async (
 
   let uploadResult: { key: string; url: string; bucket: string };
   try {
-    uploadResult = await uploadFileToS3(
+    uploadResult = await uploadFileToS3Structured(
       buffer,
       originalname,
       mimetype,
-      S3_CONFIG.FOLDERS.DOCUMENTS
+      { entityType: 'tutors', entityId: tutorId, folder: S3_CONFIG.FOLDERS.DOCUMENTS }
     );
     console.log('[uploadDocument] S3 upload successful', {
       tutorId,
@@ -613,7 +613,7 @@ export const uploadDocument = async (
 
   const doc = {
     documentType,
-    documentUrl: uploadResult.url,
+    documentUrl: uploadResult.key,
     uploadedAt: new Date(),
     s3Key: uploadResult.key,
     s3Bucket: uploadResult.bucket,
@@ -826,13 +826,13 @@ export const updateVerificationFeeStatus = async (
     const mimetype = paymentProofFile.mimetype;
     
     try {
-        const uploadResult = await uploadFileToS3(
+        const uploadResult = await uploadFileToS3Structured(
             buffer,
             originalname,
             mimetype,
-            'verification-fees' 
+            { entityType: 'tutors', entityId: tutorId, folder: 'verification-fees' }
         );
-        verificationFeePaymentProof = uploadResult.url;
+        verificationFeePaymentProof = uploadResult.key;
         verificationFeePaymentDate = new Date();
     } catch (err: any) {
         console.error('Failed to upload payment proof', err);

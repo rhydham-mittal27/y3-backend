@@ -3,7 +3,7 @@ import protect from '../middlewares/auth';
 import authorize from '../middlewares/authorize';
 import { USER_ROLES } from '../config/constants';
 import { uploadDocument } from '../middlewares/fileUpload';
-import { getNotesController, getTutorNotesController, getParentNotesController, createFolderController, uploadNoteFileController } from '../controllers/noteController';
+import { getNotesController, getTutorNotesController, getParentNotesController, createFolderController, uploadNoteFileController, downloadNoteFileController } from '../controllers/noteController';
 import { createFolderValidation, uploadNoteFileValidation } from '../validators/noteValidator';
 
 const router = Router();
@@ -37,6 +37,19 @@ router.post(
   uploadDocument,
   uploadNoteFileValidation,
   uploadNoteFileController
+);
+
+router.get(
+  '/files/:id',
+  authorize(
+    USER_ROLES.ADMIN,
+    USER_ROLES.MANAGER,
+    USER_ROLES.COORDINATOR,
+    USER_ROLES.PARENT,
+    USER_ROLES.TUTOR,
+    USER_ROLES.STUDENT
+  ),
+  downloadNoteFileController
 );
 
 export default router;

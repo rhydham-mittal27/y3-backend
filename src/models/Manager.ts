@@ -1,4 +1,5 @@
 import mongoose, { Schema, Document, Model } from 'mongoose';
+import { getS3PublicUrlForKey } from '../config/s3';
 
 export interface IManagerDocument extends Document {
   _id: mongoose.Types.ObjectId;
@@ -149,7 +150,43 @@ const ManagerSchema: Schema<IManagerDocument> = new Schema<IManagerDocument>(
       default: {},
     },
   },
-  { timestamps: true, toJSON: { virtuals: true }, toObject: { virtuals: true } }
+  {
+    timestamps: true,
+    toJSON: {
+      virtuals: true,
+      transform: (_doc, ret: any) => {
+        if (Array.isArray(ret?.documents)) {
+          ret.documents = ret.documents.map((d: any) => {
+            if (!d) return d;
+            const out = { ...d };
+            const val = out.documentUrl;
+            if (typeof val === 'string' && val.length > 0 && !/^https?:\/\//i.test(val)) {
+              out.documentUrl = getS3PublicUrlForKey(val);
+            }
+            return out;
+          });
+        }
+        return ret;
+      },
+    },
+    toObject: {
+      virtuals: true,
+      transform: (_doc, ret: any) => {
+        if (Array.isArray(ret?.documents)) {
+          ret.documents = ret.documents.map((d: any) => {
+            if (!d) return d;
+            const out = { ...d };
+            const val = out.documentUrl;
+            if (typeof val === 'string' && val.length > 0 && !/^https?:\/\//i.test(val)) {
+              out.documentUrl = getS3PublicUrlForKey(val);
+            }
+            return out;
+          });
+        }
+        return ret;
+      },
+    },
+  }
 );
 
 // Virtuals

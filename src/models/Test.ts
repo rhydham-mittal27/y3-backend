@@ -1,5 +1,6 @@
 import mongoose, { Schema, Document, Model } from 'mongoose';
 import { TEST_STATUS } from '../config/constants';
+import { getS3PublicUrlForKey } from '../config/s3';
 
 export interface ITestDocument extends Document {
   _id: mongoose.Types.ObjectId;
@@ -28,6 +29,7 @@ export interface ITestDocument extends Document {
   paperUrl?: string;
   paperName?: string;
   paperMimeType?: string;
+  paperS3Key?: string;
   totalMarks?: number;
   durationMinutes?: number;
   obtainedMarks?: number;
@@ -41,6 +43,7 @@ export interface ITestDocument extends Document {
   answerSheetUrl?: string;
   answerSheetName?: string;
   answerSheetMimeType?: string;
+  answerSheetS3Key?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -74,6 +77,7 @@ const TestSchema: Schema<ITestDocument> = new Schema<ITestDocument>(
     paperUrl: { type: String },
     paperName: { type: String },
     paperMimeType: { type: String },
+    paperS3Key: { type: String },
     totalMarks: { type: Number },
     durationMinutes: { type: Number },
     obtainedMarks: { type: Number },
@@ -92,8 +96,33 @@ const TestSchema: Schema<ITestDocument> = new Schema<ITestDocument>(
     answerSheetUrl: { type: String },
     answerSheetName: { type: String },
     answerSheetMimeType: { type: String },
+    answerSheetS3Key: { type: String },
   },
-  { timestamps: true }
+  {
+    timestamps: true,
+    toJSON: {
+      transform: (_doc, ret: any) => {
+        if (typeof ret?.paperUrl === 'string' && ret.paperUrl.length > 0 && !/^https?:\/\//i.test(ret.paperUrl)) {
+          ret.paperUrl = getS3PublicUrlForKey(ret.paperUrl);
+        }
+        if (typeof ret?.answerSheetUrl === 'string' && ret.answerSheetUrl.length > 0 && !/^https?:\/\//i.test(ret.answerSheetUrl)) {
+          ret.answerSheetUrl = getS3PublicUrlForKey(ret.answerSheetUrl);
+        }
+        return ret;
+      },
+    },
+    toObject: {
+      transform: (_doc, ret: any) => {
+        if (typeof ret?.paperUrl === 'string' && ret.paperUrl.length > 0 && !/^https?:\/\//i.test(ret.paperUrl)) {
+          ret.paperUrl = getS3PublicUrlForKey(ret.paperUrl);
+        }
+        if (typeof ret?.answerSheetUrl === 'string' && ret.answerSheetUrl.length > 0 && !/^https?:\/\//i.test(ret.answerSheetUrl)) {
+          ret.answerSheetUrl = getS3PublicUrlForKey(ret.answerSheetUrl);
+        }
+        return ret;
+      },
+    },
+  }
 );
 
 // Indexes
