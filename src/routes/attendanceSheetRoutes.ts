@@ -10,6 +10,8 @@ import {
   approveAttendanceSheetController,
   rejectAttendanceSheetController,
   getSheetsForClassController,
+  getAttendanceSheetPaymentsController,
+  updateAttendanceSheetPaymentStatusController,
 } from '../controllers/attendanceSheetController';
 
 const router = Router();
@@ -63,6 +65,18 @@ router.patch(
   '/:id/reject',
   authorize(USER_ROLES.COORDINATOR, USER_ROLES.ADMIN, USER_ROLES.MANAGER),
   rejectAttendanceSheetController
+);
+
+router.get(
+  '/:id/payments',
+  authorize(USER_ROLES.TUTOR, USER_ROLES.COORDINATOR, USER_ROLES.MANAGER, USER_ROLES.ADMIN, USER_ROLES.PARENT, USER_ROLES.STUDENT),
+  getAttendanceSheetPaymentsController
+);
+
+router.patch(
+  '/:id/payments/:paymentId/status',
+  authorize(USER_ROLES.COORDINATOR),
+  updateAttendanceSheetPaymentStatusController
 );
 
 export default router;

@@ -50,6 +50,7 @@ export const protect = asyncHandler(async (req: AuthRequest, _res, next) => {
         email: user.email,
         role: user.role as string,
         phone: user.phone || '',
+        dob: (user as any).dob,
         isActive: user.isActive,
         acceptedTerms: user.acceptedTerms || false,
         preferredMode,

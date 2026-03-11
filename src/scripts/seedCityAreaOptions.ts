@@ -12,13 +12,13 @@ const cities: { label: string; value: string; sortOrder: number; metadata?: any 
     label: 'Bhopal', 
     value: 'BHOPAL', 
     sortOrder: 1, 
-    metadata: { whatsappLink: 'https://chat.whatsapp.com/BhopalOfflineTutors' } 
+    metadata: { whatsappLink: 'https://chat.whatsapp.com/BhopalOfflineTutors', cityCode: 'BPL' } 
   },
   { 
     label: 'Indore', 
     value: 'INDORE', 
     sortOrder: 2, 
-    metadata: { whatsappLink: 'https://chat.whatsapp.com/IndoreOfflineTutors' } 
+    metadata: { whatsappLink: 'https://chat.whatsapp.com/IndoreOfflineTutors', cityCode: 'IDR' } 
   },
 ];
 

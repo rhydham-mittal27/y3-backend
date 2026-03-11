@@ -555,6 +555,8 @@ export const getAssignedClassesSummary = async (
   ]);
 
   const now = new Date();
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+  const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
   const enriched = await Promise.all(
     classes.map(async (cls: any) => {
       const pendingAttendanceCount = await Attendance.countDocuments({ finalClass: cls._id, status: ATTENDANCE_STATUS.PENDING });
@@ -564,10 +566,18 @@ export const getAssignedClassesSummary = async (
         (cls as any)?.classesPerMonth ??
         cls.totalSessions ??
         0;
-      const completedSessions = cls.completedSessions || 0;
-      const progressPercentage = totalSessions > 0 ? Math.round((completedSessions / totalSessions) * 100) : 0;
+
+      const completedSessionsThisMonth = await Attendance.countDocuments({
+        finalClass: cls._id,
+        sessionDate: { $gte: startOfMonth, $lte: endOfMonth },
+        status: { $in: [ATTENDANCE_STATUS.COORDINATOR_APPROVED, ATTENDANCE_STATUS.PARENT_APPROVED] as any },
+      });
+
+      const progressPercentage = totalSessions > 0
+        ? Math.round((Math.min(completedSessionsThisMonth, totalSessions) / totalSessions) * 100)
+        : 0;
       // Compose session progress string
-      const sessionProgress = `${completedSessions}/${totalSessions} (${progressPercentage}%)`;
+      const sessionProgress = `${completedSessionsThisMonth}/${totalSessions} (${progressPercentage}%)`;
       // Subjects array (ensure array)
       const subjects = Array.isArray(cls.subject) ? cls.subject : (cls.subject ? [cls.subject] : []);
       // Tutor name
@@ -583,6 +593,8 @@ export const getAssignedClassesSummary = async (
         overduePaymentsCount,
         metrics: {
           progressPercentage,
+          completedSessionsThisMonth,
+          totalSessionsThisMonth: totalSessions,
           pendingAttendanceCount,
           overduePaymentsCount,
         },

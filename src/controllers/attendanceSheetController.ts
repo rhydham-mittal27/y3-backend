@@ -12,6 +12,8 @@ import {
   approveAttendanceSheet,
   rejectAttendanceSheet,
   getSheetsForClass,
+  getAttendanceSheetPayments,
+  updateAttendanceSheetPaymentStatus,
 } from '../services/attendanceSheetService';
 
 export const addDailyAttendanceController = asyncHandler(async (req: AuthRequest, res: Response) => {
@@ -76,6 +78,31 @@ export const rejectAttendanceSheetController = asyncHandler(async (req: AuthRequ
   return res.json(successResponse(sheet, 'Attendance sheet rejected'));
 });
 
+export const getAttendanceSheetPaymentsController = asyncHandler(async (req: AuthRequest, res: Response) => {
+  const { id } = req.params as any;
+  const payload = await getAttendanceSheetPayments({
+    sheetId: id,
+    requesterUserId: req.user!.id,
+    requesterRole: req.user!.role,
+  });
+  return res.json(successResponse(payload));
+});
+
+export const updateAttendanceSheetPaymentStatusController = asyncHandler(async (req: AuthRequest, res: Response) => {
+  const { id, paymentId } = req.params as any;
+  const { status } = req.body as any;
+  if (!status) throw new ErrorResponse('status is required', 400);
+
+  const payment = await updateAttendanceSheetPaymentStatus({
+    sheetId: id,
+    paymentId,
+    status,
+    requesterUserId: req.user!.id,
+    requesterRole: req.user!.role,
+  });
+  return res.json(successResponse(payment, 'Payment status updated'));
+});
+
 export default {
   addDailyAttendanceController,
   getSheetsForClassController,
@@ -84,4 +111,6 @@ export default {
   getAllPendingSheetsController,
   approveAttendanceSheetController,
   rejectAttendanceSheetController,
+  getAttendanceSheetPaymentsController,
+  updateAttendanceSheetPaymentStatusController,
 };

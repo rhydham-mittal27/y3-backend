@@ -133,7 +133,7 @@ export const convertLeadToFinalClass = async (params: {
     const autoTotalSessions =
       typeof totalSessions === 'number'
         ? totalSessions
-        : computeMonthlyTotalSessions(new Date(startDate), effectiveSchedule);
+        : lead.classesPerMonth || computeMonthlyTotalSessions(new Date(startDate), effectiveSchedule);
 
     // Generate student IDs and create student profiles
     let studentId: string | undefined;
@@ -785,12 +785,12 @@ export const computeTutorMonthlyStats = async (tutorUserId: string) => {
     status: { $in: [ATTENDANCE_STATUS.COORDINATOR_APPROVED, ATTENDANCE_STATUS.PARENT_APPROVED] },
   });
 
-  return {
-    month: `${year}-${String(month + 1).padStart(2, '0')}`,
-    totalClasses: classesThisMonth.length,
-    totalSessions,
-    completedSessions,
-  };
+    return {
+      month: `${year}-${String(month + 1).padStart(2, '0')}`,
+      totalClasses: classesThisMonth.length,
+      totalSessions: classesThisMonth.reduce((acc: number, cls: any) => acc + (cls.classesPerMonth || cls.totalSessions || 0), 0),
+      completedSessions,
+    };
 };
 
 export const getClassesByTutor = async (tutorUserId: string, status?: FINAL_CLASS_STATUS | string) => {

@@ -121,15 +121,27 @@ export const updateDemoStatus = async (
     const demoTime = (lead.demoDetails as any)?.demoTime;
     
     if (demoDate && demoTime) {
-      // Parse the demo date and time
-      const scheduledDate = new Date(demoDate);
-      const [hours, minutes] = demoTime.split(':').map(Number);
-      scheduledDate.setHours(hours, minutes, 0, 0);
-      
-      const now = new Date();
-      
-      if (now < scheduledDate) {
-        throw new ErrorResponse('Demo can only be marked after the scheduled time has passed', 400);
+      const parsed = typeof demoTime === 'string' ? demoTime.split(':').map(Number) : [];
+      const hours = parsed.length > 0 ? parsed[0] : NaN;
+      const minutes = parsed.length > 1 ? parsed[1] : NaN;
+
+      if (Number.isFinite(hours) && Number.isFinite(minutes)) {
+        // IMPORTANT: build the scheduled datetime in local time using the demoDate's Y/M/D,
+        // instead of mutating a Date parsed from ISO (which can shift days due to timezone).
+        const d = new Date(demoDate);
+        const scheduledStart = new Date(d.getFullYear(), d.getMonth(), d.getDate(), hours, minutes, 0, 0);
+
+        const durationHours = (lead as any)?.classDurationHours;
+        const durationMinutes = Number.isFinite(durationHours) && Number(durationHours) > 0
+          ? Math.round(Number(durationHours) * 60)
+          : 60;
+
+        const scheduledEnd = new Date(scheduledStart.getTime() + durationMinutes * 60 * 1000);
+
+        const now = new Date();
+        if (now < scheduledEnd) {
+          throw new ErrorResponse('Demo can only be marked after completion time', 400);
+        }
       }
     }
   }

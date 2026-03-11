@@ -5,7 +5,7 @@ import StudentEnrollment from '../models/StudentEnrollment';
 import AttendanceSheet, { IDailyAttendanceRecord, IStudentAttendance } from '../models/AttendanceSheet';
 import Payment from '../models/Payment';
 import ErrorResponse from '../utils/errorResponse';
-import { ATTENDANCE_STATUS, STUDENT_ATTENDANCE_STATUS, FINAL_CLASS_STATUS, PAYMENT_TYPE, PAYMENT_STATUS } from '../config/constants';
+import { ATTENDANCE_STATUS, STUDENT_ATTENDANCE_STATUS, FINAL_CLASS_STATUS, PAYMENT_TYPE, PAYMENT_STATUS, USER_ROLES } from '../config/constants';
 import { createPaymentForSheet, createCyclePayments } from './paymentService';
 import { updateTutorExperienceAndTier } from './tutorService';
 import logger from '../utils/logger';
@@ -340,6 +340,77 @@ export const submitAttendanceSheet = async (sheetId: string, _userId: string) =>
   return sheet;
 };
 
+export const getAttendanceSheetPayments = async (params: {
+  sheetId: string;
+  requesterUserId: string;
+  requesterRole: string;
+}) => {
+  const { sheetId, requesterUserId, requesterRole } = params;
+
+  const sheet = await AttendanceSheet.findById(sheetId)
+    .select('finalClass groupClass sheetType coordinator month year cycleNumber')
+    .lean();
+  if (!sheet) throw new ErrorResponse('Attendance sheet not found', 404);
+
+  const payments = await Payment.find({ attendanceSheet: new mongoose.Types.ObjectId(sheetId) })
+    .select('amount currency status paymentType paymentDate dueDate tutor finalClass groupClass cycleMonth cycleYear')
+    .sort({ createdAt: -1 })
+    .lean();
+
+  const role = String(requesterRole || '').toUpperCase();
+
+  // Strict visibility rules
+  if (role === USER_ROLES.TUTOR) {
+    const payout = payments.find(
+      (p: any) => String(p.paymentType) === PAYMENT_TYPE.TUTOR_PAYOUT && (!p.tutor || String(p.tutor) === String(requesterUserId))
+    );
+    return { tutorPayout: payout || null };
+  }
+
+  if (role === USER_ROLES.STUDENT || role === USER_ROLES.PARENT) {
+    const fees = payments.find((p: any) => String(p.paymentType) === PAYMENT_TYPE.FEES_COLLECTED);
+    return { classFees: fees || null };
+  }
+
+  // Coordinator/Admin/Manager: show both
+  const fees = payments.find((p: any) => String(p.paymentType) === PAYMENT_TYPE.FEES_COLLECTED);
+  const payout = payments.find((p: any) => String(p.paymentType) === PAYMENT_TYPE.TUTOR_PAYOUT);
+  return { classFees: fees || null, tutorPayout: payout || null };
+};
+
+export const updateAttendanceSheetPaymentStatus = async (params: {
+  sheetId: string;
+  paymentId: string;
+  status: PAYMENT_STATUS | string;
+  requesterUserId: string;
+  requesterRole: string;
+}) => {
+  const { sheetId, paymentId, status, requesterUserId, requesterRole } = params;
+
+  if (String(requesterRole || '').toUpperCase() !== USER_ROLES.COORDINATOR) {
+    throw new ErrorResponse('Not authorized to update payment status', 403);
+  }
+
+  const sheet = await AttendanceSheet.findById(sheetId).select('coordinator');
+  if (!sheet) throw new ErrorResponse('Attendance sheet not found', 404);
+  if (String(sheet.coordinator || '') !== String(requesterUserId)) {
+    throw new ErrorResponse('Not authorized to update payments for this sheet', 403);
+  }
+
+  const payment = await Payment.findById(paymentId);
+  if (!payment) throw new ErrorResponse('Payment not found', 404);
+  if (String(payment.attendanceSheet || '') !== String(sheetId)) {
+    throw new ErrorResponse('Payment does not belong to this attendance sheet', 400);
+  }
+
+  payment.status = String(status);
+  if (String(status) === PAYMENT_STATUS.PAID) {
+    if (!payment.paymentDate) payment.paymentDate = new Date();
+  }
+  await payment.save();
+  return payment;
+};
+
 export const getCoordinatorPendingSheets = async (coordinatorUserId: string) => {
   if (!mongoose.isValidObjectId(coordinatorUserId)) {
     return [];
@@ -469,4 +540,6 @@ export default {
   getAllPendingSheets,
   approveAttendanceSheet,
   rejectAttendanceSheet,
+  getAttendanceSheetPayments,
+  updateAttendanceSheetPaymentStatus,
 };

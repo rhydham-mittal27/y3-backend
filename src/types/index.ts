@@ -40,6 +40,7 @@ export interface IUser {
   name: string;
   role: USER_ROLES | string;
   phone?: string;
+  dob?: Date;
   isActive: boolean;
   acceptedTerms: boolean;
   preferredMode?: string;

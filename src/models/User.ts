@@ -9,6 +9,7 @@ export interface IUserDocument extends Document {
   email: string;
   password: string;
   phone?: string;
+  dob?: Date;
   gender?: 'MALE' | 'FEMALE' | 'OTHER';
   city?: string;
   preferredMode?: string;
@@ -56,6 +57,7 @@ const UserSchema: Schema<IUserDocument> = new Schema<IUserDocument>(
     },
     password: { type: String, required: true, select: false },
     phone: { type: String },
+    dob: { type: Date },
     gender: {
       type: String,
       enum: ['MALE', 'FEMALE', 'OTHER'],

@@ -620,6 +620,7 @@ export const createUserWithRole = async (
     userData.phone,
     undefined,
     undefined,
+    undefined,
     userData.role
   );
   const createdUser: any = regRes?.user ?? regRes;

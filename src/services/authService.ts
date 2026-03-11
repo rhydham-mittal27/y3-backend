@@ -20,6 +20,7 @@ export const registerUser = async (
   email: string,
   password: string,
   phone?: string,
+  dob?: string | Date,
   city?: string,
   gender?: 'MALE' | 'FEMALE' | 'OTHER',
   role?: string
@@ -38,7 +39,16 @@ export const registerUser = async (
     );
   }
 
-  const user = new User({ name, email, password, phone, city, gender, role });
+  const user = new User({
+    name,
+    email,
+    password,
+    phone,
+    dob: dob ? new Date(dob) : undefined,
+    city,
+    gender,
+    role,
+  });
   await user.save();
 
   const accessToken = user.generateAccessToken();
@@ -115,6 +125,7 @@ export const registerUser = async (
     email: user.email,
     role: user.role,
     phone: user.phone,
+    dob: (user as any).dob,
     gender: (user as any).gender,
     city: (user as any).city,
     isActive: user.isActive,
@@ -224,6 +235,7 @@ export const loginUser = async (email: string, password: string) => {
     email: user.email,
     role: user.role,
     phone: user.phone,
+    dob: (user as any).dob,
     gender: (user as any).gender,
     city: (user as any).city,
     isActive: user.isActive,
@@ -523,6 +535,7 @@ export const verifyLoginOtp = async (email: string, otp: string) => {
     email: user.email,
     role: user.role,
     phone: user.phone,
+    dob: (user as any).dob,
     isActive: user.isActive,
     acceptedTerms: user.acceptedTerms,
     preferredMode,
@@ -536,14 +549,17 @@ export const verifyLoginOtp = async (email: string, otp: string) => {
   return { user: safeUser, tokens: { accessToken, refreshToken } };
 };
 
+// ... (rest of the code remains the same)
 export const acceptTerms = async (userId: string) => {
   const user = await User.findById(userId);
   if (!user) {
     throw new ErrorResponse('User not found', 404);
   }
+
   user.acceptedTerms = true;
   await user.save();
-  return { success: true, acceptedTerms: true };
+
+  return user;
 };
 
 export const sendChangePasswordOtp = async (userId: string) => {

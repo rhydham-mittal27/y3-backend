@@ -114,7 +114,7 @@ FinalClassSchema.index({ coordinator: 1, status: 1 });
 
 // Virtuals
 FinalClassSchema.virtual('progressPercentage').get(function (this: IFinalClassDocument) {
-  const total = this.totalSessions || 0;
+  const total = this.classesPerMonth || this.totalSessions || 0;
   const done = this.completedSessions || 0;
   if (total <= 0) return 0;
   return Math.min(100, Math.max(0, (done / total) * 100));

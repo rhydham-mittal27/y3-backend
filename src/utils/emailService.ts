@@ -7,16 +7,15 @@ const getTransporterConfigs = () => {
 
   // Primary
   if (
-    process.env.SMTP_HOST &&
-    process.env.SMTP_USER &&
-    process.env.SMTP_PASS &&
-    process.env.SMTP_FROM
+    process.env.SES_SMTP_HOST &&
+    process.env.SES_SMTP_USER &&
+    process.env.SES_SMTP_PASS
   ) {
     configs.push({
-      host: process.env.SMTP_HOST,
-      port: Number(process.env.SMTP_PORT || 587),
-      user: process.env.SMTP_USER,
-      pass: process.env.SMTP_PASS,
+      host: process.env.SES_SMTP_HOST,
+      port: Number(process.env.SES_SMTP_PORT || 587),
+      user: process.env.SES_SMTP_USER,
+      pass: process.env.SES_SMTP_PASS,
       from: process.env.SMTP_FROM,
       label: "Primary",
     });

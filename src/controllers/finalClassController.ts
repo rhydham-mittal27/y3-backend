@@ -119,6 +119,15 @@ export const updateClassStatus = asyncHandler(async (req: AuthRequest, res) => {
   }
   const classId = req.params.id as string;
   const { status, actualEndDate } = req.body;
+
+  if (req.user?.role === USER_ROLES.COORDINATOR) {
+    const clsDoc = await FinalClass.findById(classId).select('coordinator');
+    if (!clsDoc) throw new ErrorResponse('Final class not found', 404);
+    if (!clsDoc.coordinator || String(clsDoc.coordinator) !== String(req.user.id)) {
+      throw new ErrorResponse('Not authorized to update this class', 403);
+    }
+  }
+
   const cls = await updateFinalClassStatus(classId, status, actualEndDate);
   return res.json(successResponse(cls, 'Class status updated successfully'));
 });
@@ -375,6 +384,14 @@ export const changeTutorController = asyncHandler(async (req: AuthRequest, res) 
   const classId = req.params.id as string;
   const { newTutorUserId, reason } = req.body;
   const changedBy = req.user!.id;
+
+  if (req.user?.role === USER_ROLES.COORDINATOR) {
+    const clsDoc = await FinalClass.findById(classId).select('coordinator');
+    if (!clsDoc) throw new ErrorResponse('Final class not found', 404);
+    if (!clsDoc.coordinator || String(clsDoc.coordinator) !== String(req.user.id)) {
+      throw new ErrorResponse('Not authorized to update this class', 403);
+    }
+  }
 
   const result = await changeTutor({
     classId,

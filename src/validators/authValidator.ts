@@ -22,6 +22,10 @@ export const registerValidation = [
     .optional()
     .isMobilePhone('any')
     .withMessage('Invalid phone number'),
+  body('dob')
+    .optional()
+    .isISO8601()
+    .withMessage('Invalid dob, expected ISO8601 date'),
   body('city')
     .optional()
     .isString()

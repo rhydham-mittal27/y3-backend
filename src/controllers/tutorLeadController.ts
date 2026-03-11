@@ -4,7 +4,8 @@ import ErrorResponse from '../utils/errorResponse';
 import { successResponse } from '../utils/responseFormatter';
 import User from '../models/User';
 import Tutor from '../models/Tutor';
-import generateTeacherId from '../utils/generateTeacherId';
+import generateTeacherId, { generateTeacherIdWithCityCode } from '../utils/generateTeacherId';
+import Option from '../models/Option';
 import { TEACHING_MODE, USER_ROLES } from '../config/constants';
 import { sendLoginOtp } from '../services/authService';
 import crypto from 'crypto';
@@ -130,9 +131,17 @@ export const createTutorLeadRegistrationController = asyncHandler(async (req: Re
   // If we don't have a teacherId yet, generate and ensure uniqueness with retries
   const MAX_RETRIES = 5;
   let attempts = 0;
+
+  let cityCode: string | undefined;
+  if (city) {
+    const normalizedCityValue = String(city).trim().toUpperCase().replace(/\s+/g, '_');
+    const cityOpt = await Option.findOne({ type: 'CITY', $or: [{ value: normalizedCityValue }, { label: String(city).trim() }] }).lean();
+    cityCode = (cityOpt as any)?.metadata?.cityCode ? String((cityOpt as any).metadata.cityCode) : undefined;
+  }
+
   while (!teacherIdToSave && attempts < MAX_RETRIES) {
     attempts += 1;
-    const candidate = generateTeacherId(gender, city);
+    const candidate = cityCode ? generateTeacherIdWithCityCode(gender, cityCode, city) : generateTeacherId(gender, city);
     const exists = await Tutor.findOne({ teacherId: candidate }).lean();
     if (!exists) {
       teacherIdToSave = candidate;
@@ -249,7 +258,16 @@ export const createTutorLeadOtpLaterController = asyncHandler(async (req: Reques
   };
 
   // Generate teacherId
-  const candidate = generateTeacherId(undefined, city ? String(city) : undefined);
+  let cityCode: string | undefined;
+  if (city) {
+    const normalizedCityValue = String(city).trim().toUpperCase().replace(/\s+/g, '_');
+    const cityOpt = await Option.findOne({ type: 'CITY', $or: [{ value: normalizedCityValue }, { label: String(city).trim() }] }).lean();
+    cityCode = (cityOpt as any)?.metadata?.cityCode ? String((cityOpt as any).metadata.cityCode) : undefined;
+  }
+
+  const candidate = cityCode
+    ? generateTeacherIdWithCityCode(undefined, cityCode, city ? String(city) : undefined)
+    : generateTeacherId(undefined, city ? String(city) : undefined);
   const exists = await Tutor.findOne({ teacherId: candidate }).lean();
   if (!exists) {
     tutorPayload.teacherId = candidate;

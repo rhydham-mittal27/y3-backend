@@ -428,6 +428,7 @@ function parseExperience(experience: string | undefined): { hours: number; years
 export const updateMyProfile = async (userId: string, updateData: {
   fullName?: string;
   phoneNumber?: string;
+  dob?: string | Date;
   gender?: string;
   qualification?: string;
   experience?: string;
@@ -452,6 +453,7 @@ export const updateMyProfile = async (userId: string, updateData: {
   // Update user fields
   if (updateData.fullName) user.name = updateData.fullName;
   if (updateData.phoneNumber) user.phone = updateData.phoneNumber;
+  if (updateData.dob) user.dob = new Date(updateData.dob);
   if (updateData.gender) user.gender = updateData.gender as any;
   if (updateData.city) user.city = updateData.city;
   if (updateData.preferredMode) user.preferredMode = updateData.preferredMode;
@@ -506,7 +508,7 @@ export const updateMyProfile = async (userId: string, updateData: {
   }
 
   await tutor.populate([
-    { path: 'user', select: 'name email phone role gender city preferredMode' },
+    { path: 'user', select: 'name email phone dob role gender city preferredMode' },
     { path: 'verifiedBy', select: 'name email phone role' },
   ]);
   

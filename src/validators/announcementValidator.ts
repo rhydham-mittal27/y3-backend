@@ -31,8 +31,8 @@ export const sendCoordinatorAnnouncementValidation = [
     .withMessage('Recipient type is required')
     .isIn(['SPECIFIC_CLASS', 'ALL_CLASSES', 'SPECIFIC_TUTOR', 'ALL_TUTORS', 'STUDENTS_PARENTS'])
     .withMessage('Invalid recipient type'),
-  body('targetClassId').optional().isMongoId().withMessage('Invalid class ID'),
-  body('targetTutorId').optional().isMongoId().withMessage('Invalid tutor ID'),
+  body('targetClassId').optional({ checkFalsy: true }).isMongoId().withMessage('Invalid class ID'),
+  body('targetTutorId').optional({ checkFalsy: true }).isMongoId().withMessage('Invalid tutor ID'),
 ];
 
 export const coordinatorAnnouncementIdValidation = [param('id').isMongoId().withMessage('Invalid announcement ID')];

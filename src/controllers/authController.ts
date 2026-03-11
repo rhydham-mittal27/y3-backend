@@ -15,8 +15,8 @@ export const register = asyncHandler(async (req, res) => {
     throw new ErrorResponse(errors.array()[0]?.msg || 'Validation error', 400);
   }
 
-  const { name, email, password, phone, city, gender, role, permissions } = req.body;
-  const result = await registerUser(name, email, password, phone, city, gender, role);
+  const { name, email, password, phone, dob, city, gender, role, permissions } = req.body;
+  const result = await registerUser(name, email, password, phone, dob, city, gender, role);
 
   // Automatically create profiles for staff roles where possible
   try {
