@@ -1,23 +1,16 @@
 import { config } from "dotenv";
 import nodemailer from "nodemailer";
+import brevoTransport from "nodemailer-brevo-transport";
 config();
 
 const getTransporterConfigs = () => {
   const configs = [];
 
-  // Primary
-  if (
-    process.env.BREVO_SMTP_HOST &&
-    process.env.BREVO_SMTP_USER &&
-    process.env.BREVO_SMTP_PASS
-  ) {
+  // Primary (Brevo API)
+  if (process.env.BREVO_API_KEY) {
     configs.push({
-      host: process.env.BREVO_SMTP_HOST,
-      port: Number(process.env.BREVO_SMTP_PORT || 587),
-      user: process.env.BREVO_SMTP_USER,
-      pass: process.env.BREVO_SMTP_PASS,
-      from: process.env.BREVO_FROM,
-      label: "Primary",
+      from: process.env.BREVO_FROM || "noreply@yourshikshak.in",
+      label: "Brevo API",
     });
   }
 
@@ -61,20 +54,11 @@ const getTransporterConfigs = () => {
 const getResendOtpTransporterConfigs = () => {
   const configs = [];
 
-  // Resend OTP Primary
-  if (
-    process.env.SMTP_RESEND_HOST &&
-    process.env.SMTP_RESEND_USER &&
-    process.env.SMTP_RESEND_PASS &&
-    process.env.SMTP_RESEND_FROM
-  ) {
+  // Resend OTP Primary (Brevo API)
+  if (process.env.BREVO_API_KEY) {
     configs.push({
-      host: process.env.SMTP_RESEND_HOST,
-      port: Number(process.env.SMTP_RESEND_PORT || 587),
-      user: process.env.SMTP_RESEND_USER,
-      pass: process.env.SMTP_RESEND_PASS,
-      from: process.env.SMTP_RESEND_FROM,
-      label: "Resend OTP Primary",
+      from: process.env.BREVO_FROM || "noreply@yourshikshak.in",
+      label: "Brevo API (Resend)",
     });
   }
 
@@ -120,18 +104,15 @@ export const sendEmail = async (to: string, subject: string, html: string) => {
 
   for (const config of configs) {
     try {
-      const transporter = nodemailer.createTransport({
-        host: process.env.BREVO_SMTP_HOST,
-        port: 587,
-        secure: false,
-        auth: {
-          user: process.env.BREVO_SMTP_USER,
-          pass: process.env.BREVO_SMTP_PASS,
-        },
-      });
+      if (!process.env.BREVO_API_KEY) {
+        throw new Error("BREVO_API_KEY is not defined in environment variables");
+      }
 
+      const transporter = nodemailer.createTransport(
+        new brevoTransport({ apiKey: process.env.BREVO_API_KEY })
+      );
       const info = await transporter.sendMail({
-        from: config.from,
+        from: config.from || process.env.BREVO_FROM,
         to,
         subject,
         html,
@@ -176,18 +157,16 @@ export const sendResendOtpEmail = async (
 
   for (const config of configs) {
     try {
-      const transporter = nodemailer.createTransport({
-        host: config.host,
-        port: config.port,
-        secure: false,
-        auth: {
-          user: config.user,
-          pass: config.pass,
-        },
-      });
+      if (!process.env.BREVO_API_KEY) {
+        throw new Error("BREVO_API_KEY is not defined in environment variables");
+      }
+
+      const transporter = nodemailer.createTransport(
+        new brevoTransport({ apiKey: process.env.BREVO_API_KEY })
+      );
 
       const info = await transporter.sendMail({
-        from: config.from,
+        from: config.from || process.env.BREVO_FROM,
         to,
         subject,
         html,
