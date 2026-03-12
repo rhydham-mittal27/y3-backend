@@ -69,20 +69,31 @@ connectDB();
 // Middleware
 app.use(helmet());
 
-const allowedOrigins = (process.env.ALLOWED_ORIGINS || 'http://localhost:3000').split(',');
+const allowedOrigins = (process.env.ALLOWED_ORIGINS || 'http://localhost:3000')
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean);
+
+const normalizeOrigin = (o: string) => o.replace(/\/+$/, '');
 
 app.use(
   cors({
     origin: function (origin, callback) {
       // Allow requests with no origin (like mobile apps or curl requests)
       if (!origin) return callback(null, true);
-      
-      if (allowedOrigins.includes(origin)) {
+
+      if (allowedOrigins.includes('*')) {
+        return callback(null, true);
+      }
+
+      const normalized = normalizeOrigin(origin);
+      if (allowedOrigins.some((o) => normalizeOrigin(o) === normalized)) {
         return callback(null, true);
       } else {
         return callback(new Error('Not allowed by CORS'), false);
       }
     },
+
     credentials: true,
   })
 );
