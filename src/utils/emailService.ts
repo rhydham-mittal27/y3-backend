@@ -96,7 +96,7 @@ export const sendEmail = async (to: string, subject: string, html: string) => {
 
   if (configs.length === 0) {
     throw new Error(
-      "SMTP is not configured. Please set SMTP_HOST, SMTP_USER, SMTP_PASS, SMTP_FROM",
+      "Email is not configured. Set BREVO_API_KEY or configure one of the SMTP_BACKUP* providers.",
     );
   }
 
@@ -104,13 +104,18 @@ export const sendEmail = async (to: string, subject: string, html: string) => {
 
   for (const emailConfig of configs) {
     try {
-      if (!process.env.BREVO_API_KEY) {
-        throw new Error("BREVO_API_KEY is not defined in environment variables");
-      }
-
-      const transporter = nodemailer.createTransport(
-        new brevoTransport({ apiKey: process.env.BREVO_API_KEY })
-      );
+      const hasSmtp = Boolean((emailConfig as any).host);
+      const transporter = hasSmtp
+        ? nodemailer.createTransport({
+            host: (emailConfig as any).host,
+            port: Number((emailConfig as any).port || 587),
+            secure: false,
+            auth: {
+              user: (emailConfig as any).user,
+              pass: (emailConfig as any).pass,
+            },
+          })
+        : nodemailer.createTransport(new brevoTransport({ apiKey: process.env.BREVO_API_KEY }));
 
       const info = await transporter.sendMail({
         from: (emailConfig as any).from || process.env.BREVO_FROM,
@@ -119,9 +124,15 @@ export const sendEmail = async (to: string, subject: string, html: string) => {
         html,
       });
 
+      const rejected = (info as any)?.rejected;
+      if (Array.isArray(rejected) && rejected.length > 0) {
+        throw new Error(`Email provider rejected recipients: ${rejected.join(', ')}`);
+      }
+
       console.log(
         `[Email] Sent successfully using ${emailConfig.label} account (${(emailConfig as any).from})`,
       );
+      console.log('[Email] Provider response info:', info);
       return info; // Success, exit function
     } catch (error: any) {
       console.warn(
@@ -150,7 +161,7 @@ export const sendResendOtpEmail = async (
 
   if (configs.length === 0) {
     throw new Error(
-      "SMTP is not configured. Please set SMTP_HOST or SMTP_RESEND_HOST",
+      "Email is not configured. Set BREVO_API_KEY or configure SMTP_RESEND_BACKUP_*.",
     );
   }
 
@@ -158,13 +169,18 @@ export const sendResendOtpEmail = async (
 
   for (const emailConfig of configs) {
     try {
-      if (!process.env.BREVO_API_KEY) {
-        throw new Error("BREVO_API_KEY is not defined in environment variables");
-      }
-
-      const transporter = nodemailer.createTransport(
-        new brevoTransport({ apiKey: process.env.BREVO_API_KEY })
-      );
+      const hasSmtp = Boolean((emailConfig as any).host);
+      const transporter = hasSmtp
+        ? nodemailer.createTransport({
+            host: (emailConfig as any).host,
+            port: Number((emailConfig as any).port || 587),
+            secure: false,
+            auth: {
+              user: (emailConfig as any).user,
+              pass: (emailConfig as any).pass,
+            },
+          })
+        : nodemailer.createTransport(new brevoTransport({ apiKey: process.env.BREVO_API_KEY }));
 
       const info = await transporter.sendMail({
         from: (emailConfig as any).from || process.env.BREVO_FROM,
@@ -173,9 +189,15 @@ export const sendResendOtpEmail = async (
         html,
       });
 
+      const rejected = (info as any)?.rejected;
+      if (Array.isArray(rejected) && rejected.length > 0) {
+        throw new Error(`Email provider rejected recipients: ${rejected.join(', ')}`);
+      }
+
       console.log(
         `[Resend OTP Email] Sent successfully using ${emailConfig.label} account (${(emailConfig as any).from})`,
       );
+      console.log('[Resend OTP Email] Provider response info:', info);
       return info; // Success, exit function
     } catch (error: any) {
       console.warn(
