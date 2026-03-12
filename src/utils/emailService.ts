@@ -14,77 +14,11 @@ const getTransporterConfigs = () => {
     });
   }
 
-  // Backup 1
-  if (
-    process.env.SMTP_BACKUP1_HOST &&
-    process.env.SMTP_BACKUP1_USER &&
-    process.env.SMTP_BACKUP1_PASS &&
-    process.env.SMTP_BACKUP1_FROM
-  ) {
-    configs.push({
-      host: process.env.SMTP_BACKUP1_HOST,
-      port: Number(process.env.SMTP_BACKUP1_PORT || 587),
-      user: process.env.SMTP_BACKUP1_USER,
-      pass: process.env.SMTP_BACKUP1_PASS,
-      from: process.env.SMTP_BACKUP1_FROM,
-      label: "Backup 1",
-    });
-  }
-
-  // Backup 2
-  if (
-    process.env.SMTP_BACKUP2_HOST &&
-    process.env.SMTP_BACKUP2_USER &&
-    process.env.SMTP_BACKUP2_PASS &&
-    process.env.SMTP_BACKUP2_FROM
-  ) {
-    configs.push({
-      host: process.env.SMTP_BACKUP2_HOST,
-      port: Number(process.env.SMTP_BACKUP2_PORT || 587),
-      user: process.env.SMTP_BACKUP2_USER,
-      pass: process.env.SMTP_BACKUP2_PASS,
-      from: process.env.SMTP_BACKUP2_FROM,
-      label: "Backup 2",
-    });
-  }
-
   return configs;
 };
 
 const getResendOtpTransporterConfigs = () => {
-  const configs = [];
-
-  // Resend OTP Primary (Brevo API)
-  if (process.env.BREVO_API_KEY) {
-    configs.push({
-      from: process.env.BREVO_FROM || "noreply@yourshikshak.in",
-      label: "Brevo API (Resend)",
-    });
-  }
-
-  // Resend OTP Backup
-  if (
-    process.env.SMTP_RESEND_BACKUP_HOST &&
-    process.env.SMTP_RESEND_BACKUP_USER &&
-    process.env.SMTP_RESEND_BACKUP_PASS &&
-    process.env.SMTP_RESEND_BACKUP_FROM
-  ) {
-    configs.push({
-      host: process.env.SMTP_RESEND_BACKUP_HOST,
-      port: Number(process.env.SMTP_RESEND_BACKUP_PORT || 587),
-      user: process.env.SMTP_RESEND_BACKUP_USER,
-      pass: process.env.SMTP_RESEND_BACKUP_PASS,
-      from: process.env.SMTP_RESEND_BACKUP_FROM,
-      label: "Resend OTP Backup",
-    });
-  }
-
-  // Fallback to normal configs if resend configs not available
-  if (configs.length === 0) {
-    return getTransporterConfigs();
-  }
-
-  return configs;
+  return getTransporterConfigs();
 };
 
 /**
@@ -104,18 +38,17 @@ export const sendEmail = async (to: string, subject: string, html: string) => {
 
   for (const emailConfig of configs) {
     try {
-      const hasSmtp = Boolean((emailConfig as any).host);
-      const transporter = hasSmtp
-        ? nodemailer.createTransport({
-            host: (emailConfig as any).host,
-            port: Number((emailConfig as any).port || 587),
-            secure: false,
-            auth: {
-              user: (emailConfig as any).user,
-              pass: (emailConfig as any).pass,
-            },
-          })
-        : nodemailer.createTransport(new brevoTransport({ apiKey: process.env.BREVO_API_KEY }));
+      console.log('[Email] Attempting provider', {
+        label: (emailConfig as any).label,
+        from: (emailConfig as any).from,
+        to,
+      });
+
+      if (!process.env.BREVO_API_KEY) {
+        throw new Error('BREVO_API_KEY is not defined in environment variables');
+      }
+
+      const transporter = nodemailer.createTransport(new brevoTransport({ apiKey: process.env.BREVO_API_KEY }));
 
       const info = await transporter.sendMail({
         from: (emailConfig as any).from || process.env.BREVO_FROM,
@@ -138,6 +71,11 @@ export const sendEmail = async (to: string, subject: string, html: string) => {
       console.warn(
         `[Email] Failed to send using ${emailConfig.label} account: ${error.message}`,
       );
+      console.warn('[Email] Provider error details:', {
+        code: error?.code,
+        command: error?.command,
+        response: error?.response,
+      });
       lastError = error;
       // Continue to next emailConfig in loop
     }
@@ -161,7 +99,7 @@ export const sendResendOtpEmail = async (
 
   if (configs.length === 0) {
     throw new Error(
-      "Email is not configured. Set BREVO_API_KEY or configure SMTP_RESEND_BACKUP_*.",
+      "Email is not configured. Set BREVO_API_KEY.",
     );
   }
 
@@ -169,18 +107,17 @@ export const sendResendOtpEmail = async (
 
   for (const emailConfig of configs) {
     try {
-      const hasSmtp = Boolean((emailConfig as any).host);
-      const transporter = hasSmtp
-        ? nodemailer.createTransport({
-            host: (emailConfig as any).host,
-            port: Number((emailConfig as any).port || 587),
-            secure: false,
-            auth: {
-              user: (emailConfig as any).user,
-              pass: (emailConfig as any).pass,
-            },
-          })
-        : nodemailer.createTransport(new brevoTransport({ apiKey: process.env.BREVO_API_KEY }));
+      console.log('[Resend OTP Email] Attempting provider', {
+        label: (emailConfig as any).label,
+        from: (emailConfig as any).from,
+        to,
+      });
+
+      if (!process.env.BREVO_API_KEY) {
+        throw new Error('BREVO_API_KEY is not defined in environment variables');
+      }
+
+      const transporter = nodemailer.createTransport(new brevoTransport({ apiKey: process.env.BREVO_API_KEY }));
 
       const info = await transporter.sendMail({
         from: (emailConfig as any).from || process.env.BREVO_FROM,
@@ -203,6 +140,11 @@ export const sendResendOtpEmail = async (
       console.warn(
         `[Resend OTP Email] Failed to send using ${emailConfig.label} account: ${error.message}`,
       );
+      console.warn('[Resend OTP Email] Provider error details:', {
+        code: error?.code,
+        command: error?.command,
+        response: error?.response,
+      });
       lastError = error;
       // Continue to next emailConfig in loop
     }
