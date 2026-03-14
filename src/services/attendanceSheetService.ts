@@ -130,7 +130,7 @@ export const addDailyAttendance = async (params: {
       cycleNumber: nextCycle,
       periodLabel: `Cycle ${nextCycle} (${date.toLocaleString('default', { month: 'short', year: 'numeric' })})`,
       records: [],
-      status: 'DRAFT',
+      status: 'PENDING',
       createdBy: new mongoose.Types.ObjectId(userId),
       totalSessionsPlanned: sessionLimit,
       sheetType: isGroup ? 'GROUP' : 'SINGLE',
@@ -234,8 +234,7 @@ export const addDailyAttendance = async (params: {
 
   // Auto-Submit if Full
   if (sessionLimit > 0 && sheet.totalSessionsTaken >= sessionLimit) {
-      if (sheet.status === 'DRAFT') {
-            sheet.status = 'PENDING';
+      if (!sheet.submittedAt) {
             sheet.submittedAt = new Date();
       }
   }
@@ -334,7 +333,6 @@ export const submitAttendanceSheet = async (sheetId: string, _userId: string) =>
 
   // Authorization check could be added here
 
-  sheet.status = 'PENDING';
   sheet.submittedAt = new Date();
   await sheet.save();
   return sheet;
@@ -425,6 +423,24 @@ export const getCoordinatorPendingSheets = async (coordinatorUserId: string) => 
       { path: 'finalClass', select: 'studentName className grade subject' },
       { path: 'coordinator', select: 'name email' },
       { path: 'createdBy', select: 'name email' }
+    ]);
+
+  return sheets;
+};
+
+export const getCoordinatorAllSheets = async (coordinatorUserId: string) => {
+  if (!mongoose.isValidObjectId(coordinatorUserId)) {
+    return [];
+  }
+
+  const sheets = await AttendanceSheet.find({
+    coordinator: new mongoose.Types.ObjectId(coordinatorUserId),
+  })
+    .sort({ cycleNumber: -1 })
+    .populate([
+      { path: 'finalClass', select: 'studentName className grade subject' },
+      { path: 'coordinator', select: 'name email' },
+      { path: 'createdBy', select: 'name email' },
     ]);
 
   return sheets;
@@ -537,6 +553,7 @@ export default {
   getSheetsForClass,
   submitAttendanceSheet,
   getCoordinatorPendingSheets,
+  getCoordinatorAllSheets,
   getAllPendingSheets,
   approveAttendanceSheet,
   rejectAttendanceSheet,

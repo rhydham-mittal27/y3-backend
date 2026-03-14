@@ -45,6 +45,8 @@ export interface IUser {
   acceptedTerms: boolean;
   preferredMode?: string;
   city?: string;
+  verificationStatus?: string;
+  isProfileComplete?: boolean;
   permissions?: {
     canViewSiteLeads?: boolean;
     canVerifyTutors?: boolean;

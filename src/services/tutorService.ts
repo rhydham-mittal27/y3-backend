@@ -4,8 +4,8 @@ import User from '../models/User';
 import Notification from '../models/Notification';
 import ErrorResponse from '../utils/errorResponse';
 import { DOCUMENT_TYPES, USER_ROLES, VERIFICATION_STATUS, MANAGER_ACTION_TYPE, TUTOR_TIER, FINAL_CLASS_STATUS, TEST_STATUS, ATTENDANCE_STATUS } from '../config/constants';
-import { uploadFileToS3Structured, deleteFileFromS3 } from '../services/s3Service';
-import { S3_CONFIG } from '../config/s3';
+import { uploadFileToS3Structured, deleteFileFromS3, getPresignedUrl } from '../services/s3Service';
+import { getS3PublicUrlForKey, S3_CONFIG } from '../config/s3';
 import { logManagerActivity } from './managerService';
 import Manager from '../models/Manager';
 import TutorFeedback from '../models/TutorFeedback';
@@ -16,7 +16,35 @@ import Payment from '../models/Payment';
 import DemoHistory from '../models/DemoHistory';
 import AttendanceSheet from '../models/AttendanceSheet';
 import { createNotificationWithPreferences } from './notificationService';
-import { PAYMENT_STATUS, PAYMENT_TYPE, DEMO_STATUS, VERIFICATION_FEE_AMOUNT } from '../config/constants';
+import { PAYMENT_STATUS, PAYMENT_TYPE, DEMO_STATUS, VERIFICATION_FEE_AMOUNT, VERIFICATION_FEE_DEDUCT_AMOUNT } from '../config/constants';
+
+const resolveS3DocumentUrl = async (val: any): Promise<any> => {
+  if (typeof val !== 'string' || val.trim().length === 0) return val;
+  if (/^https?:\/\//i.test(val) || /^data:/i.test(val) || /^blob:/i.test(val)) return val;
+  try {
+    return await getPresignedUrl(val);
+  } catch (_e) {
+    return getS3PublicUrlForKey(val);
+  }
+};
+
+const withResolvedTutorDocumentUrls = async (tutor: any) => {
+  if (!tutor) return tutor;
+  const copy: any = typeof tutor.toObject === 'function' ? tutor.toObject() : { ...tutor };
+  const docs = Array.isArray(copy.documents) ? copy.documents : [];
+  if (docs.length === 0) return copy;
+
+  copy.documents = await Promise.all(
+    docs.map(async (d: any) => {
+      const rawKey = String(d?.s3Key || d?.documentUrl || '').trim();
+      return {
+        ...(d || {}),
+        documentUrl: await resolveS3DocumentUrl(rawKey),
+      };
+    })
+  );
+  return copy;
+};
 
 export const createTutorProfile = async (
   userId: string,
@@ -135,7 +163,7 @@ export const getAllTutors = async (
     Tutor.countDocuments(query),
   ]);
 
-  return { tutors, total, page, limit };
+  return { tutors: await Promise.all(tutors.map(withResolvedTutorDocumentUrls)), total, page, limit };
 };
 
 export const getTutorById = async (tutorIdOrTeacherId: string) => {
@@ -166,7 +194,7 @@ export const getTutorById = async (tutorIdOrTeacherId: string) => {
   }
 
   if (!tutor) throw new ErrorResponse('Tutor not found', 404);
-  return tutor;
+  return await withResolvedTutorDocumentUrls(tutor);
 };
 
 export const getTutorByUserId = async (userId: string) => {
@@ -236,7 +264,7 @@ export const getTutorByUserId = async (userId: string) => {
 
   (tutor as any).experienceHours = totalClassHours;
 
-  return tutor;
+  return await withResolvedTutorDocumentUrls(tutor);
 };
 
 export const getPublicTutorProfile = async (teacherId: string) => {
@@ -343,7 +371,7 @@ export const updateTutorProfile = async (
     { path: 'user', select: 'name email phone role gender city preferredMode' },
     { path: 'verifiedBy', select: 'name email phone role' },
   ]);
-  return tutor;
+  return await withResolvedTutorDocumentUrls(tutor);
 };
 
 export const getMyProfileForEdit = async (userId: string) => {
@@ -460,36 +488,68 @@ export const updateMyProfile = async (userId: string, updateData: {
   await user.save();
 
   // Prepare tutor data
-  const { hours: experienceHours, years: yearsOfExperience } = parseExperience(updateData.experience);
-  const preferredLocations: string[] = [];
-  const preferredCities: string[] = [];
-  
-  if (updateData.city) {
-    preferredLocations.push(updateData.city);
-    preferredCities.push(updateData.city);
-  }
-  if (Array.isArray(updateData.preferredAreas)) {
-    updateData.preferredAreas.forEach((a: string) => {
-      if (a && a.trim()) preferredLocations.push(a.trim());
-    });
+  // IMPORTANT: only update fields if they are actually provided, otherwise we risk wiping existing values
+  const tutorUpdateData: any = {};
+
+  if ('experience' in updateData) {
+    const { hours: experienceHours, years: yearsOfExperience } = parseExperience(updateData.experience);
+    tutorUpdateData.experienceHours = experienceHours;
+    tutorUpdateData.yearsOfExperience = yearsOfExperience;
   }
 
-  const tutorUpdateData: any = {
-    experienceHours,
-    subjects: updateData.subjects || [],
-    qualifications: updateData.qualification ? [updateData.qualification] : [],
-    preferredLocations,
-    preferredCities,
-    preferredMode: updateData.preferredMode,
-    extracurricularActivities: updateData.extracurricularActivities || [],
-    permanentAddress: updateData.permanentAddress,
-    residentialAddress: updateData.residentialAddress,
-    alternatePhone: updateData.alternatePhone,
-    yearsOfExperience,
-    bio: updateData.bio,
-    languagesKnown: updateData.languagesKnown,
-    skills: updateData.skills,
-  };
+  if (Array.isArray(updateData.subjects)) {
+    tutorUpdateData.subjects = updateData.subjects;
+  }
+
+  if ('qualification' in updateData) {
+    tutorUpdateData.qualifications = updateData.qualification ? [updateData.qualification] : [];
+  }
+
+  if (Array.isArray(updateData.extracurricularActivities)) {
+    tutorUpdateData.extracurricularActivities = updateData.extracurricularActivities;
+  }
+
+  if ('preferredMode' in updateData) {
+    tutorUpdateData.preferredMode = updateData.preferredMode;
+  }
+
+  if ('permanentAddress' in updateData) {
+    tutorUpdateData.permanentAddress = updateData.permanentAddress;
+  }
+  if ('residentialAddress' in updateData) {
+    tutorUpdateData.residentialAddress = updateData.residentialAddress;
+  }
+  if ('alternatePhone' in updateData) {
+    tutorUpdateData.alternatePhone = updateData.alternatePhone;
+  }
+  if ('bio' in updateData) {
+    tutorUpdateData.bio = updateData.bio;
+  }
+  if (Array.isArray(updateData.languagesKnown)) {
+    tutorUpdateData.languagesKnown = updateData.languagesKnown;
+  }
+  if (Array.isArray(updateData.skills)) {
+    tutorUpdateData.skills = updateData.skills;
+  }
+
+  const locationFieldsProvided = 'city' in updateData || 'preferredAreas' in updateData;
+  if (locationFieldsProvided) {
+    const preferredLocations: string[] = [];
+    const preferredCities: string[] = [];
+
+    if (updateData.city) {
+      preferredLocations.push(updateData.city);
+      preferredCities.push(updateData.city);
+    }
+    if (Array.isArray(updateData.preferredAreas)) {
+      updateData.preferredAreas.forEach((a: string) => {
+        if (a && a.trim()) preferredLocations.push(a.trim());
+      });
+    }
+
+    tutorUpdateData.preferredLocations = preferredLocations;
+    tutorUpdateData.preferredCities = preferredCities;
+  }
 
   if (typeof updateData.whatsappCommunityJoined === 'boolean') {
     tutorUpdateData.whatsappCommunityJoined = updateData.whatsappCommunityJoined;
@@ -512,7 +572,7 @@ export const updateMyProfile = async (userId: string, updateData: {
     { path: 'verifiedBy', select: 'name email phone role' },
   ]);
   
-  return tutor;
+  return await withResolvedTutorDocumentUrls(tutor);
 };
 
 
@@ -621,6 +681,17 @@ export const uploadDocument = async (
   try {
     const previousStatus = tutor.verificationStatus as VERIFICATION_STATUS;
 
+    if (
+      documentType !== 'PROFILE_PHOTO' &&
+      Array.isArray(tutor.documents) &&
+      tutor.documents.some((d: any) => d?.documentType === documentType)
+    ) {
+      throw new ErrorResponse(
+        'This document type has already been uploaded. Please delete the existing one before uploading again.',
+        409
+      );
+    }
+
     // Profile photo should be replaceable: remove previous profile photo (and delete from S3)
     if (documentType === 'PROFILE_PHOTO' && Array.isArray(tutor.documents) && tutor.documents.length > 0) {
       const previousPhotos = (tutor.documents as any[]).filter((d) => d?.documentType === 'PROFILE_PHOTO');
@@ -638,8 +709,8 @@ export const uploadDocument = async (
 
     // Only verification documents should affect verificationStatus
     if (documentType !== 'PROFILE_PHOTO') {
-      // If this is the first ever document and tutor was pending, move to UNDER_REVIEW
-      if (tutor.documents.length === 1 && previousStatus === VERIFICATION_STATUS.PENDING) {
+      // If tutor was pending, move to UNDER_REVIEW because a verification document was uploaded
+      if (previousStatus === VERIFICATION_STATUS.PENDING) {
         tutor.verificationStatus = VERIFICATION_STATUS.UNDER_REVIEW;
       }
 
@@ -664,7 +735,7 @@ export const uploadDocument = async (
     { path: 'user', select: 'name email phone role gender city preferredMode' },
     { path: 'verifiedBy', select: 'name email phone role' },
   ]);
-  return tutor;
+  return await withResolvedTutorDocumentUrls(tutor);
 };
 
 export const deleteDocument = async (tutorId: string, documentIndex: number) => {
@@ -690,7 +761,7 @@ export const deleteDocument = async (tutorId: string, documentIndex: number) => 
     { path: 'user', select: 'name email phone role gender city preferredMode' },
     { path: 'verifiedBy', select: 'name email phone role' },
   ]);
-  return tutor;
+  return await withResolvedTutorDocumentUrls(tutor);
 };
 
 export const updateVerificationStatus = async (
@@ -863,7 +934,7 @@ export const updateVerificationFeeStatus = async (
         const dueDate = new Date();
         await Payment.create({
           tutor: tutor.user,
-          amount: VERIFICATION_FEE_AMOUNT,
+          amount: VERIFICATION_FEE_DEDUCT_AMOUNT,
           currency: 'INR',
           status: PAYMENT_STATUS.PENDING,
           paymentType: PAYMENT_TYPE.TUTOR_VERIFICATION_FEES,

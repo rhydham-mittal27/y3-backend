@@ -3,6 +3,7 @@ import asyncHandler from '../utils/asyncHandler';
 import { successResponse, paginatedResponse } from '../utils/responseFormatter';
 import ErrorResponse from '../utils/errorResponse';
 import { AuthRequest } from '../types';
+import { Response } from 'express';
 import {
   createManagerProfile,
   getAllManagers,
@@ -21,6 +22,8 @@ import {
   getEligibleManagerUsers,
 } from '../services/managerService';
 import { USER_ROLES } from '../config/constants';
+import Manager from '../models/Manager';
+import { getObjectFromS3 } from '../services/s3Service';
 
 export const createManagerProfileController = asyncHandler(async (req: AuthRequest, res) => {
   const errors = validationResult(req);
@@ -227,6 +230,51 @@ export const getEligibleManagerUsersController = asyncHandler(async (_req: AuthR
   return res.json(successResponse(users));
 });
 
+export const viewManagerDocumentController = asyncHandler(async (req: AuthRequest, res: Response) => {
+  const managerId = String(req.params.id);
+  const docIndex = Number(req.params.docIndex);
+  if (!Number.isFinite(docIndex) || docIndex < 0) throw new ErrorResponse('Invalid document index', 400);
+
+  const currentUser = req.user;
+  if (!currentUser || !currentUser.id) throw new ErrorResponse('Not authenticated', 401);
+
+  // Managers can only view their own documents; Admin can view any
+  if (currentUser.role === USER_ROLES.MANAGER) {
+    const myMgr = await Manager.findOne({ user: currentUser.id }).select('_id').lean();
+    if (!myMgr) throw new ErrorResponse('Manager profile not found', 404);
+    if (String(myMgr._id) !== managerId) throw new ErrorResponse('You can only view your own documents', 403);
+  }
+
+  const mgr: any = await Manager.findById(managerId).lean();
+  if (!mgr) throw new ErrorResponse('Manager not found', 404);
+
+  const docs = Array.isArray(mgr.documents) ? mgr.documents : [];
+  const doc = docs[docIndex];
+  if (!doc) throw new ErrorResponse('Document not found', 404);
+
+  const key = String(doc.s3Key || doc.documentUrl || '').trim();
+  if (!key) throw new ErrorResponse('Document key missing', 400);
+
+  const obj: any = await getObjectFromS3(key);
+  const contentType = obj?.ContentType || 'application/octet-stream';
+
+  res.setHeader('Content-Type', contentType);
+  res.setHeader('Content-Disposition', 'inline');
+  res.setHeader('Cache-Control', 'no-store');
+
+  const body: any = obj?.Body;
+  if (body && typeof body.pipe === 'function') {
+    body.pipe(res);
+    return;
+  }
+
+  const chunks: Buffer[] = [];
+  for await (const chunk of body as AsyncIterable<Buffer>) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+  res.send(Buffer.concat(chunks));
+});
+
 export default {
   createManagerProfileController,
   getManagers,
@@ -246,4 +294,5 @@ export default {
   uploadManagerDocumentsController,
   uploadManagerDocumentController,
   getEligibleManagerUsersController,
+  viewManagerDocumentController,
 };

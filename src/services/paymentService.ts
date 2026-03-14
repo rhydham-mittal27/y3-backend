@@ -5,7 +5,14 @@ import FinalClass from '../models/FinalClass';
 import Student from '../models/Student';
 import Tutor from '../models/Tutor';
 import ErrorResponse from '../utils/errorResponse';
-import { PAYMENT_STATUS, PAYMENT_METHOD, PAYMENT_TYPE, ATTENDANCE_STATUS, MANAGER_ACTION_TYPE, VERIFICATION_FEE_AMOUNT } from '../config/constants';
+import {
+  PAYMENT_STATUS,
+  PAYMENT_METHOD,
+  PAYMENT_TYPE,
+  ATTENDANCE_STATUS,
+  MANAGER_ACTION_TYPE,
+  VERIFICATION_FEE_DEDUCT_AMOUNT,
+} from '../config/constants';
 import logger, { logError } from '../utils/logger';
 import { logManagerActivity } from './managerService';
 import Manager from '../models/Manager';
@@ -184,8 +191,8 @@ export const createAdvancePaymentForFinalClass = async (
   // If tutor chose to deduct verification fee from first payout, reduce payout and record the deduction
   try {
     const tutorDoc = await Tutor.findOne({ user: cls.tutor });
-    if (tutorDoc && String(tutorDoc.verificationFeeStatus) === 'DEDUCT_FROM_FIRST_MONTH' && VERIFICATION_FEE_AMOUNT > 0) {
-      const fee = VERIFICATION_FEE_AMOUNT;
+    if (tutorDoc && String(tutorDoc.verificationFeeStatus) === 'DEDUCT_FROM_FIRST_MONTH' && VERIFICATION_FEE_DEDUCT_AMOUNT > 0) {
+      const fee = VERIFICATION_FEE_DEDUCT_AMOUNT;
       // Create a paid verification-fee payment record representing the deduction
       try {
         const dueDate2 = new Date();
@@ -879,15 +886,9 @@ export const createPaymentForSheet = async (sheetId: string, createdBy: string) 
     logger.warn(`Tutor rate per session not found for class/group ${entity._id}, using 0 for calculation`);
   }
 
-  // Total amount = tutorRate * number of approved/verified sessions
-  const sessionsVerified = (sheet.records || []).filter(
-    (a: any) => 
-      String(a.status) === ATTENDANCE_STATUS.APPROVED || 
-      String(a.status) === ATTENDANCE_STATUS.COORDINATOR_APPROVED ||
-      String(a.status) === ATTENDANCE_STATUS.PARENT_APPROVED
-  );
-  
-  const amount = tutorRate * sessionsVerified.length;
+  // Total amount = tutorRate * number of sessions taken in this sheet (pro-rata approvals allowed)
+  const sessionsTaken = Number(sheet.totalSessionsTaken || (sheet.records || []).length || 0);
+  const amount = tutorRate * sessionsTaken;
   // ... rest of logic
   
   /* 

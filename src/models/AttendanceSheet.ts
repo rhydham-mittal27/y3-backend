@@ -33,7 +33,7 @@ export interface IAttendanceSheetDocument extends Document {
   cycleNumber: number;
   periodLabel: string;
   records: IDailyAttendanceRecord[];
-  status: 'DRAFT' | 'PENDING' | 'APPROVED' | 'REJECTED';
+  status: 'PENDING' | 'APPROVED' | 'REJECTED';
   submittedAt?: Date;
   approvedBy?: mongoose.Types.ObjectId;
   approvedAt?: Date;
@@ -80,7 +80,7 @@ const AttendanceSheetSchema: Schema<IAttendanceSheetDocument> = new Schema<IAtte
     cycleNumber: { type: Number, required: true },
     periodLabel: { type: String, required: true },
     records: { type: [DailyAttendanceRecordSchema], default: [] },
-    status: { type: String, enum: ['DRAFT', 'PENDING', 'APPROVED', 'REJECTED'], default: 'DRAFT' },
+    status: { type: String, enum: ['PENDING', 'APPROVED', 'REJECTED'], default: 'PENDING' },
     submittedAt: { type: Date },
     approvedBy: { type: Schema.Types.ObjectId, ref: 'User' },
     approvedAt: { type: Date },

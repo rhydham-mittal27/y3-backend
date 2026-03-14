@@ -178,14 +178,6 @@ export const uploadDocumentController = asyncHandler(async (req: Request, res: R
     throw new ErrorResponse('Documents cannot be changed after verification', 403);
   }
 
-  if (
-    status === 'PENDING' &&
-    documentType !== 'PROFILE_PHOTO' &&
-    Array.isArray((existingTutor as any).documents) &&
-    (existingTutor as any).documents.length > 0
-  ) {
-    throw new ErrorResponse('Documents already submitted. They are under review and cannot be replaced until a decision is made.', 403);
-  }
   // REJECTED status or no documents yet → allow upload
 
   const tutor = await uploadDocumentService(req.params.id, documentType, file);

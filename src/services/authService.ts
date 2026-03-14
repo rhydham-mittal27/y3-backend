@@ -3,6 +3,7 @@ import Tutor from '../models/Tutor';
 import FinalClass from '../models/FinalClass';
 import ClassLead from '../models/ClassLead';
 import Manager from '../models/Manager';
+import mongoose from 'mongoose';
 import ErrorResponse from '../utils/errorResponse';
 import { verifyRefreshToken } from '../utils/jwtUtils';
 import { USER_ROLES } from '../config/constants';
@@ -100,15 +101,17 @@ export const registerUser = async (
   }
 
   let preferredMode: string | undefined;
+  let isProfileComplete = true;
+  let verificationStatus: string | undefined;
+
   if (user.role === USER_ROLES.TUTOR) {
     const tutor = await Tutor.findOne({ user: user._id });
     if (tutor) {
       preferredMode = tutor.preferredMode;
+      verificationStatus = tutor.verificationStatus;
     }
   }
 
-  let isProfileComplete = true;
-  let verificationStatus: string | undefined;
   if (user.role === USER_ROLES.MANAGER) {
     const manager = await Manager.findOne({ user: user._id });
     if (manager) {
@@ -116,6 +119,14 @@ export const registerUser = async (
       verificationStatus = (manager as any).verificationStatus;
     } else {
       isProfileComplete = false;
+    }
+  }
+
+  if (user.role === USER_ROLES.COORDINATOR) {
+    const CoordinatorModel = mongoose.model('Coordinator');
+    const coordinator = await CoordinatorModel.findOne({ user: user._id });
+    if (coordinator) {
+      verificationStatus = (coordinator as any).verificationStatus;
     }
   }
 
@@ -203,17 +214,18 @@ export const loginUser = async (email: string, password: string) => {
   await user.save();
 
   let preferredMode: string | undefined;
-  if (user.role === USER_ROLES.TUTOR) {
-    const tutor = await Tutor.findOne({ user: user._id });
-    if (tutor) {
-      preferredMode = tutor.preferredMode;
-    }
-  }
-
   let isProfileComplete = true;
   let verificationStatus: string | undefined;
   let permissions: any = undefined;
   
+  if (user.role === USER_ROLES.TUTOR) {
+    const tutor = await Tutor.findOne({ user: user._id });
+    if (tutor) {
+      preferredMode = tutor.preferredMode;
+      verificationStatus = tutor.verificationStatus;
+    }
+  }
+
   if (user.role === USER_ROLES.MANAGER) {
     const manager = await Manager.findOne({ user: user._id });
     if (manager) {
@@ -226,6 +238,14 @@ export const loginUser = async (email: string, password: string) => {
       };
     } else {
       isProfileComplete = false;
+    }
+  }
+
+  if (user.role === USER_ROLES.COORDINATOR) {
+    const CoordinatorModel = mongoose.model('Coordinator');
+    const coordinator = await CoordinatorModel.findOne({ user: user._id });
+    if (coordinator) {
+      verificationStatus = (coordinator as any).verificationStatus;
     }
   }
 
@@ -503,17 +523,18 @@ export const verifyLoginOtp = async (email: string, otp: string) => {
   await user.save();
 
   let preferredMode: string | undefined;
-  if (user.role === USER_ROLES.TUTOR) {
-    const tutor = await Tutor.findOne({ user: user._id });
-    if (tutor) {
-      preferredMode = tutor.preferredMode;
-    }
-  }
-
   let isProfileComplete = true;
   let verificationStatus: string | undefined;
   let permissions: any = undefined;
   
+  if (user.role === USER_ROLES.TUTOR) {
+    const tutor = await Tutor.findOne({ user: user._id });
+    if (tutor) {
+      preferredMode = tutor.preferredMode;
+      verificationStatus = tutor.verificationStatus;
+    }
+  }
+
   if (user.role === USER_ROLES.MANAGER) {
     const manager = await Manager.findOne({ user: user._id });
     if (manager) {
@@ -526,6 +547,14 @@ export const verifyLoginOtp = async (email: string, otp: string) => {
       };
     } else {
       isProfileComplete = false;
+    }
+  }
+
+  if (user.role === USER_ROLES.COORDINATOR) {
+    const CoordinatorModel = mongoose.model('Coordinator');
+    const coordinator = await CoordinatorModel.findOne({ user: user._id });
+    if (coordinator) {
+      verificationStatus = (coordinator as any).verificationStatus;
     }
   }
 
@@ -557,6 +586,12 @@ export const acceptTerms = async (userId: string) => {
   }
 
   user.acceptedTerms = true;
+  (user as any).acceptedPolicies = true;
+  (user as any).acceptedAt = new Date();
+  (user as any).policyVersion = '2026-02-25';
+  (user as any).accepted_policies = true;
+  (user as any).accepted_at = new Date();
+  (user as any).policy_version = '2026-02-25';
   await user.save();
 
   return user;

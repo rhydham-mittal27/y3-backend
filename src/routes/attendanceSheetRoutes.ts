@@ -6,6 +6,7 @@ import {
   addDailyAttendanceController,
   submitAttendanceSheetController,
   getCoordinatorPendingSheetsController,
+  getCoordinatorAllSheetsController,
   getAllPendingSheetsController,
   approveAttendanceSheetController,
   rejectAttendanceSheetController,
@@ -51,6 +52,12 @@ router.get(
   '/coordinator/pending',
   authorize(USER_ROLES.COORDINATOR),
   getCoordinatorPendingSheetsController
+);
+
+router.get(
+  '/coordinator/all',
+  authorize(USER_ROLES.COORDINATOR),
+  getCoordinatorAllSheetsController
 );
 
 // Approve a sheet

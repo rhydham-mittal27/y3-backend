@@ -47,7 +47,11 @@ export const generateClassSessionsForCycle = async (params: {
   const schedule: any = cls.schedule || {};
   const daysOfWeek: string[] = Array.isArray(schedule.daysOfWeek) ? schedule.daysOfWeek.map(normalizeDayName) : [];
   const timeSlot: string = String(schedule.timeSlot || '').trim();
-  const scheduleStartDate: Date | undefined = schedule.startDate ? new Date(schedule.startDate) : undefined;
+  const scheduleStartDate: Date | undefined = schedule.startDate
+    ? new Date(schedule.startDate)
+    : cls.startDate
+      ? new Date(cls.startDate)
+      : undefined;
 
   if (!daysOfWeek.length) throw new ErrorResponse('Schedule daysOfWeek is required to generate sessions', 400);
   if (!timeSlot) throw new ErrorResponse('Schedule timeSlot is required to generate sessions', 400);

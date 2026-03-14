@@ -8,6 +8,7 @@ import {
   addDailyAttendance,
   submitAttendanceSheet,
   getCoordinatorPendingSheets,
+  getCoordinatorAllSheets,
   getAllPendingSheets,
   approveAttendanceSheet,
   rejectAttendanceSheet,
@@ -52,6 +53,12 @@ export const submitAttendanceSheetController = asyncHandler(async (req: AuthRequ
 export const getCoordinatorPendingSheetsController = asyncHandler(async (req: AuthRequest, res: Response) => {
   const coordinatorUserId = req.user!.id;
   const sheets = await getCoordinatorPendingSheets(coordinatorUserId);
+  return res.json(successResponse(sheets));
+});
+
+export const getCoordinatorAllSheetsController = asyncHandler(async (req: AuthRequest, res: Response) => {
+  const coordinatorUserId = req.user!.id;
+  const sheets = await getCoordinatorAllSheets(coordinatorUserId);
   return res.json(successResponse(sheets));
 });
 
@@ -108,6 +115,7 @@ export default {
   getSheetsForClassController,
   submitAttendanceSheetController,
   getCoordinatorPendingSheetsController,
+  getCoordinatorAllSheetsController,
   getAllPendingSheetsController,
   approveAttendanceSheetController,
   rejectAttendanceSheetController,

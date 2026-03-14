@@ -236,7 +236,7 @@ export enum FEEDBACK_RATING {
 }
 
 export const UPLOAD_CONFIG = {
-  MAX_FILE_SIZE: 5 * 1024 * 1024,
+  MAX_FILE_SIZE: 10 * 1024 * 1024,
   ALLOWED_FILE_TYPES: ['image/jpeg', 'image/png', 'image/jpg', 'application/pdf', 'application/x-pdf', 'application/acrobat', 'application/vnd.pdf', 'text/pdf', 'text/x-pdf'],
   UPLOAD_DIR: './uploads/documents',
 };
@@ -296,3 +296,7 @@ export const FCM_CONFIG = {
 };
 
 export const VERIFICATION_FEE_AMOUNT = process.env.VERIFICATION_FEE_AMOUNT ? Number(process.env.VERIFICATION_FEE_AMOUNT) : 500;
+
+export const VERIFICATION_FEE_DEDUCT_AMOUNT = process.env.VERIFICATION_FEE_DEDUCT_AMOUNT
+  ? Number(process.env.VERIFICATION_FEE_DEDUCT_AMOUNT)
+  : VERIFICATION_FEE_AMOUNT + 200;

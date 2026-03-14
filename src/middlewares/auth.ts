@@ -5,6 +5,7 @@ import User from '../models/User';
 import * as mongoose from 'mongoose';
 import Student from '../models/Student';
 import Manager from '../models/Manager';
+import Coordinator from '../models/Coordinator';
 import { AuthRequest } from '../types';
 
 export const protect = asyncHandler(async (req: AuthRequest, _res, next) => {
@@ -20,27 +21,39 @@ export const protect = asyncHandler(async (req: AuthRequest, _res, next) => {
     const user = await User.findById(decoded.userId).select('-password -refreshToken');
 
     if (user && user.isActive !== false) {
+      let isProfileComplete: boolean | undefined;
+      let verificationStatus: string | undefined;
       let preferredMode: string | undefined;
       let city: string | undefined;
       let permissions: any = undefined;
-      
+
       if (user.role === 'TUTOR') {
         const TutorModel = mongoose.model('Tutor');
         const tutor = await TutorModel.findOne({ user: user._id });
         if (tutor) {
           preferredMode = (tutor as any).preferredMode;
           city = (tutor as any).preferredLocations?.[0]; // Default city
+          verificationStatus = (tutor as any).verificationStatus;
         }
       }
       
       if (user.role === 'MANAGER') {
         const manager = await Manager.findOne({ user: user._id });
         if (manager) {
+          verificationStatus = (manager as any).verificationStatus;
+          isProfileComplete = (manager as any).isProfileComplete;
           permissions = {
             canViewSiteLeads: (manager as any).permissions?.canViewSiteLeads ?? false,
             canVerifyTutors: (manager as any).permissions?.canVerifyTutors ?? false,
             canCreateLeads: (manager as any).permissions?.canCreateLeads ?? false,
           };
+        }
+      }
+
+      if (user.role === 'COORDINATOR') {
+        const coordinator = await Coordinator.findOne({ user: user._id });
+        if (coordinator) {
+          verificationStatus = (coordinator as any).verificationStatus;
         }
       }
 
@@ -55,6 +68,8 @@ export const protect = asyncHandler(async (req: AuthRequest, _res, next) => {
         acceptedTerms: user.acceptedTerms || false,
         preferredMode,
         city,
+        verificationStatus,
+        isProfileComplete,
         permissions,
         createdAt: user.createdAt,
         updatedAt: user.updatedAt,

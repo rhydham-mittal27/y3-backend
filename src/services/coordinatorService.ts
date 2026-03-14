@@ -12,9 +12,41 @@ import Test from '../models/Test';
 import CoordinatorActivityLog from '../models/CoordinatorActivityLog';
 import { getPendingApprovalsForCoordinator } from './attendanceService';
 import { DOCUMENT_TYPES } from '../config/constants';
-import { uploadFileToS3Structured } from './s3Service';
-import { S3_CONFIG } from '../config/s3';
+import { uploadFileToS3Structured, getPresignedUrl } from './s3Service';
+import { getS3PublicUrlForKey, S3_CONFIG } from '../config/s3';
 import { deleteFileFromS3 } from './s3Service';
+
+const resolveS3DocumentUrl = async (val: any): Promise<any> => {
+  if (typeof val !== 'string' || val.trim().length === 0) return val;
+
+  // Already a URL
+  if (/^https?:\/\//i.test(val) || /^data:/i.test(val) || /^blob:/i.test(val)) return val;
+
+  // Treat as S3 key
+  try {
+    return await getPresignedUrl(val);
+  } catch (_e) {
+    return getS3PublicUrlForKey(val);
+  }
+};
+
+const withResolvedCoordinatorDocumentUrls = async (coordinator: any) => {
+  if (!coordinator) return coordinator;
+  const copy: any = typeof coordinator.toObject === 'function' ? coordinator.toObject() : { ...coordinator };
+  const docs = Array.isArray(copy.documents) ? copy.documents : [];
+  if (docs.length === 0) return copy;
+
+  copy.documents = await Promise.all(
+    docs.map(async (d: any) => {
+      const rawKey = String(d?.s3Key || d?.documentUrl || '').trim();
+      return {
+        ...(d || {}),
+        documentUrl: await resolveS3DocumentUrl(rawKey),
+      };
+    })
+  );
+  return copy;
+};
 
 export const logCoordinatorActivity = async (
   coordinatorUserId: string,
@@ -115,9 +147,18 @@ export const uploadCoordinatorDocument = async (
 
   const previousStatus = coordinator.verificationStatus as VERIFICATION_STATUS;
   if (!Array.isArray(coordinator.documents)) coordinator.documents = [];
+
+  const hasSameType = (coordinator.documents as any[]).some((d) => d?.documentType === documentType);
+  if (hasSameType) {
+    throw new ErrorResponse(
+      'This document type has already been uploaded. Please delete the existing one before uploading again.',
+      409
+    );
+  }
   coordinator.documents.push(doc);
 
-  if (coordinator.documents.length === 1 && previousStatus === VERIFICATION_STATUS.PENDING) {
+  // If coordinator was pending, move to UNDER_REVIEW because a document was uploaded
+  if (previousStatus === VERIFICATION_STATUS.PENDING) {
     coordinator.verificationStatus = VERIFICATION_STATUS.UNDER_REVIEW;
   }
 
@@ -684,7 +725,7 @@ export const getCoordinatorById = async (coordinatorId: string) => {
     { path: 'assignedClasses' },
   ]);
   if (!coordinator) throw new ErrorResponse('Coordinator not found', 404);
-  return coordinator;
+  return await withResolvedCoordinatorDocumentUrls(coordinator);
 };
 
 export const getCoordinatorByUserId = async (userId: string) => {
@@ -693,7 +734,7 @@ export const getCoordinatorByUserId = async (userId: string) => {
     { path: 'assignedClasses' },
   ]);
   if (!coordinator) throw new ErrorResponse('Coordinator not found', 404);
-  return coordinator;
+  return await withResolvedCoordinatorDocumentUrls(coordinator);
 };
 
 export const updateCoordinator = async (
@@ -785,7 +826,7 @@ export const getCoordinatorsForVerification = async () => {
       { path: 'verifiedBy', select: 'name email phone role' },
     ]);
 
-  return coordinators;
+  return await Promise.all(coordinators.map(withResolvedCoordinatorDocumentUrls));
 };
 
 export const updateCoordinatorVerificationStatus = async (

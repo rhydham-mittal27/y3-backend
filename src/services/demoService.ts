@@ -117,30 +117,30 @@ export const updateDemoStatus = async (
 
   // Validate that demo can only be marked after scheduled time
   if (newStatus === DEMO_STATUS.COMPLETED) {
-    const demoDate = (lead.demoDetails as any)?.demoDate;
-    const demoTime = (lead.demoDetails as any)?.demoTime;
+    const isManagerOrAdmin = [USER_ROLES.MANAGER, USER_ROLES.ADMIN].includes(updatedByRole as USER_ROLES);
     
-    if (demoDate && demoTime) {
-      const parsed = typeof demoTime === 'string' ? demoTime.split(':').map(Number) : [];
-      const hours = parsed.length > 0 ? parsed[0] : NaN;
-      const minutes = parsed.length > 1 ? parsed[1] : NaN;
+    // Only enforce the time check for Tutors
+    if (!isManagerOrAdmin) {
+      const demoDate = (lead.demoDetails as any)?.demoDate;
+      const demoTime = (lead.demoDetails as any)?.demoTime;
+      
+      if (demoDate && demoTime) {
+        const parsed = typeof demoTime === 'string' ? demoTime.split(':').map(Number) : [];
+        const hours = parsed.length > 0 ? parsed[0] : NaN;
+        const minutes = parsed.length > 1 ? parsed[1] : NaN;
 
-      if (Number.isFinite(hours) && Number.isFinite(minutes)) {
-        // IMPORTANT: build the scheduled datetime in local time using the demoDate's Y/M/D,
-        // instead of mutating a Date parsed from ISO (which can shift days due to timezone).
-        const d = new Date(demoDate);
-        const scheduledStart = new Date(d.getFullYear(), d.getMonth(), d.getDate(), hours, minutes, 0, 0);
+        if (Number.isFinite(hours) && Number.isFinite(minutes)) {
+          // IMPORTANT: build the scheduled datetime in local time using the demoDate's Y/M/D,
+          // instead of mutating a Date parsed from ISO (which can shift days due to timezone).
+          const d = new Date(demoDate);
+          const scheduledStart = new Date(d.getFullYear(), d.getMonth(), d.getDate(), hours, minutes, 0, 0);
 
-        const durationHours = (lead as any)?.classDurationHours;
-        const durationMinutes = Number.isFinite(durationHours) && Number(durationHours) > 0
-          ? Math.round(Number(durationHours) * 60)
-          : 60;
-
-        const scheduledEnd = new Date(scheduledStart.getTime() + durationMinutes * 60 * 1000);
-
-        const now = new Date();
-        if (now < scheduledEnd) {
-          throw new ErrorResponse('Demo can only be marked after completion time', 400);
+          const now = new Date();
+          // Allow marking as completed after the scheduled START time
+          // This handles cases where demos end earlier than the full hour.
+          if (now < scheduledStart) {
+            throw new ErrorResponse('Demo can only be marked after the scheduled start time', 400);
+          }
         }
       }
     }

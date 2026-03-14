@@ -18,11 +18,13 @@ import {
   uploadManagerDocumentsController,
   uploadManagerDocumentController,
   getEligibleManagerUsersController,
+  viewManagerDocumentController,
 } from '../controllers/managerController';
 import {
   createManagerValidation,
   updateManagerValidation,
   managerIdValidation,
+  managerDocumentViewValidation,
   userIdParamValidation,
   metricsQueryValidation,
   performanceHistoryValidation,
@@ -49,6 +51,18 @@ router.post('/upload-documents', authorize(USER_ROLES.MANAGER), uploadManagerDoc
 router.post('/upload-document', authorize(USER_ROLES.MANAGER), uploadDocument, uploadManagerDocumentController);
 // Specific alias before generic ':id' routes to avoid CastError
 router.get('/eligible-users', authorize(USER_ROLES.ADMIN), getEligibleManagerUsersController);
+router.get(
+  '/:id/documents/:docIndex/view.:ext',
+  authorize(USER_ROLES.ADMIN, USER_ROLES.MANAGER),
+  managerDocumentViewValidation,
+  viewManagerDocumentController
+);
+router.get(
+  '/:id/documents/:docIndex/view',
+  authorize(USER_ROLES.ADMIN, USER_ROLES.MANAGER),
+  managerDocumentViewValidation,
+  viewManagerDocumentController
+);
 router.get('/:id', authorize(USER_ROLES.ADMIN, USER_ROLES.MANAGER), managerIdValidation, getManager);
 router.get('/:id/metrics', authorize(USER_ROLES.ADMIN, USER_ROLES.MANAGER), managerIdValidation, metricsQueryValidation, getManagerMetricsController);
 router.get('/:id/performance-history', authorize(USER_ROLES.ADMIN, USER_ROLES.MANAGER), performanceHistoryValidation, getManagerPerformanceHistoryController);

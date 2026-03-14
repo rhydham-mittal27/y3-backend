@@ -43,7 +43,7 @@ export const uploadDocument = (req: Request, res: Response, next: NextFunction) 
     }
     if (err instanceof MulterError) {
       if (err.code === 'LIMIT_FILE_SIZE') {
-        return next(new ErrorResponse('File too large. Max size is 5MB', 400));
+        return next(new ErrorResponse('File too large. Max size is 10MB', 400));
       }
       return next(new ErrorResponse(err.message, 400));
     }
@@ -58,7 +58,7 @@ export const uploadMultipleDocuments = (req: Request, res: Response, next: NextF
     if (!err) return next();
     if (err instanceof MulterError) {
       if (err.code === 'LIMIT_FILE_SIZE') {
-        return next(new ErrorResponse('File too large. Max size is 5MB', 400));
+        return next(new ErrorResponse('File too large. Max size is 10MB', 400));
       }
       return next(new ErrorResponse(err.message, 400));
     }

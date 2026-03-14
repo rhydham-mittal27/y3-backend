@@ -11,7 +11,41 @@ import ErrorResponse from '../utils/errorResponse';
 import dashboardService from './dashboardService';
 import { CLASS_LEAD_STATUS, MANAGER_ACTION_TYPE, PAYMENT_STATUS, USER_ROLES, VERIFICATION_STATUS } from '../config/constants';
 import { uploadFileToS3Structured } from './s3Service';
-import { S3_CONFIG } from '../config/s3';
+import { getS3PublicUrlForKey, S3_CONFIG } from '../config/s3';
+import { getPresignedUrl } from './s3Service';
+
+const resolveS3DocumentUrl = async (val: any): Promise<any> => {
+  if (typeof val !== 'string' || val.trim().length === 0) return val;
+
+  // Already a URL
+  if (/^https?:\/\//i.test(val) || /^data:/i.test(val) || /^blob:/i.test(val)) return val;
+
+  // Treat as S3 key
+  try {
+    return await getPresignedUrl(val);
+  } catch (_e) {
+    return getS3PublicUrlForKey(val);
+  }
+};
+
+const withResolvedManagerDocumentUrls = async (mgr: any) => {
+  if (!mgr) return mgr;
+  const copy: any = typeof mgr.toObject === 'function' ? mgr.toObject() : { ...mgr };
+  const docs = Array.isArray(copy.documents) ? copy.documents : [];
+  if (docs.length === 0) return copy;
+
+  copy.documents = await Promise.all(
+    docs.map(async (d: any) => {
+      const rawKey = String(d?.s3Key || d?.documentUrl || '').trim();
+      return {
+        ...(d || {}),
+        // Keep existing key fields as-is, but provide a previewable URL hosted on AWS
+        documentUrl: await resolveS3DocumentUrl(rawKey),
+      };
+    })
+  );
+  return copy;
+};
 
 export const createManagerProfile = async (
   userId: string,
@@ -69,13 +103,13 @@ export const getAllManagers = async (args: {
 export const getManagerById = async (managerId: string) => {
   const mgr = await Manager.findById(managerId).populate({ path: 'user', select: 'name email phone role' });
   if (!mgr) throw new ErrorResponse('Manager not found', 404);
-  return mgr;
+  return await withResolvedManagerDocumentUrls(mgr);
 };
 
 export const getManagerByUserId = async (userId: string) => {
   const mgr = await Manager.findOne({ user: userId }).populate({ path: 'user', select: 'name email phone role' });
   if (!mgr) throw new ErrorResponse('Manager not found', 404);
-  return mgr;
+  return await withResolvedManagerDocumentUrls(mgr);
 };
 
 export const updateManagerProfile = async (
@@ -421,6 +455,20 @@ export const updateManagerDocuments = async (userId: string, documents: any[]) =
   const mgr = await Manager.findOne({ user: userId });
   if (!mgr) throw new ErrorResponse('Manager profile not found', 404);
 
+  const existingTypes = new Set((mgr.documents || []).map((d: any) => d?.documentType).filter(Boolean));
+  const incomingTypes = new Set<string>();
+  for (const d of documents || []) {
+    const t = d?.documentType;
+    if (!t) continue;
+    if (existingTypes.has(t) || incomingTypes.has(t)) {
+      throw new ErrorResponse(
+        'This document type has already been uploaded. Please delete the existing one before uploading again.',
+        409
+      );
+    }
+    incomingTypes.add(t);
+  }
+
   // Add new documents to existing ones
   mgr.documents = [...(mgr.documents || []), ...documents];
   
@@ -440,6 +488,13 @@ export const uploadManagerDocument = async (
 ) => {
   const mgr = await Manager.findOne({ user: userId });
   if (!mgr) throw new ErrorResponse('Manager profile not found', 404);
+
+  if (Array.isArray(mgr.documents) && mgr.documents.some((d: any) => d?.documentType === documentType)) {
+    throw new ErrorResponse(
+      'This document type has already been uploaded. Please delete the existing one before uploading again.',
+      409
+    );
+  }
 
   const buffer: Buffer = file.buffer;
   const originalname: string = file.originalname;

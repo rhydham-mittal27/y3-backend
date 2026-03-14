@@ -161,7 +161,12 @@ const ManagerSchema: Schema<IManagerDocument> = new Schema<IManagerDocument>(
             const out = { ...d };
             const val = out.documentUrl;
             if (typeof val === 'string' && val.length > 0 && !/^https?:\/\//i.test(val)) {
-              out.documentUrl = getS3PublicUrlForKey(val);
+              const s = val.trim();
+              const looksLikeAppPath = s.startsWith('/api/') || s.startsWith('/uploads/') || s.startsWith('/');
+              const looksLikeS3Key = s.startsWith('production/') || s.startsWith('staging/') || s.startsWith('development/') || s.startsWith('uploads/');
+              if (!looksLikeAppPath && looksLikeS3Key) {
+                out.documentUrl = getS3PublicUrlForKey(s);
+              }
             }
             return out;
           });
@@ -178,7 +183,12 @@ const ManagerSchema: Schema<IManagerDocument> = new Schema<IManagerDocument>(
             const out = { ...d };
             const val = out.documentUrl;
             if (typeof val === 'string' && val.length > 0 && !/^https?:\/\//i.test(val)) {
-              out.documentUrl = getS3PublicUrlForKey(val);
+              const s = val.trim();
+              const looksLikeAppPath = s.startsWith('/api/') || s.startsWith('/uploads/') || s.startsWith('/');
+              const looksLikeS3Key = s.startsWith('production/') || s.startsWith('staging/') || s.startsWith('development/') || s.startsWith('uploads/');
+              if (!looksLikeAppPath && looksLikeS3Key) {
+                out.documentUrl = getS3PublicUrlForKey(s);
+              }
             }
             return out;
           });

@@ -16,6 +16,12 @@ export interface IUserDocument extends Document {
   role: USER_ROLES | string;
   isActive: boolean;
   acceptedTerms: boolean;
+  acceptedPolicies?: boolean;
+  acceptedAt?: Date;
+  policyVersion?: string;
+  accepted_policies?: boolean;
+  accepted_at?: Date;
+  policy_version?: string;
   refreshToken?: string | null;
   preferences?: mongoose.Types.ObjectId;
   devices?: {
@@ -71,6 +77,12 @@ const UserSchema: Schema<IUserDocument> = new Schema<IUserDocument>(
     },
     isActive: { type: Boolean, default: true },
     acceptedTerms: { type: Boolean, default: false },
+    acceptedPolicies: { type: Boolean, default: false },
+    acceptedAt: { type: Date },
+    policyVersion: { type: String, trim: true },
+    accepted_policies: { type: Boolean, default: false },
+    accepted_at: { type: Date },
+    policy_version: { type: String, trim: true },
     refreshToken: { type: String, select: false },
     preferences: { type: Schema.Types.ObjectId, ref: 'UserPreferences' },
     devices: [

@@ -26,6 +26,7 @@ const computeMonthlyTotalSessions = (startDate: Date, schedule?: { daysOfWeek?: 
   if (!daysOfWeek.length) return 0;
 
   const start = new Date(startDate);
+  if (isNaN(start.getTime())) return 0; // Invalid date
   start.setHours(0, 0, 0, 0);
   const end = new Date(start);
   end.setMonth(end.getMonth() + 1);
@@ -603,6 +604,13 @@ export const updateFinalClass = async (
       ...((cls as any).schedule || {}),
       ...updateData.schedule,
     };
+    
+    // Sync top-level startDate with schedule.startDate if provided
+    const effectiveStartDate = mergedSchedule.startDate ? new Date(mergedSchedule.startDate) : cls.startDate;
+    if (effectiveStartDate && !isNaN(effectiveStartDate.getTime())) {
+      cls.startDate = effectiveStartDate;
+    }
+    
     cls.totalSessions = computeMonthlyTotalSessions(cls.startDate, mergedSchedule);
     (cls as any).schedule = mergedSchedule;
   } else {

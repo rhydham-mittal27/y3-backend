@@ -4,6 +4,15 @@ import { s3Client, S3_CONFIG } from '../config/s3';
 import { v4 as uuidv4 } from 'uuid';
 import path from 'path';
 
+const guessContentTypeFromKey = (key: string): string | undefined => {
+  const ext = (path.extname(key || '') || '').toLowerCase();
+  if (ext === '.pdf') return 'application/pdf';
+  if (ext === '.png') return 'image/png';
+  if (ext === '.webp') return 'image/webp';
+  if (ext === '.jpg' || ext === '.jpeg') return 'image/jpeg';
+  return undefined;
+};
+
 export type S3EntityType = 'students' | 'tutors' | 'classes' | 'coordinators' | 'managers' | 'tests' | 'notes' | 'payments' | 'users';
 
 /**
@@ -155,9 +164,12 @@ export const getPresignedUrl = async (
   expiresIn: number = S3_CONFIG.PRESIGNED_URL_EXPIRY
 ): Promise<string> => {
   try {
+    const contentType = guessContentTypeFromKey(key);
     const command = new GetObjectCommand({
       Bucket: S3_CONFIG.BUCKET_NAME,
       Key: key,
+      ResponseContentDisposition: 'inline',
+      ...(contentType ? { ResponseContentType: contentType } : {}),
     });
 
     const url = await getSignedUrl(s3Client, command, { expiresIn });

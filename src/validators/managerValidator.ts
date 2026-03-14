@@ -42,6 +42,11 @@ export const performanceHistoryValidation = [
   query('groupBy').optional().isIn(['day', 'week', 'month']).withMessage('Invalid groupBy value'),
 ];
 
+export const managerDocumentViewValidation = [
+  param('id').isMongoId().withMessage('Invalid manager ID'),
+  param('docIndex').isInt({ min: 0 }).withMessage('Invalid document index'),
+];
+
 export const activityLogValidation = [
   param('id').isMongoId().withMessage('Invalid manager ID'),
   query('page').optional().isInt({ min: 1 }).withMessage('Page must be positive integer'),
@@ -56,6 +61,7 @@ export default {
   createManagerValidation,
   updateManagerValidation,
   managerIdValidation,
+  managerDocumentViewValidation,
   userIdParamValidation,
   metricsQueryValidation,
   performanceHistoryValidation,
