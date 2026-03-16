@@ -1,9 +1,12 @@
 import 'dotenv/config';
 import fs from 'fs';
+import path from 'path';
 import mongoose from 'mongoose';
-import User from '../models/User';
-import Tutor from '../models/Tutor';
+import User, { IUserDocument } from '../models/User';
+import Tutor, { ITutorDocument } from '../models/Tutor';
+import Option from '../models/Option';
 import { USER_ROLES, TUTOR_TIER, VERIFICATION_STATUS } from '../config/constants';
+import { generateTeacherIdWithCityCode } from '../utils/generateTeacherId';
 
 const uri = process.env.MONGODB_URI || process.env.DATABASE_URL || '';
 
@@ -19,8 +22,10 @@ type NormalizedTutorRow = {
     isActive?: boolean;
     acceptedTerms?: boolean;
     acceptedPolicies?: boolean;
+    createdAt?: string;
   };
   tutor: {
+    teacherId?: string;
     alternatePhone?: string;
     permanentAddress?: string;
     residentialAddress?: string;
@@ -30,9 +35,12 @@ type NormalizedTutorRow = {
     preferredMode?: string;
     preferredLocations?: string[];
     preferredCities?: string[];
-    documents?: { documentType: string; documentUrl: string; uploadedAt?: string }[];
-    verificationFeePaymentProof?: string;
-    yearsOfExperience?: number;
+    bio?: string;
+    verificationStatus?: string;
+    verificationNotes?: string;
+    whatsappCommunityJoined?: boolean;
+    tier?: string;
+    createdAt?: string;
     metadata?: Record<string, any>;
   };
 };
@@ -44,116 +52,131 @@ function parseMaybeDate(val?: string | null) {
   return d;
 }
 
-function normalizeDocuments(docs: any[] | undefined) {
-  if (!Array.isArray(docs)) return [];
-  return docs
-    .map((d) => {
-      if (!d || typeof d !== 'object') return null;
-      const documentType = String(d.documentType || '').trim();
-      const documentUrl = String(d.documentUrl || '').trim();
-      if (!documentType || !documentUrl) return null;
-      const uploadedAt = parseMaybeDate(d.uploadedAt) || new Date();
-      return { documentType, documentUrl, uploadedAt };
-    })
-    .filter(Boolean) as any[];
-}
-
 async function connect() {
   if (!uri) throw new Error('Missing MONGODB_URI/DATABASE_URL');
   await mongoose.connect(uri);
   console.log('[seedTutorsFromNormalizedJson] Connected to MongoDB');
 }
 
-async function upsertTutorUser(row: NormalizedTutorRow, defaultPassword: string) {
+const cityCodeCache = new Map<string, string>();
+
+async function getCityCode(cityName: string): Promise<string> {
+  const normalized = cityName.toUpperCase();
+  if (cityCodeCache.has(normalized)) return cityCodeCache.get(normalized)!;
+
+  const cityOption = await Option.findOne({
+    type: 'CITY',
+    $or: [{ label: new RegExp(`^${cityName}$`, 'i') }, { value: normalized }],
+  });
+
+  let code = '';
+  if (cityOption?.metadata?.cityCode) {
+    code = cityOption.metadata.cityCode.toUpperCase();
+  } else {
+    code = cityName.replace(/[^A-Za-z]/g, '').toUpperCase().slice(0, 3);
+  }
+  
+  cityCodeCache.set(normalized, code);
+  return code;
+}
+
+async function upsertTutorUser(row: NormalizedTutorRow, defaultPassword: string): Promise<IUserDocument | null> {
   const email = String(row?.user?.email || '').toLowerCase().trim();
   if (!email) return null;
 
-  const existing = await User.findOne({ email });
-  if (existing) {
-    const patch: any = {};
-    if (!existing.name && row.user.name) patch.name = row.user.name;
-    if (!existing.phone && row.user.phone) patch.phone = row.user.phone;
-    if (!existing.dob && row.user.dob) patch.dob = parseMaybeDate(row.user.dob) || undefined;
-    if (!existing.gender && row.user.gender) patch.gender = row.user.gender;
-    if (!existing.preferredMode && row.user.preferredMode) patch.preferredMode = row.user.preferredMode;
-    if (existing.role !== USER_ROLES.TUTOR) patch.role = USER_ROLES.TUTOR;
-
-    // Keep them active by default
-    if (typeof existing.isActive !== 'boolean') patch.isActive = true;
-
-    if (Object.keys(patch).length) {
-      await User.updateOne({ _id: existing._id }, { $set: patch });
-    }
-    return existing;
-  }
-
-  const created = await User.create({
+  const userData: any = {
     name: row.user.name || 'Tutor',
     email,
-    password: defaultPassword,
-    role: USER_ROLES.TUTOR,
     phone: row.user.phone,
-    dob: parseMaybeDate(row.user.dob || undefined),
+    role: USER_ROLES.TUTOR,
+    dob: parseMaybeDate(row.user.dob),
     gender: row.user.gender,
     preferredMode: row.user.preferredMode,
     isActive: row.user.isActive ?? true,
     acceptedTerms: row.user.acceptedTerms ?? true,
     acceptedPolicies: row.user.acceptedPolicies ?? true,
-  } as any);
+    createdAt: parseMaybeDate(row.user.createdAt) || new Date(),
+  };
 
-  return created;
+  let user = await User.findOne({ email });
+  if (user) {
+    Object.assign(user, userData);
+    await user.save();
+    return user;
+  }
+
+  user = await User.create({
+    ...userData,
+    password: defaultPassword,
+  });
+
+  return user;
 }
 
-async function upsertTutorProfile(userId: mongoose.Types.ObjectId, row: NormalizedTutorRow) {
+async function upsertTutorProfile(user: IUserDocument, row: NormalizedTutorRow) {
+  const userId = user._id;
+  
+  let cityName = 'Bhopal';
+  if (row.tutor.preferredCities?.length) {
+    cityName = row.tutor.preferredCities[0];
+  } else if (row.tutor.preferredLocations?.length) {
+    cityName = row.tutor.preferredLocations[0];
+  }
+
+  const cityCode = await getCityCode(cityName);
+
+  let existing = await Tutor.findOne({ user: userId }) as ITutorDocument | null;
+  
+  let teacherId = row.tutor.teacherId || (existing ? existing.teacherId : null);
+  
+  if (!teacherId || teacherId === 'null' || teacherId === '') {
+    // Attempt to guess gender if missing for ID prefix
+    let gender = (user as any).gender;
+    if (!gender) {
+        const n = (user.name || '').toLowerCase();
+        if (n.includes('ms.') || n.includes('mrs.') || n.includes('km.') || n.includes('miss')) gender = 'FEMALE';
+        else if (n.includes('mr.')) gender = 'MALE';
+    }
+
+    teacherId = generateTeacherIdWithCityCode(gender, cityCode, cityName);
+    
+    // Check for collisions
+    let isUnique = false;
+    let attempts = 0;
+    while (!isUnique && attempts < 10) {
+      const collision = await Tutor.findOne({ teacherId });
+      if (!collision) {
+        isUnique = true;
+      } else {
+        teacherId = generateTeacherIdWithCityCode(gender, cityCode, cityName);
+        attempts++;
+      }
+    }
+  }
+
   const tutorPayload: any = {
     user: userId,
+    teacherId,
     experienceHours: 0,
-    yearsOfExperience: Number(row.tutor.yearsOfExperience || 0),
+    yearsOfExperience: Number((row.tutor as any).yearsOfExperience || 0),
     subjects: Array.isArray(row.tutor.subjects) ? row.tutor.subjects.filter(Boolean) : [],
-    qualifications: Array.isArray(row.tutor.qualifications) ? row.tutor.qualifications.filter(Boolean) : [],
-    extracurricularActivities: Array.isArray(row.tutor.extracurricularActivities) ? row.tutor.extracurricularActivities.filter(Boolean) : [],
     preferredMode: row.tutor.preferredMode,
     preferredLocations: Array.isArray(row.tutor.preferredLocations) ? row.tutor.preferredLocations.filter(Boolean) : [],
     preferredCities: Array.isArray(row.tutor.preferredCities) ? row.tutor.preferredCities.filter(Boolean) : [],
-    permanentAddress: row.tutor.permanentAddress,
-    residentialAddress: row.tutor.residentialAddress,
-    alternatePhone: row.tutor.alternatePhone,
-    documents: normalizeDocuments(row.tutor.documents),
-    verificationFeePaymentProof: row.tutor.verificationFeePaymentProof,
-    verificationStatus: VERIFICATION_STATUS.PENDING,
+    bio: row.tutor.bio,
+    verificationStatus: row.tutor.verificationStatus || VERIFICATION_STATUS.PENDING,
+    verificationNotes: row.tutor.verificationNotes,
+    whatsappCommunityJoined: row.tutor.whatsappCommunityJoined ?? false,
     isAvailable: true,
-    tier: TUTOR_TIER.BRONZE,
+    tier: row.tutor.tier || TUTOR_TIER.BRONZE,
+    createdAt: parseMaybeDate(row.tutor.createdAt) || parseMaybeDate(row.user.createdAt) || new Date(),
+    documents: (row.tutor as any).documents || [],
+    verificationFeePaymentProof: (row.tutor as any).verificationFeePaymentProof,
   };
 
-  if (!tutorPayload.subjects.length) {
-    tutorPayload.subjects = ['General'];
-  }
-
-  const existing = await Tutor.findOne({ user: userId });
   if (existing) {
-    await Tutor.updateOne(
-      { _id: existing._id },
-      {
-        $set: {
-          subjects: tutorPayload.subjects,
-          qualifications: tutorPayload.qualifications,
-          extracurricularActivities: tutorPayload.extracurricularActivities,
-          preferredMode: tutorPayload.preferredMode,
-          preferredLocations: tutorPayload.preferredLocations,
-          preferredCities: tutorPayload.preferredCities,
-          permanentAddress: tutorPayload.permanentAddress,
-          residentialAddress: tutorPayload.residentialAddress,
-          alternatePhone: tutorPayload.alternatePhone,
-          documents: tutorPayload.documents,
-          verificationFeePaymentProof: tutorPayload.verificationFeePaymentProof,
-          yearsOfExperience: tutorPayload.yearsOfExperience,
-          isAvailable: true,
-        },
-        $setOnInsert: {
-          tier: TUTOR_TIER.BRONZE,
-        },
-      }
-    );
+    Object.assign(existing, tutorPayload);
+    await existing.save();
     return existing;
   }
 
@@ -162,7 +185,7 @@ async function upsertTutorProfile(userId: mongoose.Types.ObjectId, row: Normaliz
 }
 
 async function main() {
-  const filePath = "C:\\Users\\Rhydham\\Desktop\\projects\\ys-final\\v3\\web-app\\pyscripts\\tur.json";
+  const filePath = path.join(process.cwd(), '..', 'pyscripts', 'tutors.normalized.json');
 
   if (!fs.existsSync(filePath)) {
     console.error('[seedTutorsFromNormalizedJson] Input file not found:', filePath);
@@ -176,6 +199,9 @@ async function main() {
 
   await connect();
 
+  // Additive seeding: No clearing of existing data
+  console.log('[seedTutorsFromNormalizedJson] Starting additive seeding...');
+
   let userUpserts = 0;
   let tutorUpserts = 0;
   let skipped = 0;
@@ -183,8 +209,8 @@ async function main() {
   try {
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
-
       const email = String(row?.user?.email || '').trim();
+      
       if (!email) {
         skipped++;
         continue;
@@ -198,11 +224,11 @@ async function main() {
         }
         userUpserts++;
 
-        await upsertTutorProfile(user._id, row);
+        const tutor = await upsertTutorProfile(user, row);
         tutorUpserts++;
 
-        if ((i + 1) % 25 === 0) {
-          console.log(`[seedTutorsFromNormalizedJson] Processed ${i + 1}/${rows.length}`);
+        if ((i + 1) % 50 === 0) {
+          console.log(`[seedTutorsFromNormalizedJson] Processed ${i + 1}/${rows.length}. Last ID: ${(tutor as any).teacherId}`);
         }
       } catch (e) {
         console.error(`[seedTutorsFromNormalizedJson] Failed at row ${i} (${email})`, e);
@@ -210,7 +236,6 @@ async function main() {
     }
 
     console.log('[seedTutorsFromNormalizedJson] Done', { userUpserts, tutorUpserts, skipped, total: rows.length });
-    console.log(`[seedTutorsFromNormalizedJson] Default password for newly created users: ${defaultPassword}`);
   } finally {
     await mongoose.disconnect();
   }
