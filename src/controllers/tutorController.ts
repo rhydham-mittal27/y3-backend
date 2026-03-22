@@ -64,6 +64,7 @@ export const getTutors = asyncHandler(async (req: Request, res: Response) => {
   const city = req.query.city as string;
   const area = req.query.area as string;
   const grade = req.query.grade as string;
+  const board = req.query.board as string;
 
   const { tutors, total } = await getAllTutors(
     page,
@@ -82,7 +83,8 @@ export const getTutors = asyncHandler(async (req: Request, res: Response) => {
     verifiedBy,
     city,
     area,
-    grade
+    grade,
+    board
   );
   return res.json(paginatedResponse(tutors as any, page, limit, total));
 });

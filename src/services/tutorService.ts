@@ -95,7 +95,8 @@ export const getAllTutors = async (
   verifiedBy?: string,
   city?: string,
   area?: string,
-  grade?: string
+  grade?: string,
+  board?: string
 ) => {
   const query: any = {};
   if (verificationStatus) query.verificationStatus = verificationStatus;
@@ -105,6 +106,7 @@ export const getAllTutors = async (
   if (preferredMode) query.preferredMode = preferredMode;
   if (area) query.preferredLocations = { $regex: area, $options: 'i' };
   if (grade) query.preferredGrades = { $regex: grade, $options: 'i' };
+  if (board) query.preferredBoards = { $regex: board, $options: 'i' };
   if (verifiedBy && mongoose.isValidObjectId(verifiedBy)) query.verifiedBy = new mongoose.Types.ObjectId(verifiedBy);
 
   // For name, email, phone we need to filter based on the populated user field
@@ -165,6 +167,7 @@ export const getAllTutors = async (
       .populate([
         { path: 'user', select: 'name email phone role gender city preferredMode' },
         { path: 'verifiedBy', select: 'name email phone role' },
+        { path: 'subjects', select: 'label value type' },
       ]),
     Tutor.countDocuments(query),
   ]);
@@ -380,6 +383,7 @@ export const updateTutorProfile = async (
   await tutor.populate([
     { path: 'user', select: 'name email phone role gender city preferredMode' },
     { path: 'verifiedBy', select: 'name email phone role' },
+    { path: 'subjects', select: 'label value type' },
   ]);
   return await withResolvedTutorDocumentUrls(tutor);
 };
@@ -843,6 +847,7 @@ export const updateVerificationStatus = async (
   await tutor.populate([
     { path: 'user', select: 'name email phone role gender city preferredMode' },
     { path: 'verifiedBy', select: 'name email phone role' },
+    { path: 'subjects', select: 'label value type' },
   ]);
 
   try {
@@ -878,6 +883,7 @@ export const getTutorsByVerificationStatus = async (
       .populate([
         { path: 'user', select: 'name email phone role gender city preferredMode' },
         { path: 'verifiedBy', select: 'name email phone role' },
+        { path: 'subjects', select: 'label value type' },
       ]),
     Tutor.countDocuments(query),
   ]);
@@ -965,6 +971,7 @@ export const updateVerificationFeeStatus = async (
   await tutor.populate([
     { path: 'user', select: 'name email phone role gender city preferredMode' },
     { path: 'verifiedBy', select: 'name email phone role' },
+    { path: 'subjects', select: 'label value type' },
   ]);
   return tutor;
 };
@@ -975,7 +982,10 @@ export const getTutorsForVerification = async () => {
     documents: { $ne: [] },
   })
     .sort({ updatedAt: 1 })
-    .populate([{ path: 'user', select: 'name email phone role gender city preferredMode' }]);
+    .populate([
+      { path: 'user', select: 'name email phone role gender city preferredMode' },
+      { path: 'subjects', select: 'label value type' },
+    ]);
 
   return tutors;
 };
@@ -1355,6 +1365,7 @@ export const getTutorsByCoordinator = async (params: {
       .populate([
         { path: 'user', select: 'name email phone' },
         { path: 'verifiedBy', select: 'name email' },
+        { path: 'subjects', select: 'label value type' },
       ]),
     Tutor.countDocuments(query),
   ]);

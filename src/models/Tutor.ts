@@ -38,6 +38,7 @@ export interface ITutorDocument extends Document {
   preferredLocations?: string[];
   preferredCities?: string[];
   preferredGrades?: string[];
+  preferredBoards?: string[];
   permanentAddress?: string;
   residentialAddress?: string;
   alternatePhone?: string;
@@ -138,6 +139,7 @@ const TutorSchema: Schema<ITutorDocument> = new Schema<ITutorDocument>(
     preferredLocations: { type: [String] },
     preferredCities: { type: [String] },
     preferredGrades: { type: [String] },
+    preferredBoards: { type: [String], default: [] },
     permanentAddress: { type: String },
     residentialAddress: { type: String },
     alternatePhone: { type: String },
@@ -156,6 +158,7 @@ const TutorSchema: Schema<ITutorDocument> = new Schema<ITutorDocument>(
         preferredSubjects: { type: [{ type: Schema.Types.ObjectId, ref: 'Option' }], default: [] },
         preferredLocations: { type: [String], default: [] },
         preferredGrades: { type: [String], default: [] },
+        preferredBoards: { type: [String], default: [] },
         notificationSettings: {
           type: {
             classAssignments: { type: Boolean, default: true },
