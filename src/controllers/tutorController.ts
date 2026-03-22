@@ -25,6 +25,7 @@ import {
   getTutorPerformanceMetrics,
   getTutorAdvancedAnalytics,
   getTutorsByCoordinator,
+  getPublicTutorProfile,
   getMyProfileForEdit,
   updateMyProfile,
   getDistinctSubjects,
@@ -33,6 +34,7 @@ import {
   getDistinctAreas,
   updateVerificationFeeStatus,
 } from '../services/tutorService';
+import { PAYMENT_TYPE, PAYMENT_STATUS } from '../config/constants';
 
 export const createTutorProfileController = asyncHandler(async (req: Request, res: Response) => {
   const errors = validationResult(req);
