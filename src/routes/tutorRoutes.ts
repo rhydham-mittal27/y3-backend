@@ -71,7 +71,7 @@ router.post(
 
 router.get(
   "/subjects",
-  authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN, USER_ROLES.TUTOR),
+  authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN, USER_ROLES.TUTOR, USER_ROLES.COORDINATOR),
   getSubjectsController,
 );
 
@@ -82,12 +82,12 @@ router.get(
 );
 router.get(
   "/cities",
-  authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN, USER_ROLES.TUTOR),
+  authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN, USER_ROLES.TUTOR, USER_ROLES.COORDINATOR),
   getCitiesController,
 );
 router.get(
   "/areas",
-  authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN, USER_ROLES.TUTOR),
+  authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN, USER_ROLES.TUTOR, USER_ROLES.COORDINATOR),
   getAreasController,
 );
 
