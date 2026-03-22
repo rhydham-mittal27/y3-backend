@@ -24,7 +24,14 @@ import {
   getCoordinatorTutorsController,
   getPublicTutorReviewsController,
   getPublicTutorProfileController,
+  getSubjectsController,
+  getVerifiersController,
+  getCitiesController,
+  getAreasController,
+  getTutorStatsController,
+  updateVerificationFeeStatusController,
 } from "../controllers/tutorController";
+import { getTutorClasses } from "../controllers/finalClassController";
 import {
   createTutorValidation,
   updateTutorValidation,
@@ -65,23 +72,23 @@ router.post(
 router.get(
   "/subjects",
   authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN, USER_ROLES.TUTOR),
-  require("../controllers/tutorController").getSubjectsController,
+  getSubjectsController,
 );
 
 router.get(
   "/verifiers",
   authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN),
-  require("../controllers/tutorController").getVerifiersController,
+  getVerifiersController,
 );
 router.get(
   "/cities",
   authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN, USER_ROLES.TUTOR),
-  require("../controllers/tutorController").getCitiesController,
+  getCitiesController,
 );
 router.get(
   "/areas",
   authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN, USER_ROLES.TUTOR),
-  require("../controllers/tutorController").getAreasController,
+  getAreasController,
 );
 
 router.get("/", authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN), getTutors);
@@ -147,7 +154,7 @@ router.get(
     USER_ROLES.PARENT,
   ),
   tutorIdParamValidation,
-  require("../controllers/finalClassController").getTutorClasses,
+  getTutorClasses,
 );
 
 router.put(
@@ -202,8 +209,7 @@ router.patch(
     USER_ROLES.COORDINATOR,
   ),
   uploadDocument, // reuse multer middleware for file upload
-  require("../controllers/tutorController")
-    .updateVerificationFeeStatusController,
+  updateVerificationFeeStatusController,
 );
 
 // Tier management and feedback routes
@@ -267,7 +273,7 @@ router.get(
   "/:id/stats",
   authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN),
   tutorIdValidation,
-  require("../controllers/tutorController").getTutorStatsController,
+  getTutorStatsController,
 );
 
 router.get(

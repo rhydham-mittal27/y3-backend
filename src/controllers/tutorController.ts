@@ -25,9 +25,13 @@ import {
   getTutorPerformanceMetrics,
   getTutorAdvancedAnalytics,
   getTutorsByCoordinator,
-  getPublicTutorProfile,
   getMyProfileForEdit,
   updateMyProfile,
+  getDistinctSubjects,
+  getDistinctVerifiers,
+  getDistinctCities,
+  getDistinctAreas,
+  updateVerificationFeeStatus,
 } from '../services/tutorService';
 
 export const createTutorProfileController = asyncHandler(async (req: Request, res: Response) => {
@@ -213,11 +217,6 @@ export const updateVerificationFeeStatusController = asyncHandler(async (req: Re
   const { verificationFeeStatus } = req.body;
   const file = (req as any).file;
 
-  // Use require or import. Since I cannot easily change top imports in this replace block safely without context, I will use require for the service function if it's not imported at top.
-  // Actually, I should update the imports at the top first or use the exported name.
-  // Let's rely on the service being imported at top if I modify imports, or use require.
-  const { updateVerificationFeeStatus } = require('../services/tutorService');
-
   const tutor = await updateVerificationFeeStatus(req.params.id, verificationFeeStatus, file);
   return res.json(successResponse(tutor, 'Verification fee status updated successfully'));
 });
@@ -343,13 +342,12 @@ export const getTutorStatsController = asyncHandler(async (req: Request, res: Re
   const userId = tutor.user.id || (tutor.user as any)._id;
 
   // 1. One-time Reschedules (from FinalClass)
-  const FinalClass = require('../models/FinalClass').default;
+  const FinalClass = mongoose.model('FinalClass');
   const classes = await FinalClass.find({ tutor: userId });
   const oneTimeReschedules = classes.reduce((sum: number, cls: any) => sum + (cls.oneTimeReschedules?.length || 0), 0);
 
   // 2. Total Tutor Payouts
-  const Payment = require('../models/Payment').default;
-  const { PAYMENT_TYPE, PAYMENT_STATUS } = require('../config/constants');
+  const Payment = mongoose.model('Payment');
   const payouts = await Payment.aggregate([
     {
       $match: {
@@ -368,11 +366,11 @@ export const getTutorStatsController = asyncHandler(async (req: Request, res: Re
   const totalPayouts = payouts.length > 0 ? payouts[0].total : 0;
 
   // 3. Total Attendance Sheets Submitted
-  const Attendance = require('../models/Attendance').default;
+  const Attendance = mongoose.model('Attendance');
   const attendanceSheetsSubmitted = await Attendance.countDocuments({ tutor: userId });
 
   // 4. Demos Scheduled
-  const ClassLead = require('../models/ClassLead').default;
+  const ClassLead = mongoose.model('ClassLead');
   const demosScheduled = await ClassLead.countDocuments({ demoTutor: userId });
 
   return res.json(successResponse({
@@ -384,24 +382,18 @@ export const getTutorStatsController = asyncHandler(async (req: Request, res: Re
 });
 
 export const getSubjectsController = asyncHandler(async (_req: Request, res: Response) => {
-  // Use require here to avoid circular dependency issues if any, though explicit import is better if safe.
-  // Using the service directly as imported above.
-  const { getDistinctSubjects } = require('../services/tutorService');
   const subjects = await getDistinctSubjects();
   return res.json(successResponse(subjects));
 });
 export const getVerifiersController = asyncHandler(async (_req: Request, res: Response) => {
-  const { getDistinctVerifiers } = require('../services/tutorService');
   const verifiers = await getDistinctVerifiers();
   return res.json(successResponse(verifiers));
 });
 export const getCitiesController = asyncHandler(async (_req: Request, res: Response) => {
-  const { getDistinctCities } = require('../services/tutorService');
   const cities = await getDistinctCities();
   return res.json(successResponse(cities));
 });
 export const getAreasController = asyncHandler(async (_req: Request, res: Response) => {
-  const { getDistinctAreas } = require('../services/tutorService');
   const areas = await getDistinctAreas();
   return res.json(successResponse(areas));
 });
