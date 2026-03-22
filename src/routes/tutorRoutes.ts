@@ -73,6 +73,16 @@ router.get(
   authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN),
   require("../controllers/tutorController").getVerifiersController,
 );
+router.get(
+  "/cities",
+  authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN, USER_ROLES.TUTOR),
+  require("../controllers/tutorController").getCitiesController,
+);
+router.get(
+  "/areas",
+  authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN, USER_ROLES.TUTOR),
+  require("../controllers/tutorController").getAreasController,
+);
 
 router.get("/", authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN), getTutors);
 

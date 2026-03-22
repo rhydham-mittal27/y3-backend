@@ -169,6 +169,7 @@ export const generateLeadId = (
       { path: 'createdBy', select: 'name email role' },
       { path: 'assignedTutor', select: 'name email phone' },
       { path: 'groupClass' },
+      { path: 'subject', select: '_id label value type' },
     ]);
 
   try {
@@ -226,7 +227,13 @@ export const getAllClassLeads = async (args: {
   if (studentName) query.studentName = { $regex: studentName, $options: 'i' };
   if (parentName) query.parentName = { $regex: parentName, $options: 'i' };
   if (grade) query.grade = { $regex: grade, $options: 'i' };
-  if (subject) query.subject = { $regex: subject, $options: 'i' };
+  if (subject) {
+    if (mongoose.isValidObjectId(subject)) {
+      query.subject = subject;
+    } else {
+      query.subject = { $regex: subject, $options: 'i' }; // Fallback for migration/old data
+    }
+  }
   if (board) query.board = board;
   if (board) query.board = board;
   if (mode) query.mode = mode;
@@ -258,6 +265,7 @@ export const getAllClassLeads = async (args: {
         { path: 'createdBy', select: 'name email role' },
         { path: 'assignedTutor', select: 'name email phone' },
         { path: 'groupClass' },
+        { path: 'subject', select: '_id label value type' },
       ]),
     ClassLead.countDocuments(query),
   ]);
@@ -281,6 +289,7 @@ export const getClassLeadById = async (leadId: string) => {
     { path: 'createdBy', select: 'name email role' },
     { path: 'assignedTutor', select: 'name email phone' },
     { path: 'groupClass' },
+    { path: 'subject', select: '_id label value type' },
   ]);
   if (!lead) {
     throw new ErrorResponse('Class lead not found', 404);
@@ -369,6 +378,7 @@ export const updateClassLead = async (
       { path: 'createdBy', select: 'name email role' },
       { path: 'assignedTutor', select: 'name email phone' },
       { path: 'groupClass' },
+      { path: 'subject', select: '_id label value type' },
     ]);
   try {
     const createdBy = String((lead.createdBy as any)?._id || lead.createdBy);
@@ -528,6 +538,7 @@ export const updateClassLeadStatus = async (
     await lead.populate([
       { path: 'createdBy', select: 'name email role' },
       { path: 'assignedTutor', select: 'name email phone' },
+      { path: 'subject', select: '_id label value type' },
     ]);
     return lead;
   }
@@ -545,6 +556,7 @@ export const updateClassLeadStatus = async (
   await lead.populate([
     { path: 'createdBy', select: 'name email role' },
     { path: 'assignedTutor', select: 'name email phone' },
+    { path: 'subject', select: '_id label value type' },
   ]);
   return lead;
 };
@@ -574,6 +586,7 @@ export const getLeadsByManager = async (managerId: string) => {
     .populate([
       { path: 'createdBy', select: 'name email role' },
       { path: 'assignedTutor', select: 'name email phone' },
+      { path: 'subject', select: '_id label value type' },
     ]);
   return leads;
 };
@@ -584,6 +597,7 @@ export const getLeadsByTutor = async (tutorUserId: string) => {
     .populate([
       { path: 'createdBy', select: 'name email role' },
       { path: 'assignedTutor', select: 'name email phone' },
+      { path: 'subject', select: '_id label value type' },
     ]);
   return leads;
 };

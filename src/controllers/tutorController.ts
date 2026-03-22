@@ -47,7 +47,7 @@ export const getTutors = asyncHandler(async (req: Request, res: Response) => {
   const subjects = req.query.subjects ? String(req.query.subjects).split(',').map((s) => s.trim()).filter(Boolean) : undefined;
   const sortBy = req.query.sortBy ? String(req.query.sortBy) : undefined;
   const sortOrder = (req.query.sortOrder === 'asc' ? 'asc' : 'desc') as 'asc' | 'desc';
-  
+
   const search = req.query.search as string;
   const teacherId = req.query.teacherId as string;
   const name = req.query.name as string;
@@ -55,14 +55,17 @@ export const getTutors = asyncHandler(async (req: Request, res: Response) => {
   const phone = req.query.phone as string;
   const preferredMode = req.query.preferredMode as string;
   const verifiedBy = req.query.verifiedBy as string;
+  const city = req.query.city as string;
+  const area = req.query.area as string;
+  const grade = req.query.grade as string;
 
   const { tutors, total } = await getAllTutors(
-    page, 
-    limit, 
-    verificationStatus, 
-    isAvailable as any, 
-    subjects, 
-    sortBy, 
+    page,
+    limit,
+    verificationStatus,
+    isAvailable as any,
+    subjects,
+    sortBy,
     sortOrder,
     search,
     teacherId,
@@ -70,7 +73,10 @@ export const getTutors = asyncHandler(async (req: Request, res: Response) => {
     email,
     phone,
     preferredMode,
-    verifiedBy
+    verifiedBy,
+    city,
+    area,
+    grade
   );
   return res.json(paginatedResponse(tutors as any, page, limit, total));
 });
@@ -111,7 +117,7 @@ export const updateMyProfileController = asyncHandler(async (req: AuthRequest, r
     const changedLockedFields = Object.entries(lockedFieldsMapping).filter(([frontendKey, backendKey]) => {
       // Only check if the field is present in the request body
       if (!(frontendKey in req.body)) return false;
-      
+
       const newValue = req.body[frontendKey];
       let oldValue: any;
 
@@ -127,7 +133,7 @@ export const updateMyProfileController = asyncHandler(async (req: AuthRequest, r
       // If it is provided, compare values while being robust to nulls/types
       const normalizedNew = String(newValue || '').trim();
       const normalizedOld = String(oldValue || '').trim();
-      
+
       return normalizedNew !== normalizedOld;
     }).map(([frontendKey]) => frontendKey);
 
@@ -206,7 +212,7 @@ export const updateVerificationStatusController = asyncHandler(async (req: AuthR
 export const updateVerificationFeeStatusController = asyncHandler(async (req: Request, res: Response) => {
   const { verificationFeeStatus } = req.body;
   const file = (req as any).file;
-  
+
   // Use require or import. Since I cannot easily change top imports in this replace block safely without context, I will use require for the service function if it's not imported at top.
   // Actually, I should update the imports at the top first or use the exported name.
   // Let's rely on the service being imported at top if I modify imports, or use require.
@@ -310,12 +316,12 @@ export const getTutorPerformanceMetricsController = asyncHandler(async (req: Aut
   return res.json(successResponse(metrics));
 });
 export const getTutorAdvancedAnalyticsController = asyncHandler(async (req: AuthRequest, res: Response) => {
-    let tutorId = req.params.tutorId;
-    if (req.user && req.user.role === 'TUTOR') {
-        tutorId = String(req.user.id);
-    }
-    const analytics = await getTutorAdvancedAnalytics(tutorId);
-    return res.json(successResponse(analytics));
+  let tutorId = req.params.tutorId;
+  if (req.user && req.user.role === 'TUTOR') {
+    tutorId = String(req.user.id);
+  }
+  const analytics = await getTutorAdvancedAnalytics(tutorId);
+  return res.json(successResponse(analytics));
 });
 
 export const getCoordinatorTutorsController = asyncHandler(async (req: AuthRequest, res: Response) => {
@@ -380,12 +386,22 @@ export const getTutorStatsController = asyncHandler(async (req: Request, res: Re
 export const getSubjectsController = asyncHandler(async (_req: Request, res: Response) => {
   // Use require here to avoid circular dependency issues if any, though explicit import is better if safe.
   // Using the service directly as imported above.
-  const { getDistinctSubjects } = require('../services/tutorService'); 
+  const { getDistinctSubjects } = require('../services/tutorService');
   const subjects = await getDistinctSubjects();
   return res.json(successResponse(subjects));
 });
 export const getVerifiersController = asyncHandler(async (_req: Request, res: Response) => {
-  const { getDistinctVerifiers } = require('../services/tutorService'); 
+  const { getDistinctVerifiers } = require('../services/tutorService');
   const verifiers = await getDistinctVerifiers();
   return res.json(successResponse(verifiers));
+});
+export const getCitiesController = asyncHandler(async (_req: Request, res: Response) => {
+  const { getDistinctCities } = require('../services/tutorService');
+  const cities = await getDistinctCities();
+  return res.json(successResponse(cities));
+});
+export const getAreasController = asyncHandler(async (_req: Request, res: Response) => {
+  const { getDistinctAreas } = require('../services/tutorService');
+  const areas = await getDistinctAreas();
+  return res.json(successResponse(areas));
 });

@@ -18,7 +18,7 @@ export interface ITutorDocument extends Document {
   teacherId?: string;
   user: mongoose.Types.ObjectId;
   experienceHours: number;
-  subjects: string[];
+  subjects: mongoose.Types.ObjectId[];
   qualifications?: string[];
   extracurricularActivities?: string[];
   ratings: number;
@@ -37,6 +37,7 @@ export interface ITutorDocument extends Document {
   preferredMode?: TEACHING_MODE | string;
   preferredLocations?: string[];
   preferredCities?: string[];
+  preferredGrades?: string[];
   permanentAddress?: string;
   residentialAddress?: string;
   alternatePhone?: string;
@@ -71,7 +72,7 @@ export interface ITutorDocument extends Document {
       maxClassesPerWeek?: number;
     };
     teachingModePreference?: TEACHING_MODE | string;
-    preferredSubjects?: string[];
+    preferredSubjects?: mongoose.Types.ObjectId[];
     preferredLocations?: string[];
     notificationSettings?: {
       classAssignments?: boolean;
@@ -117,7 +118,7 @@ const TutorSchema: Schema<ITutorDocument> = new Schema<ITutorDocument>(
     user: { type: Schema.Types.ObjectId, ref: 'User', required: true, unique: true },
     teacherId: { type: String, unique: true, sparse: true },
     experienceHours: { type: Number, required: true, default: 0 },
-    subjects: { type: [String], required: true },
+    subjects: { type: [{ type: Schema.Types.ObjectId, ref: 'Option' }], required: true },
     qualifications: { type: [String] },
     extracurricularActivities: { type: [String], default: [] },
     ratings: { type: Number, default: 0, min: 0, max: 5 },
@@ -136,6 +137,7 @@ const TutorSchema: Schema<ITutorDocument> = new Schema<ITutorDocument>(
     preferredMode: { type: String, enum: Object.values(TEACHING_MODE) },
     preferredLocations: { type: [String] },
     preferredCities: { type: [String] },
+    preferredGrades: { type: [String] },
     permanentAddress: { type: String },
     residentialAddress: { type: String },
     alternatePhone: { type: String },
@@ -151,8 +153,9 @@ const TutorSchema: Schema<ITutorDocument> = new Schema<ITutorDocument>(
           default: {},
         },
         teachingModePreference: { type: String, enum: Object.values(TEACHING_MODE) },
-        preferredSubjects: { type: [String], default: [] },
+        preferredSubjects: { type: [{ type: Schema.Types.ObjectId, ref: 'Option' }], default: [] },
         preferredLocations: { type: [String], default: [] },
+        preferredGrades: { type: [String], default: [] },
         notificationSettings: {
           type: {
             classAssignments: { type: Boolean, default: true },

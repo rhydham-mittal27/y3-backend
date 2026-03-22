@@ -4,7 +4,7 @@ import path from 'path';
 import mongoose from 'mongoose';
 import User from '../models/User';
 import ClassLead, { IClassLeadDocument } from '../models/ClassLead';
-import { CLASS_LEAD_STATUS, TEACHING_MODE, PREFERRED_TUTOR_GENDER } from '../config/constants';
+import { CLASS_LEAD_STATUS, TEACHING_MODE, PREFERRED_TUTOR_GENDER, LEAD_SOURCE } from '../config/constants';
 
 const uri = process.env.MONGODB_URI || process.env.DATABASE_URL || '';
 
@@ -22,6 +22,10 @@ type NormalizedLeadRow = {
   preferredTutorGender?: string;
   status: string;
   notes?: string;
+  demoDateTime?: string;
+  demoTutorName?: string;
+  leadSource?: string;
+  paymentReceived?: boolean;
   createdAt?: string;
   studentType: string;
   timing: string;
@@ -33,10 +37,8 @@ async function connect() {
   console.log('[seedLeadsFromNormalizedJson] Connected to MongoDB');
 }
 
-async function generateLeadId(): Promise<string> {
-    const count = await ClassLead.countDocuments();
-    const nextNum = count + 1;
-    return `LDR${String(nextNum).padStart(5, '0')}`;
+async function generateLeadId(currentIndex: number): Promise<string> {
+    return `LDR${String(currentIndex + 1).padStart(5, '0')}`;
 }
 
 async function main() {
@@ -48,6 +50,10 @@ async function main() {
   }
 
   await connect();
+
+  // Clear existing leads as per strict instruction for "correctness of data"
+  console.log('[seedLeadsFromNormalizedJson] Clearing existing class leads...');
+  await ClassLead.deleteMany({});
 
   let admin = await User.findOne({ role: { $in: ['ADMIN', 'MANAGER'] } });
   if (!admin) {
@@ -69,23 +75,35 @@ async function main() {
   console.log(`[seedLeadsFromNormalizedJson] Starting seeding of ${rows.length} leads...`);
 
   let created = 0;
-  let skipped = 0;
+  let failed = 0;
 
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
-    
-    // Check for existing lead by phone and date (heuristic)
-    const existing = await ClassLead.findOne({
-        parentPhone: row.parentPhone,
-        createdAt: new Date(row.createdAt || Date.now())
-    });
+    const leadId = await generateLeadId(i);
 
-    if (existing) {
-        skipped++;
-        continue;
+    let demoTutorId = null;
+    if (row.demoTutorName && row.demoTutorName.toLowerCase() !== 'na') {
+        const tutorUser = await User.findOne({ 
+            name: { $regex: new RegExp('^' + row.demoTutorName + '$', 'i') },
+            role: 'TUTOR'
+        });
+        if (tutorUser) {
+            demoTutorId = tutorUser._id;
+        } else {
+            // Try fuzzy match if exact fails
+            const fuzzyTutor = await User.findOne({
+                name: { $regex: new RegExp(row.demoTutorName, 'i') },
+                role: 'TUTOR'
+            });
+            if (fuzzyTutor) demoTutorId = fuzzyTutor._id;
+        }
     }
 
-    const leadId = await generateLeadId();
+    const demoDetails = demoTutorId ? {
+        demoDate: row.demoDateTime ? new Date(row.demoDateTime) : undefined,
+        demoTime: row.demoDateTime, // Storing raw string for now
+        demoStatus: 'SCHEDULED'
+    } : undefined;
 
     try {
         await ClassLead.create({
@@ -106,23 +124,28 @@ async function main() {
             createdAt: new Date(row.createdAt || Date.now()),
             studentType: row.studentType,
             timing: row.timing,
-            createdBy: admin._id
+            createdBy: admin._id,
+            demoTutor: demoTutorId,
+            demoDetails: demoDetails,
+            leadSource: row.leadSource,
+            paymentReceived: row.paymentReceived
         });
         created++;
         if (created % 50 === 0) {
             console.log(`[seedLeadsFromNormalizedJson] Created ${created} leads...`);
         }
     } catch (err: any) {
+        failed++;
         if (err.name === 'ValidationError') {
             const errors = Object.keys(err.errors).map(key => `${key}: ${err.errors[key].message}`);
-            console.error(`[seedLeadsFromNormalizedJson] Validation error at index ${i}:`, errors.join(', '));
+            console.error(`[seedLeadsFromNormalizedJson] Validation error at index ${i} (${row.studentName}):`, errors.join(', '));
         } else {
-            console.error(`[seedLeadsFromNormalizedJson] Error at index ${i}:`, err.message || err);
+            console.error(`[seedLeadsFromNormalizedJson] Error at index ${i} (${row.studentName}):`, err.message || err);
         }
     }
   }
 
-  console.log(`[seedLeadsFromNormalizedJson] Done. Created: ${created}, Skipped: ${skipped}`);
+  console.log(`[seedLeadsFromNormalizedJson] Done. Created: ${created}, Failed: ${failed}`);
   await mongoose.disconnect();
 }
 

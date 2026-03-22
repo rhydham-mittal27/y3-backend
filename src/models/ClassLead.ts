@@ -118,7 +118,7 @@ const StudentDetailSchema = new Schema<IStudentDetail>({
   // Per-student curriculum for groups
   board: { type: String, enum: Object.values(BOARD_TYPE) },
   grade: { type: String },
-  subject: { type: [String] },
+  subject: { type: [{ type: Schema.Types.ObjectId, ref: 'Option' }] },
 }, { _id: false });
 
 const ClassLeadSchema: Schema<IClassLeadDocument> = new Schema<IClassLeadDocument>(
@@ -166,7 +166,7 @@ const ClassLeadSchema: Schema<IClassLeadDocument> = new Schema<IClassLeadDocumen
       ]
     },
     subject: {
-      type: [String],
+      type: [{ type: Schema.Types.ObjectId, ref: 'Option' }],
       required: [
         function (this: IClassLeadDocument) {
           return this.studentType === 'SINGLE' || this.studentType === 'GROUP';

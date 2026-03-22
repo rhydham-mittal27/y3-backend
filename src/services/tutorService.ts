@@ -92,7 +92,10 @@ export const getAllTutors = async (
   email?: string,
   phone?: string,
   preferredMode?: string,
-  verifiedBy?: string
+  verifiedBy?: string,
+  city?: string,
+  area?: string,
+  grade?: string
 ) => {
   const query: any = {};
   if (verificationStatus) query.verificationStatus = verificationStatus;
@@ -100,6 +103,8 @@ export const getAllTutors = async (
   if (subjects && subjects.length) query.subjects = { $in: subjects };
   if (teacherId) query.teacherId = { $regex: teacherId, $options: 'i' };
   if (preferredMode) query.preferredMode = preferredMode;
+  if (area) query.preferredLocations = { $regex: area, $options: 'i' };
+  if (grade) query.preferredGrades = { $regex: grade, $options: 'i' };
   if (verifiedBy && mongoose.isValidObjectId(verifiedBy)) query.verifiedBy = new mongoose.Types.ObjectId(verifiedBy);
 
   // For name, email, phone we need to filter based on the populated user field
@@ -108,6 +113,7 @@ export const getAllTutors = async (
   if (name) userQuery.name = { $regex: name, $options: 'i' };
   if (email) userQuery.email = { $regex: email, $options: 'i' };
   if (phone) userQuery.phone = { $regex: phone, $options: 'i' };
+  if (city) userQuery.city = { $regex: city, $options: 'i' };
   if (search) {
     userQuery.$or = [
       { name: { $regex: search, $options: 'i' } },
@@ -120,10 +126,10 @@ export const getAllTutors = async (
     const users = await User.find(userQuery).select('_id');
     const userIds = users.map(u => u._id);
     if (query.user) {
-        // If query.user already exists (unlikely in this flow), intersect
-        query.user = { $in: userIds };
+      // If query.user already exists (unlikely in this flow), intersect
+      query.user = { $in: userIds };
     } else {
-        query.user = { $in: userIds };
+      query.user = { $in: userIds };
     }
   }
 
@@ -131,18 +137,18 @@ export const getAllTutors = async (
     // If general search is provided and teacherId hasn't been specifically queried
     // We can also search teacherId in the main query if it wasn't filtered by user above
     if (!query.user) {
-        query.$or = [
-            { teacherId: { $regex: search, $options: 'i' } }
-        ];
+      query.$or = [
+        { teacherId: { $regex: search, $options: 'i' } }
+      ];
     } else {
-        // Tricky with $or and other filters, but simple approach:
-        // Already filtered by user above. If we want to add teacherId to that global search:
-        const userIdArray = query.user.$in;
-        delete query.user;
-        query.$or = [
-            { user: { $in: userIdArray } },
-            { teacherId: { $regex: search, $options: 'i' } }
-        ];
+      // Tricky with $or and other filters, but simple approach:
+      // Already filtered by user above. If we want to add teacherId to that global search:
+      const userIdArray = query.user.$in;
+      delete query.user;
+      query.$or = [
+        { user: { $in: userIdArray } },
+        { teacherId: { $regex: search, $options: 'i' } }
+      ];
     }
   }
 
@@ -174,6 +180,7 @@ export const getTutorById = async (tutorIdOrTeacherId: string) => {
     tutor = await Tutor.findById(tutorIdOrTeacherId).populate([
       { path: 'user', select: '_id name email phone role gender city preferredMode' },
       { path: 'verifiedBy', select: '_id name email phone role' },
+      { path: 'subjects', select: '_id label value type' },
     ]);
 
     // If not found, also allow treating the value as a User _id
@@ -181,6 +188,7 @@ export const getTutorById = async (tutorIdOrTeacherId: string) => {
       tutor = await Tutor.findOne({ user: new mongoose.Types.ObjectId(tutorIdOrTeacherId) }).populate([
         { path: 'user', select: 'name email phone role gender city preferredMode' },
         { path: 'verifiedBy', select: 'name email phone role' },
+        { path: 'subjects', select: '_id label value type' },
       ]);
     }
   }
@@ -190,6 +198,7 @@ export const getTutorById = async (tutorIdOrTeacherId: string) => {
     tutor = await Tutor.findOne({ teacherId: tutorIdOrTeacherId }).populate([
       { path: 'user', select: 'name email phone role gender city preferredMode' },
       { path: 'verifiedBy', select: 'name email phone role' },
+      { path: 'subjects', select: '_id label value type' },
     ]);
   }
 
@@ -201,6 +210,7 @@ export const getTutorByUserId = async (userId: string) => {
   const tutor = await Tutor.findOne({ user: userId }).populate([
     { path: 'user', select: 'name email phone role gender city preferredMode' },
     { path: 'verifiedBy', select: 'name email phone role' },
+    { path: 'subjects', select: '_id label value type' },
   ]);
   if (!tutor) throw new ErrorResponse('Tutor not found', 404);
 
@@ -378,12 +388,12 @@ export const getMyProfileForEdit = async (userId: string) => {
   const user = await User.findById(userId);
   if (!user) throw new ErrorResponse('User not found', 404);
 
-  const tutor = await Tutor.findOne({ user: userId });
-  
+  const tutor = await Tutor.findOne({ user: userId }).populate('subjects');
+
   // Extract city and areas from preferredLocations
   let city = '';
   const preferredAreas: string[] = [];
-  
+
   if (tutor?.preferredLocations && tutor.preferredLocations.length > 0) {
     // First location is typically the city
     city = tutor.preferredLocations[0];
@@ -398,7 +408,7 @@ export const getMyProfileForEdit = async (userId: string) => {
   if (tutor?.experienceHours) {
     const totalMonths = Math.floor(tutor.experienceHours / 30);
     const years = Math.floor(totalMonths / 12);
-    
+
     if (years >= 10) {
       experience = '10+ Years';
     } else if (years >= 5) {
@@ -477,7 +487,7 @@ export const updateMyProfile = async (userId: string, updateData: {
   if (!user) throw new ErrorResponse('User not found', 404);
 
   let tutor = await Tutor.findOne({ user: userId });
-  
+
   // Update user fields
   if (updateData.fullName) user.name = updateData.fullName;
   if (updateData.phoneNumber) user.phone = updateData.phoneNumber;
@@ -571,7 +581,7 @@ export const updateMyProfile = async (userId: string, updateData: {
     { path: 'user', select: 'name email phone dob role gender city preferredMode' },
     { path: 'verifiedBy', select: 'name email phone role' },
   ]);
-  
+
   return await withResolvedTutorDocumentUrls(tutor);
 };
 
@@ -636,7 +646,7 @@ export const uploadDocument = async (
   const buffer: Buffer | undefined = file?.buffer;
   const originalname: string = file?.originalname || 'document';
   const mimetype: string = file?.mimetype || 'application/octet-stream';
-  
+
   if (!buffer) {
     console.error('[uploadDocument] Invalid file upload - missing buffer', {
       tutorId,
@@ -848,7 +858,7 @@ export const updateVerificationStatus = async (
       { entityType: 'Tutor', entityId: String(tutor._id), entityName: (tutor as any).user?.name },
       { oldStatus: current, newStatus, verificationNotes }
     );
-  } catch {}
+  } catch { }
 
   return tutor;
 };
@@ -888,28 +898,28 @@ export const updateVerificationFeeStatus = async (
 
   if (feeStatus === 'PAID') {
     if (!paymentProofFile) {
-        throw new ErrorResponse('Payment proof is required when status is PAID', 400);
+      throw new ErrorResponse('Payment proof is required when status is PAID', 400);
     }
-    
+
     // Upload proof
     const buffer = paymentProofFile.buffer;
     const originalname = paymentProofFile.originalname;
     const mimetype = paymentProofFile.mimetype;
-    
+
     try {
-        const uploadResult = await uploadFileToS3Structured(
-            buffer,
-            originalname,
-            mimetype,
-            { entityType: 'tutors', entityId: tutorId, folder: 'verification-fees' }
-        );
-        verificationFeePaymentProof = uploadResult.key;
-        verificationFeePaymentDate = new Date();
+      const uploadResult = await uploadFileToS3Structured(
+        buffer,
+        originalname,
+        mimetype,
+        { entityType: 'tutors', entityId: tutorId, folder: 'verification-fees' }
+      );
+      verificationFeePaymentProof = uploadResult.key;
+      verificationFeePaymentDate = new Date();
     } catch (err: any) {
-        console.error('Failed to upload payment proof', err);
-        throw new ErrorResponse('Failed to upload payment proof', 500);
+      console.error('Failed to upload payment proof', err);
+      throw new ErrorResponse('Failed to upload payment proof', 500);
     }
-    
+
     // Create a paid Payment record for bookkeeping
     try {
       const dueDate = verificationFeePaymentDate || new Date();
@@ -929,22 +939,22 @@ export const updateVerificationFeeStatus = async (
       // non-fatal: continue
     }
   } else if (feeStatus === 'DEDUCT_FROM_FIRST_MONTH') {
-      // Create a pending verification fee record to be deducted from first payout (bookkeeping)
-      try {
-        const dueDate = new Date();
-        await Payment.create({
-          tutor: tutor.user,
-          amount: VERIFICATION_FEE_DEDUCT_AMOUNT,
-          currency: 'INR',
-          status: PAYMENT_STATUS.PENDING,
-          paymentType: PAYMENT_TYPE.TUTOR_VERIFICATION_FEES,
-          dueDate,
-          notes: 'Deduct from first payout',
-          createdBy: tutor.user,
-        } as any);
-      } catch (err: any) {
-        console.error('Failed to create deduction verification fee record', err);
-      }
+    // Create a pending verification fee record to be deducted from first payout (bookkeeping)
+    try {
+      const dueDate = new Date();
+      await Payment.create({
+        tutor: tutor.user,
+        amount: VERIFICATION_FEE_DEDUCT_AMOUNT,
+        currency: 'INR',
+        status: PAYMENT_STATUS.PENDING,
+        paymentType: PAYMENT_TYPE.TUTOR_VERIFICATION_FEES,
+        dueDate,
+        notes: 'Deduct from first payout',
+        createdBy: tutor.user,
+      } as any);
+    } catch (err: any) {
+      console.error('Failed to create deduction verification fee record', err);
+    }
   }
 
   tutor.verificationFeeStatus = feeStatus;
@@ -983,7 +993,7 @@ export const deleteTutorProfile = async (tutorId: string) => {
       if (d?.s3Key) {
         try {
           await deleteFileFromS3(d.s3Key);
-        } catch {}
+        } catch { }
       }
     }
   }
@@ -1030,7 +1040,7 @@ export const requestTierChange = async (
       metadata: { tutorId: String(tutor._id), newTier, reason },
       roles: [USER_ROLES.MANAGER, USER_ROLES.ADMIN],
     } as any);
-  } catch {}
+  } catch { }
 
   return tutor;
 };
@@ -1066,7 +1076,7 @@ export const approveTierChange = async (
         ? `Your tier has been updated to ${tutor.tier}`
         : `Your tier change request was rejected${notes ? `: ${notes}` : ''}`,
     } as any);
-  } catch {}
+  } catch { }
 
   return tutor;
 };
@@ -1160,7 +1170,7 @@ export const submitTutorFeedback = async (params: {
       title: 'New feedback received',
       message: `New feedback submitted for ${month}`,
     } as any);
-  } catch {}
+  } catch { }
 
   return feedback;
 };
@@ -1472,14 +1482,30 @@ export const getDistinctSubjects = async () => {
 export const getDistinctVerifiers = async () => {
   const verifierIds = await Tutor.distinct('verifiedBy');
   const validIds = verifierIds.filter(Boolean);
-  
+
   if (validIds.length === 0) return [];
-  
+
   const verifiers = await User.find({ _id: { $in: validIds } })
     .select('name email')
     .lean();
-    
+
   return verifiers;
+};
+export const getDistinctCities = async () => {
+  const cities = await User.distinct('city', { role: USER_ROLES.TUTOR });
+  return cities.filter(Boolean).sort();
+};
+export const getDistinctAreas = async () => {
+  const allLocations = await Tutor.distinct('preferredLocations');
+  // preferredLocations might contain cities too, so we'll filter them out in the frontend or just provide all unique locations.
+  // Actually, providing all unique locations that are NOT in the cities list.
+  const cities = await User.distinct('city', { role: USER_ROLES.TUTOR });
+  const citySet = new Set(cities.filter(Boolean));
+
+  const uniqueAreas = Array.from(new Set(allLocations.flat()))
+    .filter(loc => loc && !citySet.has(loc))
+    .sort();
+  return uniqueAreas;
 };
 
 export const getTutorAdvancedAnalytics = async (tutorUserId: string) => {
