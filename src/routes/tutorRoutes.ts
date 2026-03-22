@@ -91,7 +91,7 @@ router.get(
   getAreasController,
 );
 
-router.get("/", authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN), getTutors);
+router.get("/", authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN, USER_ROLES.COORDINATOR), getTutors);
 
 router.get("/my-profile", authorize(USER_ROLES.TUTOR), getMyProfile);
 
@@ -128,6 +128,7 @@ router.get(
     USER_ROLES.ADMIN,
     USER_ROLES.TUTOR,
     USER_ROLES.PARENT,
+    USER_ROLES.COORDINATOR,
   ),
   userIdParamValidation,
   getTutorByUser,
@@ -140,6 +141,7 @@ router.get(
     USER_ROLES.ADMIN,
     USER_ROLES.TUTOR,
     USER_ROLES.PARENT,
+    USER_ROLES.COORDINATOR,
   ),
   tutorIdValidation,
   getTutor,
