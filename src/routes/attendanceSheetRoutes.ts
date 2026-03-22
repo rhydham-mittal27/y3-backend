@@ -33,20 +33,6 @@ router.get(
   getSheetsForClassController
 );
 
-// Submit a sheet to the coordinator for approval
-router.patch(
-  '/:id/submit',
-  authorize(USER_ROLES.TUTOR, USER_ROLES.COORDINATOR, USER_ROLES.MANAGER, USER_ROLES.ADMIN),
-  submitAttendanceSheetController
-);
-
-// Admins/Managers: list all pending sheets
-router.get(
-  '/pending',
-  authorize(USER_ROLES.ADMIN, USER_ROLES.MANAGER),
-  getAllPendingSheetsController
-);
-
 // Coordinator: list pending sheets
 router.get(
   '/coordinator/pending',
@@ -58,6 +44,20 @@ router.get(
   '/coordinator/all',
   authorize(USER_ROLES.COORDINATOR),
   getCoordinatorAllSheetsController
+);
+
+// Admins/Managers: list all pending sheets
+router.get(
+  '/pending',
+  authorize(USER_ROLES.ADMIN, USER_ROLES.MANAGER),
+  getAllPendingSheetsController
+);
+
+// Submit a sheet to the coordinator for approval
+router.patch(
+  '/:id/submit',
+  authorize(USER_ROLES.TUTOR, USER_ROLES.COORDINATOR, USER_ROLES.MANAGER, USER_ROLES.ADMIN),
+  submitAttendanceSheetController
 );
 
 // Approve a sheet
