@@ -670,9 +670,11 @@ export const getDistinctFilterValues = async () => {
   };
 };
 
-export const getCRMLeadsGrouped = async (managerId?: string) => {
+export const getCRMLeadsGrouped = async (createdByIds?: string[]) => {
   const match: any = {};
-  if (managerId) match.createdBy = new mongoose.Types.ObjectId(managerId);
+  if (createdByIds && createdByIds.length > 0) {
+    match.createdBy = { $in: createdByIds.map(id => new mongoose.Types.ObjectId(id)) };
+  }
 
   // Define CRM statuses and their logic
   // 1. New: status = NEW
@@ -682,8 +684,9 @@ export const getCRMLeadsGrouped = async (managerId?: string) => {
   // 5. Demo Pending: status = DEMO_COMPLETED
   // 6. Converted: status = CONVERTED
 
-  const pipeline = [
+  const pipeline: mongoose.PipelineStage[] = [
     { $match: match },
+    { $sort: { createdAt: -1 } },
     {
       $lookup: {
         from: 'announcements',
@@ -728,8 +731,35 @@ export const getCRMLeadsGrouped = async (managerId?: string) => {
           }
         }
       }
+    },
+    {
+      $lookup: {
+        from: 'options',
+        localField: 'subject',
+        foreignField: '_id',
+        as: 'subjectObjects'
+      }
+    },
+    {
+      $addFields: {
+        subject: {
+          $map: {
+            input: '$subjectObjects',
+            as: 'obj',
+            in: {
+              _id: '$$obj._id',
+              label: '$$obj.label',
+              value: '$$obj.value'
+            }
+          }
+        }
+      }
+    },
+    {
+      $project: {
+        subjectObjects: 0
+      }
     }
-
   ];
 
   const leads = await ClassLead.aggregate(pipeline);

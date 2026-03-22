@@ -236,11 +236,25 @@ export const getFilterOptions = asyncHandler(async (_req: AuthRequest, res) => {
 });
 
 export const getCRMLeads = asyncHandler(async (req: AuthRequest, res) => {
-  const managerId = req.user!.role === USER_ROLES.MANAGER 
-    ? req.user!.id 
-    : (req.query.managerId as string || undefined);
+  let createdByIds: string[] | undefined;
+
+  if (req.user!.role === USER_ROLES.MANAGER) {
+    const manager = await getManagerByUserId(req.user!.id);
+    if (manager.permissions?.canViewSiteLeads) {
+      const siteOwnerId = await resolveSiteLeadOwnerUserId();
+      createdByIds = siteOwnerId ? [siteOwnerId, req.user!.id] : [req.user!.id];
+    } else {
+      createdByIds = [req.user!.id];
+    }
+  } else {
+    // Admin or other roles
+    const queryManagerId = req.query.managerId as string;
+    if (queryManagerId && queryManagerId !== 'All') {
+      createdByIds = [queryManagerId];
+    }
+  }
     
-  const groups = await getCRMLeadsGrouped(managerId);
+  const groups = await getCRMLeadsGrouped(createdByIds);
   return res.json(successResponse(groups));
 });
 

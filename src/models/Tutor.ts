@@ -114,12 +114,12 @@ const withPublicUrl = (raw: any) => {
   return out;
 };
 
-const TutorSchema: Schema<ITutorDocument> = new Schema<ITutorDocument>(
+const TutorSchema = new Schema<ITutorDocument>(
   {
     user: { type: Schema.Types.ObjectId, ref: 'User', required: true, unique: true },
     teacherId: { type: String, unique: true, sparse: true },
     experienceHours: { type: Number, required: true, default: 0 },
-    subjects: { type: [{ type: Schema.Types.ObjectId, ref: 'Option' }], required: true },
+    subjects: [{ type: Schema.Types.ObjectId, ref: 'Option' }],
     qualifications: { type: [String] },
     extracurricularActivities: { type: [String], default: [] },
     ratings: { type: Number, default: 0, min: 0, max: 5 },
@@ -155,7 +155,7 @@ const TutorSchema: Schema<ITutorDocument> = new Schema<ITutorDocument>(
           default: {},
         },
         teachingModePreference: { type: String, enum: Object.values(TEACHING_MODE) },
-        preferredSubjects: { type: [{ type: Schema.Types.ObjectId, ref: 'Option' }], default: [] },
+        preferredSubjects: [{ type: Schema.Types.ObjectId, ref: 'Option' }],
         preferredLocations: { type: [String], default: [] },
         preferredGrades: { type: [String], default: [] },
         preferredBoards: { type: [String], default: [] },

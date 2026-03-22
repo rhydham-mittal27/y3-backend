@@ -29,7 +29,7 @@ export interface IStudentDetail {
   parentPhone?: string;
   board?: string;
   grade?: string;
-  subject?: string[];
+  subject?: mongoose.Types.ObjectId[];
 }
 
 export interface IClassLeadDocument extends Document {
@@ -42,7 +42,7 @@ export interface IClassLeadDocument extends Document {
   parentEmail?: string;
   parentPhone?: string;
   grade?: string; // Only for single student
-  subject?: string[]; // Only for single student
+  subject: mongoose.Types.ObjectId[]; // Only for single student
   board: BOARD_TYPE | string;
   mode: TEACHING_MODE | string;
   location?: string;
@@ -118,10 +118,10 @@ const StudentDetailSchema = new Schema<IStudentDetail>({
   // Per-student curriculum for groups
   board: { type: String, enum: Object.values(BOARD_TYPE) },
   grade: { type: String },
-  subject: { type: [{ type: Schema.Types.ObjectId, ref: 'Option' }] },
+  subject: [{ type: Schema.Types.ObjectId, ref: 'Option' }],
 }, { _id: false });
 
-const ClassLeadSchema: Schema<IClassLeadDocument> = new Schema<IClassLeadDocument>(
+const ClassLeadSchema = new Schema<IClassLeadDocument>(
   {
     leadId: { type: String, unique: true },
     studentType: {
@@ -168,13 +168,13 @@ const ClassLeadSchema: Schema<IClassLeadDocument> = new Schema<IClassLeadDocumen
     subject: {
       type: [{ type: Schema.Types.ObjectId, ref: 'Option' }],
       required: [
-        function (this: IClassLeadDocument) {
+        function (this: any) {
           return this.studentType === 'SINGLE' || this.studentType === 'GROUP';
         },
         'At least one subject is required'
       ],
       validate: [
-        function (this: IClassLeadDocument, val: string[]) {
+        function (this: any, val: any[]) {
           return (this.studentType !== 'SINGLE' && this.studentType !== 'GROUP') || (Array.isArray(val) && val.length > 0);
         },
         'At least one subject is required'
