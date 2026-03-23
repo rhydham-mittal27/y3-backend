@@ -10,6 +10,7 @@ import { CLASS_LEAD_STATUS, DEMO_STATUS, MANAGER_ACTION_TYPE, USER_ROLES } from 
 import { logManagerActivity } from './managerService';
 import Manager from '../models/Manager';
 import { convertLeadToFinalClass } from './finalClassService';
+import { resolveSubjectIds } from './leadService';
 
 export const assignDemo = async (
   classLeadId: string,
@@ -67,7 +68,7 @@ export const assignDemo = async (
       `Assigned demo to tutor ${tutor?.name || tutorUserId} for class lead ${lead.studentName}`,
       { entityType: 'Demo', entityId: String(lead._id), entityName: lead.studentName }
     );
-  } catch {}
+  } catch { }
 
   try {
     await createNotificationWithPreferences({
@@ -77,7 +78,7 @@ export const assignDemo = async (
       message: `A demo has been scheduled on ${new Date(demoDate).toDateString()} at ${demoTime}.`,
       relatedClassLead: lead._id,
     });
-  } catch {}
+  } catch { }
 
   return lead;
 };
@@ -94,6 +95,53 @@ export const updateDemoStatus = async (
   topicCovered?: string,
   duration?: string
 ) => {
+  // --- RAW HEALING for "subject.0" CastError ---
+  // If the lead has corrupt subject data (e.g. stringitized array in DB), 
+  // ClassLead.findById() will fail during hydration. We fix it using raw driver first.
+  try {
+    const rawLead = await ClassLead.collection.findOne({ _id: new mongoose.Types.ObjectId(classLeadId) });
+    if (rawLead) {
+      let needsFix = false;
+      let fixedSubject = rawLead.subject;
+      
+      // Check top-level subject
+      if (Array.isArray(rawLead.subject) && rawLead.subject.some((s: any) => typeof s === 'string' && s.startsWith('['))) {
+        needsFix = true;
+        fixedSubject = await resolveSubjectIds(rawLead.subject as any, String(rawLead.board), String(rawLead.grade));
+      }
+
+      // Check studentDetails subjects if GROUP
+      let fixedStudentDetails = rawLead.studentDetails;
+      if (rawLead.studentType === 'GROUP' && Array.isArray(rawLead.studentDetails)) {
+        for (let i = 0; i < rawLead.studentDetails.length; i++) {
+          const s = rawLead.studentDetails[i];
+          if (Array.isArray(s.subject) && s.subject.some((sub: any) => typeof sub === 'string' && sub.startsWith('['))) {
+            needsFix = true;
+            fixedStudentDetails[i].subject = await resolveSubjectIds(s.subject as any, String(s.board || rawLead.board), String(s.grade || rawLead.grade));
+          }
+        }
+      }
+
+      if (needsFix) {
+        await ClassLead.collection.updateOne(
+          { _id: rawLead._id }, 
+          { 
+            $set: { 
+              subject: fixedSubject.map((id: string) => new mongoose.Types.ObjectId(id)),
+              studentDetails: fixedStudentDetails ? fixedStudentDetails.map((s: any) => ({
+                ...s,
+                subject: (s.subject && Array.isArray(s.subject)) ? s.subject.map((id: string) => new mongoose.Types.ObjectId(id)) : []
+              })) : undefined
+            } 
+          }
+        );
+      }
+    }
+  } catch (err) {
+    console.error('[DemoService] Error during raw healing:', err);
+  }
+  // ----------------------------------------------
+
   const lead = await ClassLead.findById(classLeadId);
   if (!lead) throw new ErrorResponse('Class lead not found', 404);
   if (!lead.assignedTutor || !lead.demoDetails) throw new ErrorResponse('No demo assigned to this lead', 400);
@@ -118,12 +166,12 @@ export const updateDemoStatus = async (
   // Validate that demo can only be marked after scheduled time
   if (newStatus === DEMO_STATUS.COMPLETED) {
     const isManagerOrAdmin = [USER_ROLES.MANAGER, USER_ROLES.ADMIN].includes(updatedByRole as USER_ROLES);
-    
+
     // Only enforce the time check for Tutors
     if (!isManagerOrAdmin) {
       const demoDate = (lead.demoDetails as any)?.demoDate;
       const demoTime = (lead.demoDetails as any)?.demoTime;
-      
+
       if (demoDate && demoTime) {
         const parsed = typeof demoTime === 'string' ? demoTime.split(':').map(Number) : [];
         const hours = parsed.length > 0 ? parsed[0] : NaN;
@@ -136,10 +184,11 @@ export const updateDemoStatus = async (
           const scheduledStart = new Date(d.getFullYear(), d.getMonth(), d.getDate(), hours, minutes, 0, 0);
 
           const now = new Date();
-          // Allow marking as completed after the scheduled START time
-          // This handles cases where demos end earlier than the full hour.
-          if (now < scheduledStart) {
-            throw new ErrorResponse('Demo can only be marked after the scheduled start time', 400);
+          // Allow marking as completed after the scheduled START time.
+          // We add a 6-hour buffer to account for common timezone offsets (like UTC vs IST).
+          const bufferMs = 6 * 60 * 60 * 1000;
+          if (now.getTime() + bufferMs < scheduledStart.getTime()) {
+            throw new ErrorResponse('Demo can only be marked after its scheduled start time', 400);
           }
         }
       }
@@ -170,6 +219,38 @@ export const updateDemoStatus = async (
   if (newStatus === DEMO_STATUS.REJECTED) {
     lead.status = CLASS_LEAD_STATUS.REJECTED as any;
   }
+
+  // --- MIGRATION / HOTFIX for "subject.0" CastError ---
+  // If the lead was created with stringified arrays or old data, lead.save() would fail.
+  // We sanitize the subjects here to ensure the save succeeds.
+  try {
+    if (lead.subject) {
+      const currentSubjects = Array.isArray(lead.subject) ? lead.subject.map(String) : [String(lead.subject)];
+      const resolved = await resolveSubjectIds(currentSubjects, String(lead.board), String(lead.grade));
+      if (resolved && resolved.length > 0) {
+        lead.subject = resolved as any;
+      }
+    }
+    if (lead.studentDetails && lead.studentDetails.length > 0) {
+      for (const student of lead.studentDetails) {
+        if (student.subject) {
+          const currentSubjs = Array.isArray(student.subject) ? student.subject.map(String) : [String(student.subject)];
+          const resolved = await resolveSubjectIds(
+            currentSubjs, 
+            String(student.board || lead.board), 
+            String(student.grade || lead.grade)
+          );
+          if (resolved && resolved.length > 0) {
+            student.subject = resolved as any;
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.error('[DemoService] Error sanitizing subjects before save:', err);
+  }
+  // ----------------------------------------------------
+
   await lead.save();
 
   const latestHistory = await DemoHistory.findOne({ classLead: lead._id, tutor: lead.assignedTutor })
@@ -208,7 +289,7 @@ export const updateDemoStatus = async (
       { entityType: 'Demo', entityId: String(latestHistory?._id || lead._id), entityName: lead.studentName },
       { oldStatus: currentStatus, newStatus, feedback, rejectionReason }
     );
-  } catch {}
+  } catch { }
   return lead;
 };
 
@@ -305,7 +386,7 @@ export const reassignDemo = async (
       `Reassigned demo to tutor ${newTutorUserId} for class lead ${lead.studentName}`,
       { entityType: 'Demo', entityId: String(lead._id), entityName: lead.studentName }
     );
-  } catch {}
+  } catch { }
 
   try {
     await createNotificationWithPreferences({
@@ -315,7 +396,7 @@ export const reassignDemo = async (
       message: `A demo has been scheduled on ${new Date(demoDate).toDateString()} at ${demoTime}.`,
       relatedClassLead: lead._id,
     });
-  } catch {}
+  } catch { }
 
   return lead;
 };

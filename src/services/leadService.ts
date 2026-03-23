@@ -58,14 +58,42 @@ export const generateLeadId = (
   return `L${initials}${typeChar}${modeChar}${randomChars}${randomNums}`;
 }
 
-const resolveSubjectIds = async (subjects: string[], boardStr?: string, gradeStr?: string): Promise<string[]> => {
-  if (!subjects || subjects.length === 0) return [];
+export const resolveSubjectIds = async (subjects: string | string[], boardStr?: string, gradeStr?: string): Promise<string[]> => {
+  if (!subjects) return [];
+  
+  let subjectArray: string[] = [];
+  
+  const parseSubjectStr = (s: string): string[] => {
+    const trimmed = s.trim();
+    if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+      try {
+        // Handle single quotes by replacing with double quotes for JSON.parse
+        const jsonStr = trimmed.replace(/'/g, '"');
+        const parsed = JSON.parse(jsonStr);
+        if (Array.isArray(parsed)) return parsed.map(String);
+      } catch (e) {
+        // Fallback or ignore
+      }
+    }
+    return [trimmed];
+  };
+
+  if (Array.isArray(subjects)) {
+    // Flatten in case an element is a stringified array
+    subjects.forEach(s => {
+      subjectArray.push(...parseSubjectStr(String(s)));
+    });
+  } else {
+    subjectArray = parseSubjectStr(subjects);
+  }
+
+  if (subjectArray.length === 0) return [];
   
   const validIds: string[] = [];
   const stringValues: string[] = [];
 
-  subjects.forEach(s => {
-    // strict 24 hex char check instead of mongoose.isValidObjectId which accepts any 12 char string like 'ALL_SUBJECTS'
+  subjectArray.forEach(s => {
+    // strict 24 hex char check instead of mongoose.isValidObjectId
     const is24Hex = /^[a-fA-F0-9]{24}$/.test(String(s));
     if (is24Hex) {
       validIds.push(s);

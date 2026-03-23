@@ -221,8 +221,8 @@ export const resolveS3DocumentUrl = async (val: any): Promise<any> => {
       const bucketName = S3_CONFIG.BUCKET_NAME;
 
       // Check if it matches virtual-host style or path-style S3 URLs for our bucket
-      const isOurBucket = 
-        url.hostname.includes(`${bucketName}.s3`) || 
+      const isOurBucket =
+        url.hostname.includes(`${bucketName}.s3`) ||
         url.pathname.startsWith(`/${bucketName}/`);
 
       if (isOurBucket) {
@@ -249,11 +249,8 @@ export const resolveS3DocumentUrl = async (val: any): Promise<any> => {
   }
 
   try {
-    const signedUrl = await getPresignedUrl(key);
-    console.log('[S3Service] Successfully signed key:', { key, signedUrlSnippet: signedUrl.substring(0, 100) });
-    return signedUrl;
+    return await getPresignedUrl(key);
   } catch (error: any) {
-    console.error('[S3Service] Failed to generate presigned URL, falling back to public URL:', { key, error: error.message });
     return getPublicUrlForKey(key);
   }
 };
