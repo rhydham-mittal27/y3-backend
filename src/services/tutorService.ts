@@ -4,7 +4,7 @@ import User from '../models/User';
 import Notification from '../models/Notification';
 import ErrorResponse from '../utils/errorResponse';
 import { DOCUMENT_TYPES, USER_ROLES, VERIFICATION_STATUS, MANAGER_ACTION_TYPE, TUTOR_TIER, FINAL_CLASS_STATUS, TEST_STATUS, ATTENDANCE_STATUS } from '../config/constants';
-import { uploadFileToS3Structured, deleteFileFromS3, getPresignedUrl } from '../services/s3Service';
+import { uploadFileToS3Structured, deleteFileFromS3, getPresignedUrl, resolveS3DocumentUrl } from '../services/s3Service';
 import { getS3PublicUrlForKey, S3_CONFIG } from '../config/s3';
 import { logManagerActivity } from './managerService';
 import Manager from '../models/Manager';
@@ -17,16 +17,6 @@ import DemoHistory from '../models/DemoHistory';
 import AttendanceSheet from '../models/AttendanceSheet';
 import { createNotificationWithPreferences } from './notificationService';
 import { PAYMENT_STATUS, PAYMENT_TYPE, DEMO_STATUS, VERIFICATION_FEE_AMOUNT, VERIFICATION_FEE_DEDUCT_AMOUNT } from '../config/constants';
-
-const resolveS3DocumentUrl = async (val: any): Promise<any> => {
-  if (typeof val !== 'string' || val.trim().length === 0) return val;
-  if (/^https?:\/\//i.test(val) || /^data:/i.test(val) || /^blob:/i.test(val)) return val;
-  try {
-    return await getPresignedUrl(val);
-  } catch (_e) {
-    return getS3PublicUrlForKey(val);
-  }
-};
 
 const withResolvedTutorDocumentUrls = async (tutor: any) => {
   if (!tutor) return tutor;

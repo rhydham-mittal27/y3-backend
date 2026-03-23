@@ -12,21 +12,7 @@ import dashboardService from './dashboardService';
 import { CLASS_LEAD_STATUS, MANAGER_ACTION_TYPE, PAYMENT_STATUS, USER_ROLES, VERIFICATION_STATUS } from '../config/constants';
 import { uploadFileToS3Structured } from './s3Service';
 import { getS3PublicUrlForKey, S3_CONFIG } from '../config/s3';
-import { getPresignedUrl } from './s3Service';
-
-const resolveS3DocumentUrl = async (val: any): Promise<any> => {
-  if (typeof val !== 'string' || val.trim().length === 0) return val;
-
-  // Already a URL
-  if (/^https?:\/\//i.test(val) || /^data:/i.test(val) || /^blob:/i.test(val)) return val;
-
-  // Treat as S3 key
-  try {
-    return await getPresignedUrl(val);
-  } catch (_e) {
-    return getS3PublicUrlForKey(val);
-  }
-};
+import { getPresignedUrl, uploadFileToS3Structured, resolveS3DocumentUrl } from './s3Service';
 
 const withResolvedManagerDocumentUrls = async (mgr: any) => {
   if (!mgr) return mgr;

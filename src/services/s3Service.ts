@@ -202,6 +202,60 @@ export const fileExistsInS3 = async (key: string): Promise<boolean> => {
   }
 };
 
+/**
+ * Resolves an S3 key or URL into a signed URL for secure access.
+ * If the value is already a URL from our S3 bucket, it extracts the key and signs it.
+ */
+export const resolveS3DocumentUrl = async (val: any): Promise<any> => {
+  if (typeof val !== 'string' || val.trim().length === 0) return val;
+
+  // If it's a data URL or blob, return as is
+  if (/^data:/i.test(val) || /^blob:/i.test(val)) return val;
+
+  let key = val.trim();
+
+  // If it's a full URL, attempt to extract the key if it's from our bucket
+  if (/^https?:\/\//i.test(key)) {
+    try {
+      const url = new URL(key);
+      const bucketName = S3_CONFIG.BUCKET_NAME;
+      const region = S3_CONFIG.REGION;
+
+      // Check if it matches virtual-host style or path-style S3 URLs for our bucket
+      const isOurBucket = 
+        url.hostname.includes(`${bucketName}.s3`) || 
+        url.pathname.startsWith(`/${bucketName}/`);
+
+      if (isOurBucket) {
+        if (url.hostname.startsWith(bucketName)) {
+          // Virtual-host style: bucket.s3.region.amazonaws.com/key
+          key = url.pathname.substring(1); // Remove leading slash
+        } else {
+          // Path-style or other: s3.region.amazonaws.com/bucket/key
+          const parts = url.pathname.split('/').filter(Boolean);
+          if (parts[0] === bucketName) {
+            key = parts.slice(1).join('/');
+          }
+        }
+        // Remove any query parameters (like previous signatures)
+        key = key.split('?')[0];
+      } else {
+        // Not our bucket, return as is
+        return val;
+      }
+    } catch (e) {
+      // Invalid URL, return as is
+      return val;
+    }
+  }
+
+  try {
+    return await getPresignedUrl(key);
+  } catch (_e) {
+    return getS3PublicUrlForKey(key);
+  }
+};
+
 export default {
   uploadFileToS3,
   uploadFileToS3Structured,
@@ -212,4 +266,5 @@ export default {
   generateUniqueFilename,
   buildStructuredS3Key,
   getPublicUrlForKey,
+  resolveS3DocumentUrl,
 };
