@@ -31,8 +31,8 @@ Profile photos and documents are uploading to S3 successfully, but images are no
         "AllowedOrigins": [
             "http://localhost:3000",
             "http://localhost:5000",
-            "https://yourshikshak.com",
-            "https://*.yourshikshak.com"
+            "https://yourshikshak.in",
+            "https://*.yourshikshak.in"
         ],
         "ExposeHeaders": [
             "ETag"

@@ -217,7 +217,7 @@ export const loginUser = async (email: string, password: string) => {
   let isProfileComplete = true;
   let verificationStatus: string | undefined;
   let permissions: any = undefined;
-  
+
   if (user.role === USER_ROLES.TUTOR) {
     const tutor = await Tutor.findOne({ user: user._id });
     if (tutor) {
@@ -413,7 +413,7 @@ export const sendLoginOtp = async (email: string) => {
           </div>
 
           <p style="text-align: center; margin-top: 30px; color: #666;">
-            Questions? <a href="mailto:support@yourshikshak.com" style="color: #667eea; text-decoration: none; font-weight: bold;">Contact Support</a>
+            Questions? <a href="mailto:support@yourshikshak.in" style="color: #667eea; text-decoration: none; font-weight: bold;">Contact Support</a>
           </p>
 
           <div class="footer">
@@ -526,7 +526,7 @@ export const verifyLoginOtp = async (email: string, otp: string) => {
   let isProfileComplete = true;
   let verificationStatus: string | undefined;
   let permissions: any = undefined;
-  
+
   if (user.role === USER_ROLES.TUTOR) {
     const tutor = await Tutor.findOne({ user: user._id });
     if (tutor) {
@@ -675,7 +675,7 @@ export const sendChangePasswordOtp = async (userId: string) => {
           </div>
 
           <p style="text-align: center; margin-top: 30px; color: #666;">
-            Need help? <a href="mailto:support@yourshikshak.com" style="color: #2563eb; text-decoration: none; font-weight: bold;">Contact Support</a>
+            Need help? <a href="mailto:support@yourshikshak.in" style="color: #2563eb; text-decoration: none; font-weight: bold;">Contact Support</a>
           </p>
 
           <div class="footer">

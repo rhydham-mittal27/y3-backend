@@ -178,14 +178,14 @@ export const createPublicParentLead = asyncHandler(async (req, res) => {
             </div>
 
             <div class="cta-section">
-              <a href="https://yourshikshak.com/dashboard/leads" class="cta-button">View Lead in Dashboard →</a>
+              <a href="https://yourshikshak.in/dashboard/leads" class="cta-button">View Lead in Dashboard →</a>
             </div>
 
             <p style="text-align: center; color: #666; font-size: 14px;">Time-sensitive: Act quickly to secure this lead opportunity!</p>
 
             <div class="footer">
               <p style="margin: 0;">Best regards,<br><strong>Your Shikshak Lead Management Team</strong></p>
-              <p style="margin-top: 10px;"><a href="mailto:support@yourshikshak.com">Support</a> | <a href="https://yourshikshak.com/help">Help</a></p>
+              <p style="margin-top: 10px;"><a href="mailto:support@yourshikshak.in">Support</a> | <a href="https://yourshikshak.in/help">Help</a></p>
               <p style="margin-top: 10px; font-size: 12px; color: #999;"><small>This is an automated message. Please do not reply to this email.</small></p>
             </div>
           </div>
@@ -215,7 +215,7 @@ export const getPublicLead = asyncHandler(async (req, res) => {
   // Check for 7-day expiration (Link valid for 7 days from creation)
   const expirationDate = new Date(lead.createdAt);
   expirationDate.setDate(expirationDate.getDate() + 7);
-  
+
   if (new Date() > expirationDate) {
     throw new ErrorResponse('This lead link has expired (valid for 7 days).', 410);
   }
@@ -234,36 +234,36 @@ export const getPublicLead = asyncHandler(async (req, res) => {
     leadId: lead.leadId,
     status: lead.status,
     createdAt: lead.createdAt,
-    
+
     // Student Info
     studentType: lead.studentType,
     studentName: lead.studentName, // Included as requested
     studentGender: lead.studentGender,
     numberOfStudents: lead.numberOfStudents,
     studentDetails: sanitizedStudentDetails, // Sanitized list
-    
+
     // Academic Info
     grade: lead.grade,
     subject: lead.subject,
     board: lead.board,
     mode: lead.mode,
-    
+
     // Location
     city: lead.city,
     area: lead.area,
     location: lead.location,
     // address: lead.address, // Still hiding full address for safety
-    
+
     // Timing & Duration
     timing: lead.timing,
     classesPerMonth: lead.classesPerMonth,
     classDurationHours: lead.classDurationHours,
-    
+
     // Preferences
     preferredTutorGender: lead.preferredTutorGender,
-    
+
     // Financials
-    tutorFees: lead.tutorFees, 
+    tutorFees: lead.tutorFees,
     // paymentAmount: lead.paymentAmount, // Hidden as per user request
   };
 

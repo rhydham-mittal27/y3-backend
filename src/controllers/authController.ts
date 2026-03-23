@@ -124,16 +124,16 @@ export const register = asyncHandler(async (req, res) => {
             </div>
           </div>
 
-          <a href="https://yourshikshak.com" class="cta-button" style="display: block; padding: 14px; text-align: center; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; text-decoration: none; border-radius: 25px; font-weight: bold; margin: 30px 0;">Go to Your Dashboard</a>
+          <a href="https://yourshikshak.in" class="cta-button" style="display: block; padding: 14px; text-align: center; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; text-decoration: none; border-radius: 25px; font-weight: bold; margin: 30px 0;">Go to Your Dashboard</a>
 
           <p style="text-align: center; color: #666;">If you didn't create this account or have any questions, please contact our support team immediately.</p>
 
           <div class="footer">
             <p style="margin: 0 0 10px 0;">Best regards,<br><strong>Team Your Shikshak</strong></p>
             <div class="footer-links">
-              <a href="mailto:support@yourshikshak.com">Support</a> | 
-              <a href="https://yourshikshak.com/help">Help Center</a> | 
-              <a href="https://yourshikshak.com/privacy">Privacy Policy</a>
+              <a href="mailto:support@yourshikshak.in">Support</a> | 
+              <a href="https://yourshikshak.in/help">Help Center</a> | 
+              <a href="https://yourshikshak.in/privacy">Privacy Policy</a>
             </div>
             <p style="margin-top: 15px; font-size: 12px; color: #999;"><small>This is an automated message. Please do not reply to this email.</small></p>
           </div>

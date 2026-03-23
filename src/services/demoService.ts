@@ -404,6 +404,14 @@ export const reassignDemo = async (
 export const getDemoHistory = async (classLeadId: string) => {
   const history = await DemoHistory.find({ classLead: classLeadId })
     .sort({ createdAt: -1 })
+    .populate({
+      path: 'classLead',
+      populate: {
+        path: 'subject',
+        select: '_id label value type',
+        populate: { path: 'parent', populate: { path: 'parent' } }
+      }
+    })
     .populate('tutor assignedBy resultUpdatedBy', 'name email');
   return history;
 };
@@ -424,7 +432,14 @@ export const getTutorDemoHistory = async (tutorUserId: string, page = 1, limit =
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(safeLimit)
-      .populate('classLead'),
+      .populate({
+        path: 'classLead',
+        populate: {
+          path: 'subject',
+          select: '_id label value type',
+          populate: { path: 'parent', populate: { path: 'parent' } }
+        }
+      }),
     DemoHistory.countDocuments(filter),
   ]);
   return { history, total, page: safePage, limit: safeLimit };

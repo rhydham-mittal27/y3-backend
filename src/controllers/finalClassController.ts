@@ -106,7 +106,7 @@ export const updateFinalClassDetails = asyncHandler(async (req: AuthRequest, res
         { entityType: 'FinalClass', entityId: classId, entityName: (cls as any)?.className },
         { updateData }
       );
-    } catch {}
+    } catch { }
   }
 
   return res.json(successResponse(cls, 'Final class updated successfully'));
@@ -153,9 +153,9 @@ export const renewFinalClassController = asyncHandler(async (req: AuthRequest, r
   const plan =
     typeof monthlyFeeRaw !== 'undefined' && typeof sessionsPerMonthRaw !== 'undefined'
       ? {
-          monthlyFee: Number(monthlyFeeRaw),
-          sessionsPerMonth: Number(sessionsPerMonthRaw),
-        }
+        monthlyFee: Number(monthlyFeeRaw),
+        sessionsPerMonth: Number(sessionsPerMonthRaw),
+      }
       : undefined;
 
   const result = await renewFinalClassForCoordinator({ classId, coordinatorUserId, plan });
@@ -193,7 +193,7 @@ export const createOneTimeRescheduleController = asyncHandler(async (req: AuthRe
       const flag = (coord as any).settings.attendanceControls.allowTutorReschedule;
       if (typeof flag === 'boolean') allowTutorReschedule = flag;
     }
-  } catch {}
+  } catch { }
 
   if (!allowTutorReschedule) {
     throw new ErrorResponse('Rescheduling is disabled by your coordinator', 403);
@@ -309,14 +309,14 @@ export const parentRequestRescheduleController = asyncHandler(async (req: AuthRe
             </div>
 
             <p style="text-align: center;">
-              <a href="https://yourshikshak.com/dashboard/classes" class="cta-button">View Request in Dashboard →</a>
+              <a href="https://yourshikshak.in/dashboard/classes" class="cta-button">View Request in Dashboard →</a>
             </p>
 
             <div style="background-color: #f0f9ff; padding: 15px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #3b82f6;">
               <strong style="color: #1e40af;">💡 Tip:</strong> <span style="color: #1e3a8a;">Respond to reschedule requests promptly to maintain good parent relationships and class continuity.</span>
             </div>
 
-            <p style="text-align: center; color: #666; margin-top: 25px;">Need assistance? <a href="mailto:support@yourshikshak.com" style="color: #f59e0b; text-decoration: none; font-weight: bold;">Contact Support</a></p>
+            <p style="text-align: center; color: #666; margin-top: 25px;">Need assistance? <a href="mailto:support@yourshikshak.in" style="color: #f59e0b; text-decoration: none; font-weight: bold;">Contact Support</a></p>
 
             <div class="footer">
               <p style="margin: 0;">Best regards,<br><strong>Your Shikshak Class Management Team</strong></p>

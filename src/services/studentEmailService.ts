@@ -12,7 +12,7 @@ export const sendStudentCredentialsEmail = async (data: StudentCredentialsEmailD
   const { parentEmail, studentName, className, studentId, password } = data;
 
   const subject = 'Your Student Login Credentials - Your Shikshak';
-  
+
   const html = `
     <!DOCTYPE html>
     <html>
@@ -152,7 +152,7 @@ export const sendStudentCredentialsEmail = async (data: StudentCredentialsEmailD
         <div class="footer">
           <p>Best regards,<br>
           Team Your Shikshak<br>
-          <a href="mailto:support@yourshikshak.com">support@yourshikshak.com</a></p>
+          <a href="mailto:support@yourshikshak.in">support@yourshikshak.in</a></p>
           <p><small>This is an automated message. Please do not reply to this email.</small></p>
         </div>
       </div>

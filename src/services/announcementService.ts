@@ -96,7 +96,11 @@ export const getAllAnnouncements = async (
       .sort(sort)
       .populate({
         path: 'classLead',
-        populate: { path: 'subject', select: '_id label value type' }
+        populate: {
+          path: 'subject',
+          select: '_id label value type',
+          populate: { path: 'parent', populate: { path: 'parent' } }
+        }
       })
       .populate('postedBy', 'name email role'),
     Announcement.countDocuments(query),
@@ -159,7 +163,11 @@ export const getTutorAvailableAnnouncements = async (params: {
       .sort(sort)
       .populate({
         path: 'classLead',
-        populate: { path: 'subject', select: '_id label value type' }
+        populate: {
+          path: 'subject',
+          select: '_id label value type',
+          populate: { path: 'parent', populate: { path: 'parent' } }
+        }
       })
       .populate('postedBy', 'name email role'),
     Announcement.countDocuments(query),
@@ -172,7 +180,11 @@ export const getAnnouncementById = async (announcementId: string) => {
   const announcement = await Announcement.findById(announcementId)
     .populate({
       path: 'classLead',
-      populate: { path: 'subject', select: '_id label value type' }
+      populate: {
+        path: 'subject',
+        select: '_id label value type',
+        populate: { path: 'parent', populate: { path: 'parent' } }
+      }
     })
     .populate('postedBy', 'name email role');
   if (!announcement) throw new ErrorResponse('Announcement not found', 404);
@@ -183,7 +195,11 @@ export const getAnnouncementByLeadId = async (classLeadId: string) => {
   const announcement = await Announcement.findOne({ classLead: classLeadId })
     .populate({
       path: 'classLead',
-      populate: { path: 'subject', select: '_id label value type' }
+      populate: {
+        path: 'subject',
+        select: '_id label value type',
+        populate: { path: 'parent', populate: { path: 'parent' } }
+      }
     })
     .populate('postedBy', 'name email role')
     .populate('interestedTutors.tutor', 'name email phone role');
@@ -197,12 +213,18 @@ export const getMyExpressedInterests = async (tutorUserId: string) => {
     'interestedTutors.tutor': new mongoose.Types.ObjectId(tutorUserId),
   })
     .sort({ 'interestedTutors.interestedAt': -1 })
-    .populate('classLead', 'studentName parentName grade subject board mode area city tutorFees classesPerMonth status')
-    .lean();
+    .populate({
+      path: 'classLead',
+      populate: {
+        path: 'subject',
+        select: '_id label value type',
+        populate: { path: 'parent', populate: { path: 'parent' } }
+      }
+    });
 
-  return announcements.map((ann: any) => {
+  const results = (announcements || []).map((ann: any) => {
     const myEntry = ann.interestedTutors?.find(
-      (ti: any) => String(ti.tutor) === String(tutorUserId)
+      (ti: any) => String(ti.tutor?._id || ti.tutor) === String(tutorUserId)
     );
     return {
       _id: ann._id,
@@ -213,6 +235,8 @@ export const getMyExpressedInterests = async (tutorUserId: string) => {
       notes: myEntry?.notes,
     };
   });
+
+  return results;
 };
 
 export const expressInterest = async (announcementId: string, tutorUserId: string, notes?: string) => {
@@ -240,7 +264,11 @@ export const expressInterest = async (announcementId: string, tutorUserId: strin
       { new: true }
     ).populate({
       path: 'classLead',
-      populate: { path: 'subject', select: '_id label value type' }
+      populate: {
+        path: 'subject',
+        select: '_id label value type',
+        populate: { path: 'parent', populate: { path: 'parent' } }
+      }
     }).populate('postedBy', 'name email role').populate('interestedTutors.tutor'),
     Tutor.findByIdAndUpdate(tutorDoc._id, { $inc: { interestCount: 1 } }, { new: true }),
   ]);
@@ -367,7 +395,17 @@ export const getInterestedTutors = async (announcementId: string) => {
     })
     .filter((x): x is mongoose.Types.ObjectId => !!x);
 
-  const tutors = await Tutor.find({ user: { $in: tutorUserIds } }).populate('user', 'name email phone');
+  const tutors = await Tutor.find({ user: { $in: tutorUserIds } })
+    .populate('user', 'name email phone')
+    .populate({
+      path: 'subjects',
+      populate: {
+        path: 'parent',
+        populate: {
+          path: 'parent'
+        }
+      }
+    });
   const enriched = enrichTutorData(tutors, announcement.interestedTutors, announcement.classLead);
   return enriched.sort((a, b) => (b.matchPercentage || 0) - (a.matchPercentage || 0));
 };
@@ -381,7 +419,18 @@ export const getRecommendedTutorsForLead = async (classLeadId: string) => {
     isAvailable: true,
   };
 
-  const tutors = await Tutor.find(query).limit(50).populate('user', 'name email phone');
+  const tutors = await Tutor.find(query)
+    .limit(50)
+    .populate('user', 'name email phone')
+    .populate({
+      path: 'subjects',
+      populate: {
+        path: 'parent',
+        populate: {
+          path: 'parent'
+        }
+      }
+    });
 
   // Exclude tutors who already expressed interest
   const announcement = await Announcement.findOne({ classLead: classLeadId });
