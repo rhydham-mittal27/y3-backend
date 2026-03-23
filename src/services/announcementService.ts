@@ -94,7 +94,11 @@ export const getAllAnnouncements = async (
       .skip(skip)
       .limit(limit)
       .sort(sort)
-      .populate('classLead postedBy'),
+      .populate({
+        path: 'classLead',
+        populate: { path: 'subject', select: '_id label value type' }
+      })
+      .populate('postedBy', 'name email role'),
     Announcement.countDocuments(query),
   ]);
 
@@ -153,7 +157,11 @@ export const getTutorAvailableAnnouncements = async (params: {
       .skip(skip)
       .limit(limit)
       .sort(sort)
-      .populate('classLead postedBy'),
+      .populate({
+        path: 'classLead',
+        populate: { path: 'subject', select: '_id label value type' }
+      })
+      .populate('postedBy', 'name email role'),
     Announcement.countDocuments(query),
   ]);
 
@@ -161,14 +169,23 @@ export const getTutorAvailableAnnouncements = async (params: {
 };
 
 export const getAnnouncementById = async (announcementId: string) => {
-  const announcement = await Announcement.findById(announcementId).populate('classLead postedBy');
+  const announcement = await Announcement.findById(announcementId)
+    .populate({
+      path: 'classLead',
+      populate: { path: 'subject', select: '_id label value type' }
+    })
+    .populate('postedBy', 'name email role');
   if (!announcement) throw new ErrorResponse('Announcement not found', 404);
   return announcement;
 };
 
 export const getAnnouncementByLeadId = async (classLeadId: string) => {
   const announcement = await Announcement.findOne({ classLead: classLeadId })
-    .populate('classLead postedBy')
+    .populate({
+      path: 'classLead',
+      populate: { path: 'subject', select: '_id label value type' }
+    })
+    .populate('postedBy', 'name email role')
     .populate('interestedTutors.tutor', 'name email phone role');
   if (!announcement) throw new ErrorResponse('Announcement not found', 404);
   return announcement;
@@ -221,7 +238,10 @@ export const expressInterest = async (announcementId: string, tutorUserId: strin
         },
       },
       { new: true }
-    ).populate('classLead postedBy interestedTutors.tutor'),
+    ).populate({
+      path: 'classLead',
+      populate: { path: 'subject', select: '_id label value type' }
+    }).populate('postedBy', 'name email role').populate('interestedTutors.tutor'),
     Tutor.findByIdAndUpdate(tutorDoc._id, { $inc: { interestCount: 1 } }, { new: true }),
   ]);
 

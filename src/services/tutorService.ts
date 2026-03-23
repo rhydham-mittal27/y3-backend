@@ -167,7 +167,7 @@ export const getAllTutors = async (
       .populate([
         { path: 'user', select: 'name email phone role gender city preferredMode' },
         { path: 'verifiedBy', select: 'name email phone role' },
-        { path: 'subjects', select: 'label value type' },
+        { path: 'subjects', populate: { path: 'parent', populate: { path: 'parent' } } },
       ]),
     Tutor.countDocuments(query),
   ]);
@@ -183,7 +183,7 @@ export const getTutorById = async (tutorIdOrTeacherId: string) => {
     tutor = await Tutor.findById(tutorIdOrTeacherId).populate([
       { path: 'user', select: '_id name email phone role gender city preferredMode' },
       { path: 'verifiedBy', select: '_id name email phone role' },
-      { path: 'subjects', select: '_id label value type' },
+      { path: 'subjects', populate: { path: 'parent', populate: { path: 'parent' } } },
     ]);
 
     // If not found, also allow treating the value as a User _id
@@ -191,7 +191,7 @@ export const getTutorById = async (tutorIdOrTeacherId: string) => {
       tutor = await Tutor.findOne({ user: new mongoose.Types.ObjectId(tutorIdOrTeacherId) }).populate([
         { path: 'user', select: 'name email phone role gender city preferredMode' },
         { path: 'verifiedBy', select: 'name email phone role' },
-        { path: 'subjects', select: '_id label value type' },
+        { path: 'subjects', populate: { path: 'parent', populate: { path: 'parent' } } },
       ]);
     }
   }
@@ -201,7 +201,7 @@ export const getTutorById = async (tutorIdOrTeacherId: string) => {
     tutor = await Tutor.findOne({ teacherId: tutorIdOrTeacherId }).populate([
       { path: 'user', select: 'name email phone role gender city preferredMode' },
       { path: 'verifiedBy', select: 'name email phone role' },
-      { path: 'subjects', select: '_id label value type' },
+      { path: 'subjects', populate: { path: 'parent', populate: { path: 'parent' } } },
     ]);
   }
 
@@ -213,7 +213,7 @@ export const getTutorByUserId = async (userId: string) => {
   const tutor = await Tutor.findOne({ user: userId }).populate([
     { path: 'user', select: 'name email phone role gender city preferredMode' },
     { path: 'verifiedBy', select: 'name email phone role' },
-    { path: 'subjects', select: '_id label value type' },
+    { path: 'subjects', populate: { path: 'parent', populate: { path: 'parent' } } },
   ]);
   if (!tutor) throw new ErrorResponse('Tutor not found', 404);
 
@@ -383,7 +383,7 @@ export const updateTutorProfile = async (
   await tutor.populate([
     { path: 'user', select: 'name email phone role gender city preferredMode' },
     { path: 'verifiedBy', select: 'name email phone role' },
-    { path: 'subjects', select: 'label value type' },
+    { path: 'subjects', populate: { path: 'parent', populate: { path: 'parent' } } },
   ]);
   return await withResolvedTutorDocumentUrls(tutor);
 };
@@ -1482,12 +1482,26 @@ export const updateTutorExperienceAndTier = async (tutorUserId: string | mongoos
 };
 
 export const getDistinctSubjects = async () => {
-  const subjects = await Tutor.distinct('subjects');
-  // Clean up and sort
-  const uniqueSubjects = Array.from(new Set(subjects.flat()))
-    .filter(Boolean)
-    .sort();
-  return uniqueSubjects;
+  const Option = mongoose.model('Option');
+  const subjects = await Option.find({ type: 'SUBJECT' }).populate({
+    path: 'parent',
+    populate: { path: 'parent' }
+  }).lean();
+
+  const formattedSubjects = subjects.map((s: any) => {
+    const parts = [];
+    let current = s;
+    while (current) {
+      parts.unshift(current.label);
+      current = current.parent;
+    }
+    return {
+      _id: s._id,
+      label: parts.join(' . ')
+    };
+  });
+
+  return formattedSubjects.sort((a, b) => a.label.localeCompare(b.label));
 };
 
 export const getDistinctVerifiers = async () => {

@@ -58,7 +58,49 @@ export const generateLeadId = (
   return `L${initials}${typeChar}${modeChar}${randomChars}${randomNums}`;
 }
 
- export const createClassLead = async (params: {
+const resolveSubjectIds = async (subjects: string[], boardStr?: string, gradeStr?: string): Promise<string[]> => {
+  if (!subjects || subjects.length === 0) return [];
+  
+  const validIds: string[] = [];
+  const stringValues: string[] = [];
+
+  subjects.forEach(s => {
+    // strict 24 hex char check instead of mongoose.isValidObjectId which accepts any 12 char string like 'ALL_SUBJECTS'
+    const is24Hex = /^[a-fA-F0-9]{24}$/.test(String(s));
+    if (is24Hex) {
+      validIds.push(s);
+    } else {
+      stringValues.push(s);
+    }
+  });
+
+  if (stringValues.length === 0) return validIds;
+
+  let query: any = {
+    type: 'SUBJECT',
+    $or: [
+      { value: { $in: stringValues } },
+      { label: { $in: stringValues } }
+    ]
+  };
+
+  if (boardStr && gradeStr) {
+    const boardOpt = await Option.findOne({ type: 'BOARD', value: boardStr });
+    if (boardOpt) {
+      const gradeOpt = await Option.findOne({ type: 'GRADE', value: gradeStr, parent: boardOpt._id });
+      if (gradeOpt) {
+        query.parent = gradeOpt._id;
+      }
+    }
+  }
+
+  const options = await Option.find(query).select('_id');
+
+  const resolvedIds = options.map(o => String(o._id));
+  return [...validIds, ...resolvedIds];
+};
+
+export const createClassLead = async (params: {
   studentType: 'SINGLE' | 'GROUP';
   studentName?: string;
   studentGender?: 'M' | 'F';
@@ -101,6 +143,18 @@ export const generateLeadId = (
 }) => {
   const { createdBy, ...rest } = params;
 
+  if (rest.subject) {
+    rest.subject = await resolveSubjectIds(rest.subject, String(rest.board), String(rest.grade));
+  }
+
+  // Pre-resolve studentDetails subjects for ClassLead validation so we don't pass raw strings to mongoose
+  if (rest.studentDetails) {
+    rest.studentDetails = await Promise.all(rest.studentDetails.map(async (s: any) => ({
+      ...s,
+      subject: s.subject ? await resolveSubjectIds(s.subject, String(s.board || params.board), String(s.grade || params.grade)) : []
+    })));
+  }
+
   // Generate unique ID with retry
   let leadId = '';
   let unique = false;
@@ -135,18 +189,18 @@ export const generateLeadId = (
         createdBy: new mongoose.Types.ObjectId(createdBy),
         // tutor will be assigned when lead is converted to final class
         classLead: lead._id,
-        students: params.studentDetails.map(s => ({
+        students: await Promise.all(params.studentDetails.map(async s => ({
           name: s.name,
           gender: s.gender,
           fees: s.fees,
           tutorFees: s.tutorFees,
           board: s.board,
           grade: s.grade,
-          subject: s.subject,
+          subject: s.subject ? await resolveSubjectIds(s.subject, String(s.board || params.board), String(s.grade || params.grade)) : [],
           parentName: s.parentName,
           parentEmail: s.parentEmail,
           parentPhone: s.parentPhone,
-        })),
+        }))),
         grade: params.grade,
         board: params.board,
         schedule: {
@@ -228,7 +282,7 @@ export const getAllClassLeads = async (args: {
   if (parentName) query.parentName = { $regex: parentName, $options: 'i' };
   if (grade) query.grade = { $regex: grade, $options: 'i' };
   if (subject) {
-    if (mongoose.isValidObjectId(subject)) {
+    if (/^[a-fA-F0-9]{24}$/.test(String(subject))) {
       query.subject = subject;
     } else {
       query.subject = { $regex: subject, $options: 'i' }; // Fallback for migration/old data
@@ -327,6 +381,25 @@ export const updateClassLead = async (
   const lead = await ClassLead.findById(leadId).select('+internalNotes').populate('groupClass');
   if (!lead) {
     throw new ErrorResponse('Class lead not found', 404);
+  }
+
+  if (updateData.subject) {
+    updateData.subject = await resolveSubjectIds(
+      updateData.subject, 
+      String(updateData.board || lead.board), 
+      String(updateData.grade || lead.grade)
+    );
+  }
+
+  if (updateData.studentDetails) {
+    updateData.studentDetails = await Promise.all(updateData.studentDetails.map(async s => ({
+      ...s,
+      subject: s.subject ? await resolveSubjectIds(
+        s.subject, 
+        String(s.board || lead.board), 
+        String(s.grade || lead.grade)
+      ) : s.subject
+    })));
   }
 
   // Update associated Groupleads if studentDetails is provided for a group lead
