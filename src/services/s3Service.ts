@@ -249,8 +249,11 @@ export const resolveS3DocumentUrl = async (val: any): Promise<any> => {
   }
 
   try {
-    return await getPresignedUrl(key);
-  } catch (_e) {
+    const signedUrl = await getPresignedUrl(key);
+    console.log('[S3Service] Successfully signed key:', { key, signedUrlSnippet: signedUrl.substring(0, 100) });
+    return signedUrl;
+  } catch (error: any) {
+    console.error('[S3Service] Failed to generate presigned URL, falling back to public URL:', { key, error: error.message });
     return getPublicUrlForKey(key);
   }
 };
