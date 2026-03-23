@@ -843,14 +843,15 @@ export const getCRMLeadsGrouped = async (createdByIds?: string[]) => {
     interested: [],
     demoScheduled: [],
     demoPending: [],
-    won: []
+    won: [],
+    others: []
   };
 
   leads.forEach(lead => {
     const status = lead.status;
     const interests = lead.interestCount || 0;
 
-    if (status === CLASS_LEAD_STATUS.NEW) {
+    if (status === CLASS_LEAD_STATUS.NEW || status === CLASS_LEAD_STATUS.ENQUIRY) {
       groups.new.push(lead);
     } else if (status === CLASS_LEAD_STATUS.ANNOUNCED) {
       if (interests > 0) {
@@ -860,10 +861,12 @@ export const getCRMLeadsGrouped = async (createdByIds?: string[]) => {
       }
     } else if (status === CLASS_LEAD_STATUS.DEMO_SCHEDULED) {
       groups.demoScheduled.push(lead);
-    } else if (status === CLASS_LEAD_STATUS.DEMO_COMPLETED) {
+    } else if (status === CLASS_LEAD_STATUS.DEMO_COMPLETED || status === CLASS_LEAD_STATUS.DEMO_APPROVED_BY_PARENT) {
       groups.demoPending.push(lead);
     } else if (status === CLASS_LEAD_STATUS.CONVERTED || status === CLASS_LEAD_STATUS.PAYMENT_RECEIVED) {
       groups.won.push(lead);
+    } else {
+      groups.others.push(lead);
     }
   });
 
