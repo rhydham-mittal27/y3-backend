@@ -74,6 +74,7 @@ export const createTutorProfile = async (
   await tutor.populate([
     { path: 'user', select: 'name email role phone gender city preferredMode' },
     { path: 'verifiedBy', select: 'name email role phone' },
+    { path: 'subjects', populate: { path: 'parent', populate: { path: 'parent' } } },
   ]);
   return tutor;
 };
@@ -283,6 +284,7 @@ export const getTutorByUserId = async (userId: string) => {
 export const getPublicTutorProfile = async (teacherId: string) => {
   const tutor = await Tutor.findOne({ teacherId }).populate([
     { path: 'user', select: 'name' },
+    { path: 'subjects', populate: { path: 'parent', populate: { path: 'parent' } } },
   ]);
 
   if (!tutor) throw new ErrorResponse('Tutor not found', 404);
@@ -392,7 +394,10 @@ export const getMyProfileForEdit = async (userId: string) => {
   const user = await User.findById(userId);
   if (!user) throw new ErrorResponse('User not found', 404);
 
-  const tutor = await Tutor.findOne({ user: userId }).populate('subjects');
+  const tutor = await Tutor.findOne({ user: userId }).populate({
+    path: 'subjects',
+    populate: { path: 'parent', populate: { path: 'parent' } }
+  });
 
   // Extract city and areas from preferredLocations
   let city = '';
@@ -584,6 +589,7 @@ export const updateMyProfile = async (userId: string, updateData: {
   await tutor.populate([
     { path: 'user', select: 'name email phone dob role gender city preferredMode' },
     { path: 'verifiedBy', select: 'name email phone role' },
+    { path: 'subjects', populate: { path: 'parent', populate: { path: 'parent' } } },
   ]);
 
   return await withResolvedTutorDocumentUrls(tutor);
@@ -847,7 +853,7 @@ export const updateVerificationStatus = async (
   await tutor.populate([
     { path: 'user', select: 'name email phone role gender city preferredMode' },
     { path: 'verifiedBy', select: 'name email phone role' },
-    { path: 'subjects', select: 'label value type' },
+    { path: 'subjects', populate: { path: 'parent', populate: { path: 'parent' } } },
   ]);
 
   try {
@@ -883,7 +889,7 @@ export const getTutorsByVerificationStatus = async (
       .populate([
         { path: 'user', select: 'name email phone role gender city preferredMode' },
         { path: 'verifiedBy', select: 'name email phone role' },
-        { path: 'subjects', select: 'label value type' },
+        { path: 'subjects', populate: { path: 'parent', populate: { path: 'parent' } } },
       ]),
     Tutor.countDocuments(query),
   ]);
@@ -984,7 +990,7 @@ export const getTutorsForVerification = async () => {
     .sort({ updatedAt: 1 })
     .populate([
       { path: 'user', select: 'name email phone role gender city preferredMode' },
-      { path: 'subjects', select: 'label value type' },
+      { path: 'subjects', populate: { path: 'parent', populate: { path: 'parent' } } },
     ]);
 
   return tutors;
