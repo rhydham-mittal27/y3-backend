@@ -12,8 +12,8 @@ import Test from '../models/Test';
 import CoordinatorActivityLog from '../models/CoordinatorActivityLog';
 import { getPendingApprovalsForCoordinator } from './attendanceService';
 import { DOCUMENT_TYPES } from '../config/constants';
-import { uploadFileToS3Structured, getPresignedUrl, deleteFileFromS3, resolveS3DocumentUrl } from './s3Service';
-import { getS3PublicUrlForKey, S3_CONFIG } from '../config/s3';
+import { S3_CONFIG } from '../config/s3';
+import { uploadFileToS3Structured, resolveS3DocumentUrl, deleteFileFromS3 } from './s3Service';
 
 const withResolvedCoordinatorDocumentUrls = async (coordinator: any) => {
   if (!coordinator) return coordinator;

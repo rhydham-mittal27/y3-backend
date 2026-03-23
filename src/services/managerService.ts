@@ -10,9 +10,8 @@ import Tutor from '../models/Tutor';
 import ErrorResponse from '../utils/errorResponse';
 import dashboardService from './dashboardService';
 import { CLASS_LEAD_STATUS, MANAGER_ACTION_TYPE, PAYMENT_STATUS, USER_ROLES, VERIFICATION_STATUS } from '../config/constants';
-import { uploadFileToS3Structured } from './s3Service';
-import { getS3PublicUrlForKey, S3_CONFIG } from '../config/s3';
-import { getPresignedUrl, uploadFileToS3Structured, resolveS3DocumentUrl } from './s3Service';
+import { S3_CONFIG } from '../config/s3';
+import { uploadFileToS3Structured, resolveS3DocumentUrl } from './s3Service';
 
 const withResolvedManagerDocumentUrls = async (mgr: any) => {
   if (!mgr) return mgr;

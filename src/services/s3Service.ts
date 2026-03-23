@@ -219,7 +219,6 @@ export const resolveS3DocumentUrl = async (val: any): Promise<any> => {
     try {
       const url = new URL(key);
       const bucketName = S3_CONFIG.BUCKET_NAME;
-      const region = S3_CONFIG.REGION;
 
       // Check if it matches virtual-host style or path-style S3 URLs for our bucket
       const isOurBucket = 
@@ -252,7 +251,7 @@ export const resolveS3DocumentUrl = async (val: any): Promise<any> => {
   try {
     return await getPresignedUrl(key);
   } catch (_e) {
-    return getS3PublicUrlForKey(key);
+    return getPublicUrlForKey(key);
   }
 };
 
