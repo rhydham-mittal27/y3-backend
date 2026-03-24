@@ -3,7 +3,6 @@ import mongoose from 'mongoose';
 import dotenv from 'dotenv';
 import path from 'path';
 import Tutor from '../models/Tutor';
-import User from '../models/User';
 import Option from '../models/Option';
 import { generateTeacherIdWithCityCode } from '../utils/generateTeacherId';
 
@@ -62,7 +61,7 @@ const backfill = async () => {
             ]
           });
 
-          if (cityOption && cityOption.metadata && cityOption.metadata.cityCode) {
+          if (cityOption && cityOption.metadata && typeof cityOption.metadata.cityCode === 'string') {
             cityCode = cityOption.metadata.cityCode;
             cityCodeCache.set(cityName.toUpperCase(), cityCode);
           } else {

@@ -3,8 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import mongoose from 'mongoose';
 import User from '../models/User';
-import ClassLead, { IClassLeadDocument } from '../models/ClassLead';
-import { CLASS_LEAD_STATUS, TEACHING_MODE, PREFERRED_TUTOR_GENDER, LEAD_SOURCE } from '../config/constants';
+import ClassLead from '../models/ClassLead';
 
 const uri = process.env.MONGODB_URI || process.env.DATABASE_URL || '';
 

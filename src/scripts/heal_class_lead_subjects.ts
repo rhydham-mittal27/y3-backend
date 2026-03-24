@@ -1,7 +1,7 @@
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
 import ClassLead from '../models/ClassLead';
-import { Option } from '../models/Option';
+import Option from '../models/Option';
 
 dotenv.config();
 
