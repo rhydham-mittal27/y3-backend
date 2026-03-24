@@ -347,12 +347,13 @@ export const getPublicTutorProfile = async (teacherId: string) => {
     preferredLocations: tutor.preferredLocations,
     preferredCities: tutor.preferredCities,
     tier: tutor.tier,
-    documents: (tutor.documents || []).filter(d => d.documentType === 'PROFILE_PHOTO'),
-    createdAt: tutor.createdAt,
-    approvalRatio: tutor.approvalRatio,
     bio: tutor.bio,
     languagesKnown: tutor.languagesKnown,
     skills: tutor.skills,
+    yearsOfExperience: tutor.yearsOfExperience,
+    documents: (tutor.documents || []).filter(d => d.documentType === 'PROFILE_PHOTO'),
+    createdAt: tutor.createdAt,
+    approvalRatio: tutor.approvalRatio,
   };
 };
 
