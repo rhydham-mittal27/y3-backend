@@ -722,7 +722,7 @@ export const getDistinctFilterValues = async () => {
   // For now, let's return simple values for existing fields to maintain compatibility,
   // and full objects for new ones if we want labels.
   // Actually, existing frontend expects string[].
-  const getValues = (type: string) => optionsMap[type]?.map(o => o.value) || [];
+  const getValues = (type: string) => Array.from(new Set(optionsMap[type]?.map(o => o.value) || []));
 
   // Clean distinct list for areas
   const areas = areaList.filter(Boolean).sort();
@@ -771,10 +771,16 @@ export const getDistinctFilterValues = async () => {
   };
 };
 
-export const getCRMLeadsGrouped = async (createdByIds?: string[]) => {
+export const getCRMLeadsGrouped = async (createdByIds?: string | string[]) => {
   const match: any = {};
-  if (createdByIds && createdByIds.length > 0) {
-    match.createdBy = { $in: createdByIds.map(id => new mongoose.Types.ObjectId(id)) };
+  
+  // Robust array normalization
+  const ids = Array.isArray(createdByIds) 
+    ? createdByIds 
+    : (createdByIds ? [createdByIds] : []);
+
+  if (ids.length > 0) {
+    match.createdBy = { $in: ids.map(id => new mongoose.Types.ObjectId(id)) };
   }
 
   // Define CRM statuses and their logic

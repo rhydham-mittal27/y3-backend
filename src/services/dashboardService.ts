@@ -743,7 +743,7 @@ export const getOverallStatistics = async (fromDate?: Date, toDate?: Date, city?
   ]);
 
   // CRM KPI Metrics
-  const crmGroups = await require('../services/leadService').getCRMLeadsGrouped(managerId);
+  const crmGroups = await require('./leadService').getCRMLeadsGrouped(managerId ? [managerId] : undefined);
   const crmCounts = {
     new: crmGroups.new.length,
     announced: crmGroups.announced.length,
