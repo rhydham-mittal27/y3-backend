@@ -206,7 +206,9 @@ export const createPublicParentLead = asyncHandler(async (req, res) => {
 export const getPublicLead = asyncHandler(async (req, res) => {
   const { id } = req.params;
 
-  const lead = await import('../models/ClassLead').then(mod => mod.default.findById(id));
+  const lead = await import('../models/ClassLead').then(mod => 
+    mod.default.findById(id).populate('subject')
+  );
 
   if (!lead) {
     throw new ErrorResponse('Lead not found', 404);

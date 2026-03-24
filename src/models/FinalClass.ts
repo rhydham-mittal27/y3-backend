@@ -34,7 +34,7 @@ export interface IFinalClassDocument extends Document {
   studentName: string;
   studentGender?: 'M' | 'F';
   studentId?: string;
-  subject: string[];
+  subject: mongoose.Types.ObjectId[];
   grade: string;
   board: string;
   mode: string;
@@ -76,7 +76,7 @@ const FinalClassSchema: Schema<IFinalClassDocument> = new Schema<IFinalClassDocu
     studentName: { type: String, required: true },
     studentGender: { type: String, enum: ['M', 'F'] },
     studentId: { type: String, unique: true, sparse: true },
-    subject: { type: [String], required: true },
+    subject: { type: [{ type: Schema.Types.ObjectId, ref: 'Option' }], required: true },
     grade: { type: String, required: true },
     board: { type: String, required: true },
     mode: { type: String, required: true },
