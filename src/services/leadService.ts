@@ -754,7 +754,7 @@ export const getDistinctFilterValues = async () => {
 
   return {
     grades: getValues('GRADE'),
-    subjects: getValues('SUBJECT'),
+    subjects: Array.from(new Set(optionsMap['SUBJECT']?.map(o => o.label) || [])).sort(),
     boards: getValues('BOARD'),
     modes: getValues('TEACHING_MODE'),
     sources: getValues('LEAD_SOURCE'),

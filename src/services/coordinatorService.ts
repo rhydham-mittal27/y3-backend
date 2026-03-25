@@ -490,7 +490,9 @@ export const getCoordinatorTodaysTasks = async (coordinatorUserId: string) => {
   const activeClasses = await FinalClass.find({
     coordinator: new mongoose.Types.ObjectId(coordinatorUserId),
     status: FINAL_CLASS_STATUS.ACTIVE,
-  }).select('_id className subject grade testPerMonth');
+  })
+    .select('_id className subject grade testPerMonth')
+    .populate('subject', 'label value type');
 
   const classIds = activeClasses.map((c) => c._id);
 
@@ -527,7 +529,9 @@ export const getCoordinatorTodaysTasks = async (coordinatorUserId: string) => {
     .map((cls: any) => ({
       finalClassId: cls._id,
       className: cls.className,
-      subject: cls.subject,
+      subject: Array.isArray(cls.subject) 
+        ? cls.subject.map((s: any) => typeof s === 'object' ? s.label : String(s)).join(', ')
+        : (typeof cls.subject === 'object' && cls.subject !== null ? (cls.subject as any).label : String(cls.subject || '')),
       grade: cls.grade,
       testPerMonth: typeof cls.testPerMonth === 'number' ? cls.testPerMonth : 1,
       testsScheduledThisMonth: testsPerClass[String(cls._id)] || 0,
@@ -576,6 +580,7 @@ export const getAssignedClassesSummary = async (
         { path: 'coordinator', select: 'name email phone' },
         { path: 'parent', select: 'name email phone' },
         { path: 'convertedBy', select: 'name email role' },
+        { path: 'subject', select: 'label value type' },
       ]),
     FinalClass.countDocuments(baseQuery),
   ]);
