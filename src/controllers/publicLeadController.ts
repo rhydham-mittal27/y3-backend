@@ -227,14 +227,17 @@ export const getPublicLead = asyncHandler(async (req, res) => {
       populate: { path: 'parent', populate: { path: 'parent' } }
     });
 
-    // MANUAL FALLBACK: If subjects are still just IDs (strings), fetch them manually
-    // This is a "safety net" for environments like VPS where Mongoose populate might fail
-    if (lead.subject && lead.subject.length > 0 && typeof lead.subject[0] === 'string') {
-      const subjectOptions = await Option.find({ _id: { $in: lead.subject } })
+    // AGGRESSIVE FALLBACK: Check if we still have IDs instead of objects
+    const firstSubj = Array.isArray(lead.subject) ? lead.subject[0] : null;
+    const isUnpopulated = firstSubj && (typeof firstSubj === 'string' || mongoose.Types.ObjectId.isValid(firstSubj)) && !(firstSubj as any).label;
+
+    if (isUnpopulated) {
+      const subjectIds = lead.subject.map((s: any) => (s._id || s));
+      const subjectOptions = await Option.find({ _id: { $in: subjectIds } })
         .populate({ path: 'parent', populate: { path: 'parent' } });
       
       if (subjectOptions.length > 0) {
-        // Replace the IDs with the full objects manually
+        // Force the lead object to use these populated subjects
         (lead as any).subject = subjectOptions;
       }
     }
