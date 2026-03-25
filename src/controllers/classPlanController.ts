@@ -11,7 +11,7 @@ import { isValidObjectId } from 'mongoose';
  */
 export const createOrUpdatePlan = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { classId, monthlyFee, sessionsPerMonth, status } = req.body;
+    const { classId, monthlyFee, sessionsPerMonth, tutorMonthlyFee, status } = req.body;
 
     if (!classId || !isValidObjectId(classId)) {
       throw new ErrorResponse('Invalid or missing Class ID', 400);
@@ -39,8 +39,9 @@ export const createOrUpdatePlan = async (req: Request, res: Response, next: Next
       parentId: finalClass.parent,
       currentTutorId: finalClass.tutor,
       monthlyFee,
+      tutorMonthlyFee: tutorMonthlyFee || 0,
       sessionsPerMonth,
-      // perSessionFee is calculated in pre-save hook
+      // perSessionFee and tutorPerSessionFee are calculated in pre-save hook
       status: status || 'ACTIVE',
     });
 
@@ -49,7 +50,9 @@ export const createOrUpdatePlan = async (req: Request, res: Response, next: Next
     // The requirement says "Parents always pay full monthly plan", "No partial purchase".
     // We might want to sync this back to FinalClass if it has similar fields (it has monthlyFees).
     finalClass.monthlyFees = monthlyFee;
-    finalClass.ratePerSession = monthlyFee / sessionsPerMonth; // Update derived rate
+    finalClass.ratePerSession = monthlyFee / sessionsPerMonth;
+    finalClass.tutorMonthlyFees = tutorMonthlyFee || 0;
+    finalClass.tutorRatePerSession = (tutorMonthlyFee || 0) / sessionsPerMonth;
     finalClass.classesPerMonth = sessionsPerMonth;
     await finalClass.save();
 
@@ -78,8 +81,42 @@ export const getPlanByClassId = async (req: Request, res: Response, next: NextFu
     const plan = await ClassPlan.findOne({ classId, status: 'ACTIVE' }).sort({ createdAt: -1 });
 
     if (!plan) {
-      // If no plan, return empty or specific message? 
-      // User might want to know if they need to create one.
+      // If no plan exists for this class, fetch the FinalClass (with lead) to provide current fees as defaults
+      const finalClass = await FinalClass.findById(classId).populate('classLead');
+      
+      if (finalClass) {
+        const lead = finalClass.classLead as any;
+        
+        // Final fallback chain:
+        // 1. Explicit monthly fees in FinalClass
+        // 2. Calculated from rates in FinalClass
+        // 3. Original amounts from Lead
+        const sessionsPerMonth = finalClass.classesPerMonth || (lead ? lead.classesPerMonth : 8) || 8;
+        
+        const monthlyFee = finalClass.monthlyFees || 
+                          ((finalClass.ratePerSession || 0) * sessionsPerMonth) || 
+                          (lead ? lead.paymentAmount : 0) || 0;
+                          
+        const tutorMonthlyFee = finalClass.tutorMonthlyFees || 
+                               ((finalClass.tutorRatePerSession || 0) * sessionsPerMonth) || 
+                               (lead ? lead.tutorFees : 0) || 0;
+
+        res.status(200).json({
+          success: true,
+          data: {
+            classId,
+            monthlyFee,
+            tutorMonthlyFee,
+            sessionsPerMonth,
+            perSessionFee: sessionsPerMonth > 0 ? monthlyFee / sessionsPerMonth : 0,
+            tutorPerSessionFee: sessionsPerMonth > 0 ? tutorMonthlyFee / sessionsPerMonth : 0,
+            status: 'ACTIVE',
+            isInitial: true // Optional flag for frontend
+          }
+        });
+        return;
+      }
+
       res.status(200).json({ success: true, data: null });
       return;
     }
@@ -88,6 +125,7 @@ export const getPlanByClassId = async (req: Request, res: Response, next: NextFu
       success: true,
       data: plan,
     });
+    return;
   } catch (error) {
     next(error);
   }
@@ -118,15 +156,17 @@ export const updatePlan = async (req: Request, res: Response, next: NextFunction
     // Better to handle calculation explicitly if needed, or rely on client to send complete data?
     // Actually, for consistency, if monthlyFee or sessionsPerMonth changed, we should recalc perSessionFee.
     
-    if (updateData.monthlyFee !== undefined && updateData.sessionsPerMonth !== undefined) {
-         plan.perSessionFee = updateData.monthlyFee / updateData.sessionsPerMonth;
-         await plan.save();
-    } else if (updateData.monthlyFee !== undefined) {
-         plan.perSessionFee = updateData.monthlyFee / plan.sessionsPerMonth;
-         await plan.save();
-    } else if (updateData.sessionsPerMonth !== undefined) {
-         plan.perSessionFee = plan.monthlyFee / updateData.sessionsPerMonth;
-         await plan.save();
+    // Pre-validate hook in model handles calculations of perSessionFee and tutorPerSessionFee
+    // We just need to ensure save() is called if we changed any relevant fields
+    const needsRecalc = 
+      updateData.monthlyFee !== undefined || 
+      updateData.tutorMonthlyFee !== undefined || 
+      updateData.sessionsPerMonth !== undefined;
+    
+    if (needsRecalc) {
+      // Data is already applied to plan via findByIdAndUpdate with {new: true}
+      // But findByIdAndUpdate skip hooks, so we call save() explicitly
+      await plan.save();
     }
 
      // Sync back to class if it's the active plan
@@ -135,6 +175,8 @@ export const updatePlan = async (req: Request, res: Response, next: NextFunction
         if (finalClass) {
             finalClass.monthlyFees = plan.monthlyFee;
             finalClass.ratePerSession = plan.perSessionFee;
+            finalClass.tutorMonthlyFees = plan.tutorMonthlyFee;
+            finalClass.tutorRatePerSession = plan.tutorPerSessionFee;
             finalClass.classesPerMonth = plan.sessionsPerMonth;
             await finalClass.save();
         }
