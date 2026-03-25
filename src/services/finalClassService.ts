@@ -399,7 +399,7 @@ export const convertLeadToFinalClass = async (params: {
       { path: 'coordinator', select: 'name email phone' },
       { path: 'parent', select: 'name email phone' },
       { path: 'convertedBy', select: 'name email role' },
-      { path: 'subject', select: 'label value type' },
+      { path: 'subject', populate: { path: 'parent', populate: { path: 'parent' } } },
     ]);
     try {
       await Manager.findOneAndUpdate({ user: new mongoose.Types.ObjectId(convertedBy) }, { $inc: { classesConverted: 1 } });
@@ -478,7 +478,7 @@ export const getAllFinalClasses = async (args: {
         { path: 'coordinator', select: 'name email phone' },
         { path: 'parent', select: 'name email phone' },
         { path: 'convertedBy', select: 'name email role' },
-        { path: 'subject', select: 'label value type' },
+        { path: 'subject', populate: { path: 'parent', populate: { path: 'parent' } } },
       ]),
     FinalClass.countDocuments(query),
   ]);
@@ -493,7 +493,7 @@ export const getFinalClassById = async (classId: string) => {
     { path: 'coordinator', select: 'name email phone' },
     { path: 'parent', select: 'name email phone' },
     { path: 'convertedBy', select: 'name email role' },
-    { path: 'subject', select: 'label value type' },
+    { path: 'subject', populate: { path: 'parent', populate: { path: 'parent' } } },
   ]);
   if (!cls) throw new ErrorResponse('Final class not found', 404);
   return cls;
@@ -547,7 +547,7 @@ export const renewFinalClassForCoordinator = async (params: {
     { path: 'coordinator', select: 'name email phone' },
     { path: 'parent', select: 'name email phone' },
     { path: 'convertedBy', select: 'name email role' },
-    { path: 'subject', select: 'label value type' },
+    { path: 'subject', populate: { path: 'parent', populate: { path: 'parent' } } },
   ]);
 
   return { cls, payments, cycle };
@@ -648,7 +648,7 @@ export const updateFinalClass = async (
     { path: 'coordinator', select: 'name email phone' },
     { path: 'parent', select: 'name email phone' },
     { path: 'convertedBy', select: 'name email role' },
-    { path: 'subject', select: 'label value type' },
+    { path: 'subject', populate: { path: 'parent', populate: { path: 'parent' } } },
   ]);
   return cls;
 };
@@ -707,7 +707,7 @@ export const updateFinalClassStatus = async (
       { path: 'coordinator', select: 'name email phone' },
       { path: 'parent', select: 'name email phone' },
       { path: 'convertedBy', select: 'name email role' },
-      { path: 'subject', select: 'label value type' },
+      { path: 'subject', populate: { path: 'parent', populate: { path: 'parent' } } },
     ]);
 
     return cls;
@@ -737,7 +737,7 @@ export const updateSessionProgress = async (classId: string, completedSessions: 
     { path: 'coordinator', select: 'name email phone' },
     { path: 'parent', select: 'name email phone' },
     { path: 'convertedBy', select: 'name email role' },
-    { path: 'subject', select: 'label value type' },
+    { path: 'subject', populate: { path: 'parent', populate: { path: 'parent' } } },
   ]);
   return cls;
 };
@@ -841,7 +841,7 @@ export const getClassesByTutor = async (tutorUserId: string, status?: FINAL_CLAS
     { path: 'coordinator', select: 'name email phone' },
     { path: 'parent', select: 'name email phone' },
     { path: 'convertedBy', select: 'name email role' },
-    { path: 'subject', select: 'label value type' },
+    { path: 'subject', populate: { path: 'parent', populate: { path: 'parent' } } },
   ]);
   return classes;
 };
@@ -860,6 +860,7 @@ export const getClassesByParent = async (parentUserId: string, status?: FINAL_CL
       { path: 'coordinator', select: 'name email phone' },
       { path: 'parent', select: 'name email phone' },
       { path: 'convertedBy', select: 'name email role' },
+      { path: 'subject', populate: { path: 'parent', populate: { path: 'parent' } } },
     ]);
   return classes;
 };

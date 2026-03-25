@@ -450,17 +450,17 @@ function parseExperience(experience: string | undefined): { hours: number; years
 
   if (/year/i.test(experience)) {
     return {
-      hours: num * 12 * 30, // approximate hours
+      hours: 0, // Teaching hours start from 0 for new teachers
       years: num
     };
   }
   if (/month/i.test(experience)) {
     return {
-      hours: num * 30,
+      hours: 0, // Teaching hours start from 0 for new teachers
       years: Math.round((num / 12) * 10) / 10 // rounded to 1 decimal
     };
   }
-  return { hours: num, years: 0 };
+  return { hours: 0, years: 0 };
 }
 
 export const updateMyProfile = async (userId: string, updateData: {
@@ -968,7 +968,7 @@ export const updateVerificationFeeStatus = async (
   await tutor.populate([
     { path: 'user', select: 'name email phone role gender city preferredMode' },
     { path: 'verifiedBy', select: 'name email phone role' },
-    { path: 'subjects', select: 'label value type' },
+    { path: 'subjects', populate: { path: 'parent', populate: { path: 'parent' } } },
   ]);
   return tutor;
 };
@@ -1362,7 +1362,7 @@ export const getTutorsByCoordinator = async (params: {
       .populate([
         { path: 'user', select: 'name email phone' },
         { path: 'verifiedBy', select: 'name email' },
-        { path: 'subjects', select: 'label value type' },
+        { path: 'subjects', populate: { path: 'parent', populate: { path: 'parent' } } },
       ]),
     Tutor.countDocuments(query),
   ]);

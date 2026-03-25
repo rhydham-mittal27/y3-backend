@@ -12,7 +12,10 @@ import { USER_ROLES, CLASS_LEAD_STATUS, MANAGER_ACTION_TYPE } from '../config/co
 import { logManagerActivity } from './managerService';
 
 export const createAnnouncement = async (classLeadId: string, postedBy: string) => {
-  const lead = await ClassLead.findById(classLeadId);
+  const lead = await ClassLead.findById(classLeadId).populate({
+    path: 'subject',
+    populate: { path: 'parent', populate: { path: 'parent' } }
+  });
   if (!lead) {
     throw new ErrorResponse('Class lead not found', 404);
   }
@@ -380,7 +383,14 @@ const enrichTutorData = (tutors: any[], interestedTutorsRaw: any[], classLeadDoc
 
 export const getInterestedTutors = async (announcementId: string) => {
   const announcement = await Announcement.findById(announcementId)
-    .populate('classLead')
+    .populate({
+      path: 'classLead',
+      populate: {
+        path: 'subject',
+        select: '_id label value type',
+        populate: { path: 'parent', populate: { path: 'parent' } }
+      }
+    })
     .populate({
       path: 'interestedTutors.tutor',
       select: 'name email phone role',
@@ -411,7 +421,10 @@ export const getInterestedTutors = async (announcementId: string) => {
 };
 
 export const getRecommendedTutorsForLead = async (classLeadId: string) => {
-  const lead = await ClassLead.findById(classLeadId);
+  const lead = await ClassLead.findById(classLeadId).populate({
+    path: 'subject',
+    populate: { path: 'parent', populate: { path: 'parent' } }
+  });
   if (!lead) throw new ErrorResponse('Class lead not found', 404);
 
   const query: any = {
