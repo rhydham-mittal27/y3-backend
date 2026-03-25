@@ -2,6 +2,7 @@ import { PutObjectCommand, DeleteObjectCommand, GetObjectCommand } from '@aws-sd
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { s3Client, S3_CONFIG } from '../config/s3';
 import { v4 as uuidv4 } from 'uuid';
+import { logInfo } from '../utils/logger';
 import path from 'path';
 
 const guessContentTypeFromKey = (key: string): string | undefined => {
@@ -213,6 +214,7 @@ export const resolveS3DocumentUrl = async (val: any): Promise<any> => {
   if (/^data:/i.test(val) || /^blob:/i.test(val)) return val;
 
   let key = val.trim();
+  logInfo(`[S3Service] Resolving key: "${key}"`);
 
   // If it's a full URL, attempt to extract the key if it's from our bucket
   if (/^https?:\/\//i.test(key)) {

@@ -279,6 +279,11 @@ export const getPublicTutorProfile = async (teacherId: string) => {
 
   if (!tutor) throw new ErrorResponse('Tutor not found', 404);
 
+  console.log('--- DEBUG PUBLIC PROFILE ---');
+  console.log('TeacherID:', teacherId);
+  console.log('Documents:', JSON.stringify(tutor.documents, null, 2));
+  console.log('----------------------------');
+
   // Calculate real teaching hours from attendance data
   const tutorUserId = new mongoose.Types.ObjectId(
     String(((tutor.user as any)?._id) || tutor.user)
@@ -330,7 +335,7 @@ export const getPublicTutorProfile = async (teacherId: string) => {
   }
 
   // Return only safe fields
-  return {
+  const result = {
     _id: tutor._id,
     teacherId: tutor.teacherId,
     user: tutor.user,
@@ -350,11 +355,20 @@ export const getPublicTutorProfile = async (teacherId: string) => {
     bio: tutor.bio,
     languagesKnown: tutor.languagesKnown,
     skills: tutor.skills,
-    yearsOfExperience: tutor.yearsOfExperience,
-    documents: (tutor.documents || []).filter(d => d.documentType === 'PROFILE_PHOTO'),
+    documents: (tutor.documents || []).filter((d: any) => {
+      const type = String(d.documentType || '').toUpperCase().trim();
+      const url = String(d.documentUrl || '').toLowerCase();
+      const isImage = /\.(jpg|jpeg|png|webp|gif|svg)/i.test(url);
+      const isProfileType = type.includes('PROFILE') || type.includes('PHOTO') || type.includes('AVATAR');
+      const isExcluded = ['AADHAR', 'PAN', 'RESUME', 'DEGREE', 'CERTIFICATE', 'MARKSHEET', 'IDCARD'].some(ex => type.includes(ex));
+      return (isProfileType || isImage) && !isExcluded;
+    }),
     createdAt: tutor.createdAt,
     approvalRatio: tutor.approvalRatio,
+    yearsOfExperience: tutor.yearsOfExperience,
   };
+
+  return await withResolvedTutorDocumentUrls(result);
 };
 
 export const updateTutorProfile = async (
