@@ -3,11 +3,13 @@ import mongoose from 'mongoose';
 import asyncHandler from '../utils/asyncHandler';
 import { successResponse } from '../utils/responseFormatter';
 import ErrorResponse from '../utils/errorResponse';
+import { createClassLead } from '../services/leadService';
+import Manager from '../models/Manager';
+import User from '../models/User';
+import { sendEmail } from '../utils/emailService';
 import { LEAD_SOURCE, TEACHING_MODE, BOARD_TYPE } from '../config/constants';
 import ClassLead from '../models/ClassLead';
 import Option from '../models/Option';
-import { sendEmail } from '../utils/emailService';
-import User from '../models/User';
 
 export const createPublicParentLead = asyncHandler(async (req, res) => {
   const errors = validationResult(req);
@@ -218,12 +220,24 @@ export const getPublicLead = asyncHandler(async (req, res) => {
   }
 
   if (lead) {
-    // Explicitly using the Option model here ensures Mongoose registers it correctly on the VPS
+    // Attempt standard population first
     await lead.populate({
       path: 'subject',
       model: Option,
       populate: { path: 'parent', populate: { path: 'parent' } }
     });
+
+    // MANUAL FALLBACK: If subjects are still just IDs (strings), fetch them manually
+    // This is a "safety net" for environments like VPS where Mongoose populate might fail
+    if (lead.subject && lead.subject.length > 0 && typeof lead.subject[0] === 'string') {
+      const subjectOptions = await Option.find({ _id: { $in: lead.subject } })
+        .populate({ path: 'parent', populate: { path: 'parent' } });
+      
+      if (subjectOptions.length > 0) {
+        // Replace the IDs with the full objects manually
+        (lead as any).subject = subjectOptions;
+      }
+    }
   }
 
   if (!lead) {
