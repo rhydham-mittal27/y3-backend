@@ -207,7 +207,10 @@ export const getPublicLead = asyncHandler(async (req, res) => {
   const { id } = req.params;
 
   const lead = await import('../models/ClassLead').then(mod => 
-    mod.default.findById(id).populate('subject')
+    mod.default.findById(id).populate({
+      path: 'subject',
+      populate: { path: 'parent', populate: { path: 'parent' } }
+    })
   );
 
   if (!lead) {
