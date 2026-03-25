@@ -1,0 +1,47 @@
+config:
+  target: "http://localhost:5000"
+  phases:
+    - duration: 30
+      arrivalRate: 2
+      name: "Warm up"
+    - duration: 30
+      arrivalRate: 2
+      rampTo: 10
+      name: "Ramp up"
+    - duration: 60
+      arrivalRate: 10
+      name: "Sustained load"
+  defaults:
+    headers:
+      Content-Type: "application/json"
+
+scenarios:
+  - name: "Login and Dashboard Journey"
+    flow:
+      - post:
+          url: "/api/auth/login"
+          json:
+            email: "{{ $processEnvironment.ADMIN_EMAIL || 'admin@gmail.com' }}"
+            password: "{{ $processEnvironment.ADMIN_PASSWORD || 'Password@123' }}"
+          capture:
+            - json: "$.data.token"
+              as: "token"
+      - get:
+          url: "/api/auth/me"
+          headers:
+            Authorization: "Bearer {{ token }}"
+      - get:
+          url: "/api/dashboard/stats"
+          headers:
+            Authorization: "Bearer {{ token }}"
+          qs:
+            startDate: "2024-01-01"
+            endDate: "2024-12-31"
+      - get:
+          url: "/api/dashboard/leads/status-distribution"
+          headers:
+            Authorization: "Bearer {{ token }}"
+      - get:
+          url: "/api/dashboard/conversion-funnel"
+          headers:
+            Authorization: "Bearer {{ token }}"

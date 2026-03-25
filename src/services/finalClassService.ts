@@ -473,13 +473,16 @@ export const getAllFinalClasses = async (args: {
       .limit(limit)
       .sort(sort)
       .populate([
-        { path: 'classLead' },
+        // Select only the fields list views actually render — avoids pulling the entire 40-field classLead document
+        { path: 'classLead', select: 'studentName grade board mode leadId status paymentAmount tutorFees classesPerMonth classDurationHours timing weekdays city area' },
         { path: 'tutor', select: 'name email phone' },
         { path: 'coordinator', select: 'name email phone' },
         { path: 'parent', select: 'name email phone' },
         { path: 'convertedBy', select: 'name email role' },
-        { path: 'subject', populate: { path: 'parent', populate: { path: 'parent' } } },
-      ]),
+        // Flat subject populate for list — parent chain not needed (saves 2 DB round-trips)
+        { path: 'subject', select: '_id label value type' },
+      ])
+      .lean({ virtuals: true }),
     FinalClass.countDocuments(query),
   ]);
 

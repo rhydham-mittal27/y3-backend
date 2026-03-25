@@ -242,8 +242,12 @@ const ClassLeadSchema = new Schema<IClassLeadDocument>(
 // Indexes
 ClassLeadSchema.index({ status: 1, createdAt: -1 });
 ClassLeadSchema.index({ createdBy: 1 });
+ClassLeadSchema.index({ createdBy: 1, status: 1 });          // dashboard: manager lead counts by status
+ClassLeadSchema.index({ createdBy: 1, createdAt: -1 });      // dashboard: date-wise chart by manager
 ClassLeadSchema.index({ assignedTutor: 1 });
+ClassLeadSchema.index({ leadSource: 1, status: 1 });         // CRM: website leads / open leads count
 ClassLeadSchema.index({ studentName: 'text' });
+
 
 const ClassLead: Model<IClassLeadDocument> =
   mongoose.models.ClassLead || mongoose.model<IClassLeadDocument>('ClassLead', ClassLeadSchema);

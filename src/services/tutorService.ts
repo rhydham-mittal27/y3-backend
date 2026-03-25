@@ -158,12 +158,16 @@ export const getAllTutors = async (
       .populate([
         { path: 'user', select: 'name email phone role gender city preferredMode' },
         { path: 'verifiedBy', select: 'name email phone role' },
-        { path: 'subjects', populate: { path: 'parent', populate: { path: 'parent' } } },
-      ]),
+        // Flat subject populate for list view — parent chain not needed here (saves 2 DB round-trips)
+        { path: 'subjects', select: '_id label value type' },
+      ])
+      .lean({ virtuals: true }),
     Tutor.countDocuments(query),
   ]);
 
-  return { tutors: await Promise.all(tutors.map(withResolvedTutorDocumentUrls)), total, page, limit };
+  // For list views we skip per-tutor S3 document URL resolution (expensive async per row).
+  // Documents with their raw s3Key are still returned; detail views resolve them individually.
+  return { tutors, total, page, limit };
 };
 
 export const getTutorById = async (tutorIdOrTeacherId: string) => {

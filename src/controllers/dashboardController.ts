@@ -5,6 +5,7 @@ import { successResponse, paginatedResponse } from '../utils/responseFormatter';
 import ErrorResponse from '../utils/errorResponse';
 import { Parser as Json2CsvParser } from 'json2csv';
 import PDFDocument from 'pdfkit';
+import cache from '../utils/cache';
 import {
   getDateWiseClassLeads,
   getClassLeadStatusDistribution,
@@ -18,6 +19,7 @@ import {
   exportDashboardReport,
 } from '../services/dashboardService';
 import { USER_ROLES } from '../config/constants';
+
 
 const getManagerId = (req: Request): string | undefined => {
   const user = (req as any).user;
@@ -99,7 +101,12 @@ export const getRevenueAnalyticsData = asyncHandler(async (req: Request, res: Re
 
 export const getOverallStats = asyncHandler(async (req: Request, res: Response) => {
   const { fromDate, toDate } = req.query as any;
-  const data = await getOverallStatistics(fromDate ? new Date(fromDate) : undefined, toDate ? new Date(toDate) : undefined, undefined, getManagerId(req));
+  const managerId = getManagerId(req);
+  // Build a stable cache key based on the query params
+  const cacheKey = `dashboard:stats:${managerId || 'all'}:${fromDate || ''}:${toDate || ''}`;
+  const data = await cache.getOrSet(cacheKey, 60, () =>
+    getOverallStatistics(fromDate ? new Date(fromDate) : undefined, toDate ? new Date(toDate) : undefined, undefined, managerId)
+  );
   return res.status(200).json(successResponse(data));
 });
 

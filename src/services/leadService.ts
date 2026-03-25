@@ -348,17 +348,30 @@ export const getAllClassLeads = async (args: {
         { path: 'assignedTutor', select: 'name email phone' },
         { path: 'groupClass' },
         { path: 'subject', select: '_id label value type' },
-      ]),
+      ])
+      .lean({ virtuals: true }),
     ClassLead.countDocuments(query),
   ]);
 
-  // Enrich leads with student records from the Student collection
-  const leadsWithStudents = await Promise.all(leads.map(async (lead) => {
-    const students = await Student.find({ classLead: lead._id }).select('name studentId gender grade');
-    return {
-      ...lead.toObject(),
-      associatedStudents: students
-    };
+  // Batch-load associated students in ONE query instead of N individual queries
+  const leadIds = leads.map((l: any) => l._id);
+  const allStudents = leadIds.length
+    ? await Student.find({ classLead: { $in: leadIds } })
+        .select('name studentId gender grade classLead')
+        .lean()
+    : [];
+
+  // Group students by classLead for O(1) lookup
+  const studentsByLead = new Map<string, any[]>();
+  for (const s of allStudents as any[]) {
+    const key = String(s.classLead);
+    if (!studentsByLead.has(key)) studentsByLead.set(key, []);
+    studentsByLead.get(key)!.push(s);
+  }
+
+  const leadsWithStudents = leads.map((lead: any) => ({
+    ...lead,
+    associatedStudents: studentsByLead.get(String(lead._id)) || [],
   }));
 
   return { leads: leadsWithStudents, total, page, limit };

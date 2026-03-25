@@ -111,8 +111,14 @@ const FinalClassSchema: Schema<IFinalClassDocument> = new Schema<IFinalClassDocu
 // Indexes
 FinalClassSchema.index({ status: 1, startDate: 1 });
 FinalClassSchema.index({ tutor: 1 });
+FinalClassSchema.index({ tutor: 1, status: 1 });        // dashboard: per-tutor active classes
 FinalClassSchema.index({ coordinator: 1 });
 FinalClassSchema.index({ coordinator: 1, status: 1 });
+FinalClassSchema.index({ convertedBy: 1 });              // dashboard: manager filtering
+FinalClassSchema.index({ convertedBy: 1, status: 1 });  // dashboard: active classes by manager
+FinalClassSchema.index({ convertedAt: -1 });             // dashboard: date-range queries
+FinalClassSchema.index({ status: 1, convertedAt: -1 }); // dashboard: cumulative growth chart
+
 
 // Virtuals
 FinalClassSchema.virtual('progressPercentage').get(function (this: IFinalClassDocument) {

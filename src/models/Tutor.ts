@@ -233,9 +233,13 @@ TutorSchema.virtual('approvalRatio').get(function (this: ITutorDocument) {
 
 // Indexes
 TutorSchema.index({ verificationStatus: 1 });
+TutorSchema.index({ verificationStatus: 1, isAvailable: 1 }); // filter verified+available tutors
 TutorSchema.index({ isAvailable: 1, subjects: 1 });
 TutorSchema.index({ ratings: -1 });
 TutorSchema.index({ tier: 1 });
+TutorSchema.index({ tier: 1, verificationStatus: 1 });         // tier management queries
+TutorSchema.index({ pendingTierChange: 1 }, { sparse: true }); // pending tier changes count
+
 
 const Tutor: Model<ITutorDocument> =
   mongoose.models.Tutor || mongoose.model<ITutorDocument>('Tutor', TutorSchema);
