@@ -3,11 +3,11 @@ import mongoose from 'mongoose';
 import asyncHandler from '../utils/asyncHandler';
 import { successResponse } from '../utils/responseFormatter';
 import ErrorResponse from '../utils/errorResponse';
-import { createClassLead } from '../services/leadService';
-import Manager from '../models/Manager';
-import User from '../models/User';
-import { sendEmail } from '../utils/emailService';
 import { LEAD_SOURCE, TEACHING_MODE, BOARD_TYPE } from '../config/constants';
+import ClassLead from '../models/ClassLead';
+import Option from '../models/Option';
+import { sendEmail } from '../utils/emailService';
+import User from '../models/User';
 
 export const createPublicParentLead = asyncHandler(async (req, res) => {
   const errors = validationResult(req);
@@ -207,25 +207,23 @@ export const createPublicParentLead = asyncHandler(async (req, res) => {
 export const getPublicLead = asyncHandler(async (req, res) => {
   const { id } = req.params;
 
-  const lead = await import('../models/ClassLead').then((mod) => mod.default.findById(id));
-
-  if (lead && Array.isArray((lead as any).subject) && (lead as any).subject.length > 0) {
-    const subj0 = (lead as any).subject[0];
-    const looksLikeStringIds = typeof subj0 === 'string' && /^[a-fA-F0-9]{24}$/.test(subj0);
-    if (looksLikeStringIds) {
-      const casted = (lead as any).subject
-        .map((s: any) => (typeof s === 'string' && /^[a-fA-F0-9]{24}$/.test(s) ? new mongoose.Types.ObjectId(s) : null))
-        .filter(Boolean);
-
-      if (casted.length > 0) {
-        (lead as any).subject = casted;
-        await lead.save();
-      }
-    }
+  // Attempt to find by ObjectId first, fallback to leadId string
+  let lead = null;
+  if (mongoose.isValidObjectId(id)) {
+    lead = await ClassLead.findById(id);
+  }
+  
+  if (!lead) {
+    lead = await ClassLead.findOne({ leadId: id });
   }
 
   if (lead) {
-    await lead.populate({ path: 'subject', select: '_id label value type parent' });
+    // Explicitly using the Option model here ensures Mongoose registers it correctly on the VPS
+    await lead.populate({
+      path: 'subject',
+      model: Option,
+      populate: { path: 'parent', populate: { path: 'parent' } }
+    });
   }
 
   if (!lead) {
