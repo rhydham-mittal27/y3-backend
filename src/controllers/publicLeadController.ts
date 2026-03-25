@@ -1,4 +1,5 @@
 import { validationResult } from 'express-validator';
+import mongoose from 'mongoose';
 import asyncHandler from '../utils/asyncHandler';
 import { successResponse } from '../utils/responseFormatter';
 import ErrorResponse from '../utils/errorResponse';
@@ -206,9 +207,26 @@ export const createPublicParentLead = asyncHandler(async (req, res) => {
 export const getPublicLead = asyncHandler(async (req, res) => {
   const { id } = req.params;
 
-  const lead = await import('../models/ClassLead').then(mod => 
-    mod.default.findById(id).populate('subject')
-  );
+  const lead = await import('../models/ClassLead').then((mod) => mod.default.findById(id));
+
+  if (lead && Array.isArray((lead as any).subject) && (lead as any).subject.length > 0) {
+    const subj0 = (lead as any).subject[0];
+    const looksLikeStringIds = typeof subj0 === 'string' && /^[a-fA-F0-9]{24}$/.test(subj0);
+    if (looksLikeStringIds) {
+      const casted = (lead as any).subject
+        .map((s: any) => (typeof s === 'string' && /^[a-fA-F0-9]{24}$/.test(s) ? new mongoose.Types.ObjectId(s) : null))
+        .filter(Boolean);
+
+      if (casted.length > 0) {
+        (lead as any).subject = casted;
+        await lead.save();
+      }
+    }
+  }
+
+  if (lead) {
+    await lead.populate({ path: 'subject', select: '_id label value type parent' });
+  }
 
   if (!lead) {
     throw new ErrorResponse('Lead not found', 404);
