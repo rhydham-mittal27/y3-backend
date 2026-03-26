@@ -8,6 +8,7 @@ import { logManagerActivity } from './managerService';
 import Manager from '../models/Manager';
 import Payment from '../models/Payment';
 import Attendance from '../models/Attendance';
+import AttendanceSheet from '../models/AttendanceSheet';
 import Test from '../models/Test';
 import CoordinatorActivityLog from '../models/CoordinatorActivityLog';
 import { getPendingApprovalsForCoordinator } from './attendanceService';
@@ -380,10 +381,18 @@ export const getCoordinatorDashboardStats = async (coordinatorUserId: string) =>
 
   const activeClasses = await FinalClass.find({ coordinator: new mongoose.Types.ObjectId(coordinatorUserId), status: FINAL_CLASS_STATUS.ACTIVE });
 
-  const pendingApprovals = await getPendingApprovalsForCoordinator(coordinatorUserId);
-  const pendingAttendanceApprovals = Array.isArray(pendingApprovals)
-    ? pendingApprovals.length
-    : (((pendingApprovals as any)?.total) || 0);
+  const [pendingIndividualAttendanceCount, pendingAttendanceSheetsCount] = await Promise.all([
+    Attendance.countDocuments({
+      coordinator: new mongoose.Types.ObjectId(coordinatorUserId),
+      status: ATTENDANCE_STATUS.PENDING
+    }),
+    AttendanceSheet.countDocuments({
+      coordinator: new mongoose.Types.ObjectId(coordinatorUserId),
+      status: 'PENDING'
+    })
+  ]);
+
+  const pendingAttendanceApprovalsCount = pendingIndividualAttendanceCount + pendingAttendanceSheetsCount;
 
   const now = new Date();
   const overduePaymentsAgg = await Payment.aggregate([
@@ -395,13 +404,13 @@ export const getCoordinatorDashboardStats = async (coordinatorUserId: string) =>
   ]);
   const overduePaymentsCount = overduePaymentsAgg[0]?.count || 0;
 
-  const todaysTasksCount = pendingAttendanceApprovals + overduePaymentsCount;
+  const todaysTasksCount = pendingAttendanceApprovalsCount + overduePaymentsCount;
 
   return {
     totalClassesAssigned: Array.isArray((coordinator as any).assignedClasses) ? (coordinator as any).assignedClasses.length : 0,
     activeClassesCount: coordinator.activeClassesCount || activeClasses.length,
     totalClassesHandled: coordinator.totalClassesHandled || 0,
-    pendingAttendanceApprovals,
+    pendingAttendanceApprovals: pendingAttendanceApprovalsCount,
     todaysTasksCount,
     performanceScore: coordinator.performanceScore || 0,
   };
@@ -444,10 +453,18 @@ export const getCoordinatorProfileMetrics = async (
     FinalClass.countDocuments({ ...baseClassQuery, status: FINAL_CLASS_STATUS.PAUSED }),
   ]);
 
-  const pendingApprovals = await getPendingApprovalsForCoordinator(coordinatorUserId);
-  const pendingApprovalsCount = Array.isArray(pendingApprovals)
-    ? pendingApprovals.length
-    : (((pendingApprovals as any)?.total) || ((pendingApprovals as any)?.data?.length) || 0);
+  const [pendingIndividualAttendanceCount, pendingAttendanceSheetsCount] = await Promise.all([
+    Attendance.countDocuments({
+      coordinator: new mongoose.Types.ObjectId(coordinatorUserId),
+      status: ATTENDANCE_STATUS.PENDING
+    }),
+    AttendanceSheet.countDocuments({
+      coordinator: new mongoose.Types.ObjectId(coordinatorUserId),
+      status: 'PENDING'
+    })
+  ]);
+
+  const pendingApprovalsCount = pendingIndividualAttendanceCount + pendingAttendanceSheetsCount;
 
   const todaysTasks = await getCoordinatorTodaysTasks(coordinatorUserId);
   const todaysTasksCount = (todaysTasks?.counts?.pendingAttendance || 0) + (todaysTasks?.counts?.paymentReminders || 0) + (todaysTasks?.counts?.testsToSchedule || 0) + (todaysTasks?.counts?.parentComplaints || 0);
@@ -472,7 +489,27 @@ export const getCoordinatorProfileMetrics = async (
 
 export const getCoordinatorTodaysTasks = async (coordinatorUserId: string) => {
   const pendingAttendance = await getPendingApprovalsForCoordinator(coordinatorUserId);
-  const pendingAttendanceApprovals = Array.isArray(pendingAttendance) ? pendingAttendance : (((pendingAttendance as any)?.data) || []);
+  const pendingAttendanceApprovalsFromRecords = Array.isArray(pendingAttendance) ? pendingAttendance : (((pendingAttendance as any)?.data) || []);
+
+  const pendingSheets = await AttendanceSheet.find({ 
+    coordinator: new mongoose.Types.ObjectId(coordinatorUserId), 
+    status: 'PENDING' 
+  }).populate([
+    { path: 'finalClass', populate: { path: 'subject' } },
+    { path: 'createdBy', select: 'name email phone' }
+  ]);
+
+  const normalizedSheets = pendingSheets.map((sheet: any) => ({
+    _id: sheet._id,
+    finalClass: sheet.finalClass,
+    sessionDate: sheet.submittedAt || sheet.createdAt,
+    tutor: sheet.createdBy,
+    notes: sheet.periodLabel ? `Monthly Approval for ${sheet.periodLabel}` : 'Monthly Approval Sheet',
+    isSheet: true
+  }));
+
+  const combinedApprovals = [...pendingAttendanceApprovalsFromRecords, ...normalizedSheets];
+  const pendingAttendanceApprovals = combinedApprovals;
 
   const now = new Date();
   const paymentReminders = await Payment.aggregate([

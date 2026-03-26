@@ -146,6 +146,7 @@ export const updateProgress = asyncHandler(async (req: AuthRequest, res) => {
 export const renewFinalClassController = asyncHandler(async (req: AuthRequest, res) => {
   const classId = req.params.id as string;
   const coordinatorUserId = req.user!.id;
+  const attendanceSheetId = (req.body as any)?.attendanceSheetId;
 
   const monthlyFeeRaw = (req.body as any)?.monthlyFee;
   const sessionsPerMonthRaw = (req.body as any)?.sessionsPerMonth;
@@ -158,7 +159,7 @@ export const renewFinalClassController = asyncHandler(async (req: AuthRequest, r
       }
       : undefined;
 
-  const result = await renewFinalClassForCoordinator({ classId, coordinatorUserId, plan });
+  const result = await renewFinalClassForCoordinator({ classId, coordinatorUserId, attendanceSheetId, plan });
 
   return res.status(200).json(
     successResponse(

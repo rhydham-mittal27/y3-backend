@@ -21,8 +21,8 @@ const NotificationSchema: Schema<INotificationDocument> = new Schema<INotificati
   {
     recipient: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     type: { type: String, enum: ['ANNOUNCEMENT', 'DEMO_ASSIGNED', 'PAYMENT', 'VERIFICATION', 'GENERAL', 'ATTENDANCE'], required: true },
-    title: { type: String, required: true, maxlength: 200, trim: true },
-    message: { type: String, required: true, maxlength: 1000, trim: true },
+    title: { type: String, required: true, maxlength: 1000, trim: true },
+    message: { type: String, required: true, maxlength: 2000, trim: true },
     relatedAnnouncement: { type: Schema.Types.ObjectId, ref: 'Announcement' },
     relatedClassLead: { type: Schema.Types.ObjectId, ref: 'ClassLead' },
     isRead: { type: Boolean, default: false },

@@ -16,6 +16,7 @@ import { generateStudentId } from '../utils/generateStudentId';
 import { sendStudentCredentialsEmail } from './studentEmailService';
 import bcrypt from 'bcryptjs';
 import ClassPlan from '../models/ClassPlan';
+import AttendanceSheet from '../models/AttendanceSheet';
 import { generateClassSessionsForCycle } from './classSessionService';
 
 const DAYS_ORDER = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY'];
@@ -505,15 +506,25 @@ export const getFinalClassById = async (classId: string) => {
 export const renewFinalClassForCoordinator = async (params: {
   classId: string;
   coordinatorUserId: string;
+  attendanceSheetId?: string;
   plan?: { monthlyFee: number; sessionsPerMonth: number };
 }) => {
-  const { classId, coordinatorUserId, plan } = params;
+  const { classId, coordinatorUserId, attendanceSheetId, plan } = params;
 
   const cls = await FinalClass.findById(classId);
   if (!cls) throw new ErrorResponse('Final class not found', 404);
 
   if (!cls.coordinator || String(cls.coordinator) !== String(coordinatorUserId)) {
     throw new ErrorResponse('Not authorized to renew this class', 403);
+  }
+
+  // Update attendance sheet if ID is provided
+  if (attendanceSheetId) {
+    try {
+      await AttendanceSheet.findByIdAndUpdate(attendanceSheetId, { renewedAt: new Date() });
+    } catch (err) {
+      console.error('Failed to update renewedAt on attendance sheet:', err);
+    }
   }
 
   if (plan && typeof plan.monthlyFee === 'number' && typeof plan.sessionsPerMonth === 'number') {
@@ -846,7 +857,21 @@ export const getClassesByTutor = async (tutorUserId: string, status?: FINAL_CLAS
     { path: 'convertedBy', select: 'name email role' },
     { path: 'subject', populate: { path: 'parent', populate: { path: 'parent' } } },
   ]);
-  return classes;
+
+  const classIds = classes.map((c) => c._id);
+  const sheetCounts = await AttendanceSheet.aggregate([
+    { $match: { finalClass: { $in: classIds } } },
+    { $group: { _id: '$finalClass', maxCycle: { $max: '$cycleNumber' } } },
+  ]);
+
+  const sheetCountMap = new Map();
+  sheetCounts.forEach((s) => sheetCountMap.set(String(s._id), s.maxCycle));
+
+  return classes.map((c) => {
+    const obj = c.toObject();
+    obj.sheetCount = sheetCountMap.get(String(c._id)) || 0;
+    return obj;
+  });
 };
 
 export const getClassesByParent = async (parentUserId: string, status?: FINAL_CLASS_STATUS | string) => {

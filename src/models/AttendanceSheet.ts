@@ -45,6 +45,7 @@ export interface IAttendanceSheetDocument extends Document {
   totalSessionsTaken?: number;
   presentCount?: number;
   absentCount?: number;
+  renewedAt?: Date;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -92,6 +93,7 @@ const AttendanceSheetSchema: Schema<IAttendanceSheetDocument> = new Schema<IAtte
     totalSessionsTaken: { type: Number, default: 0 },
     presentCount: { type: Number, default: 0 },
     absentCount: { type: Number, default: 0 },
+    renewedAt: { type: Date },
   },
   { timestamps: true }
 );

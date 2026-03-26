@@ -176,7 +176,7 @@ export const createLandingTutorApplication = asyncHandler(async (req, res) => {
     preferredMode,
     preferredLocations,
     preferredCities,
-    subjects: ['All Subjects'],
+    subjects: [], // Initializing with empty array, can be updated later by recruiter
     qualifications: Array.isArray(boards) ? boards.map(String) : [],
     skills: Array.isArray(classes) ? classes.map(String) : [],
     extracurricularActivities: Array.isArray(extracurriculars) ? extracurriculars.map(String) : [],

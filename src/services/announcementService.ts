@@ -46,7 +46,11 @@ export const createAnnouncement = async (classLeadId: string, postedBy: string) 
 
   const tutors = await User.find({ role: USER_ROLES.TUTOR, isActive: true }).select('_id name email');
   if (tutors.length > 0) {
-    const title = `New class opportunity: ${lead.grade} - ${Array.isArray(lead.subject) ? lead.subject.join(', ') : lead.subject}`;
+    const subjectNames = Array.isArray(lead.subject)
+      ? lead.subject.map((s: any) => (typeof s === 'object' && s.label ? s.label : String(s))).join(', ')
+      : (typeof lead.subject === 'object' && (lead.subject as any).label ? (lead.subject as any).label : String(lead.subject));
+
+    const title = `New class opportunity: ${lead.grade} - ${subjectNames}`;
     const message = `A new class lead has been announced. Timing: ${lead.timing}. Mode: ${lead.mode}.`;
 
     await Notification.insertMany(

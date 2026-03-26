@@ -22,6 +22,9 @@ async function healSubjects() {
 
     for (const lead of leads) {
       const originalSubjects = lead.subject || [];
+      if (originalSubjects.length > 0) {
+        console.log(`Lead ${lead.leadId} subjects:`, JSON.stringify(originalSubjects));
+      }
       const newSubjects: mongoose.Types.ObjectId[] = [];
       let changed = false;
 

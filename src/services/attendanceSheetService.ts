@@ -420,7 +420,11 @@ export const getCoordinatorPendingSheets = async (coordinatorUserId: string) => 
   })
     .sort({ cycleNumber: -1 })
     .populate([
-      { path: 'finalClass', select: 'studentName className grade subject monthlyFees classesPerMonth' },
+      { 
+        path: 'finalClass', 
+        select: 'studentName className grade subject monthlyFees classesPerMonth',
+        populate: { path: 'subject' }
+      },
       { path: 'coordinator', select: 'name email' },
       { path: 'createdBy', select: 'name email' }
     ]);
@@ -438,7 +442,11 @@ export const getCoordinatorAllSheets = async (coordinatorUserId: string) => {
   })
     .sort({ cycleNumber: -1 })
     .populate([
-      { path: 'finalClass', select: 'studentName className grade subject monthlyFees classesPerMonth' },
+      { 
+        path: 'finalClass', 
+        select: 'studentName className grade subject monthlyFees classesPerMonth',
+        populate: { path: 'subject' }
+      },
       { path: 'coordinator', select: 'name email' },
       { path: 'createdBy', select: 'name email' },
     ]);
@@ -452,7 +460,11 @@ export const getAllPendingSheets = async () => {
   })
     .sort({ cycleNumber: -1 })
     .populate([
-      { path: 'finalClass', select: 'studentName className grade subject monthlyFees classesPerMonth' },
+      { 
+        path: 'finalClass', 
+        select: 'studentName className grade subject monthlyFees classesPerMonth',
+        populate: { path: 'subject' }
+      },
       { path: 'coordinator', select: 'name email' },
       { path: 'createdBy', select: 'name email' }
     ]);

@@ -50,6 +50,7 @@ export interface IFinalClassDocument extends Document {
   attendanceSubmissionWindow?: number;
   monthlyFees?: number;
   tutorMonthlyFees?: number;
+  sheetCount?: number;
 }
 
 const FinalClassSchema: Schema<IFinalClassDocument> = new Schema<IFinalClassDocument>(
