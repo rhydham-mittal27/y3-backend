@@ -215,39 +215,45 @@ export const resolveS3DocumentUrl = async (val: any): Promise<any> => {
   let key = val.trim();
 
   // If it's a full URL, attempt to extract the key if it's from our bucket
+  // OR if it's from our API server (legacy/buggy saves)
   if (/^https?:\/\//i.test(key)) {
     try {
       const url = new URL(key);
       const bucketName = S3_CONFIG.BUCKET_NAME;
 
-      // Check if it matches virtual-host style or path-style S3 URLs for our bucket
+      // 1. Check if it's our S3 bucket
       const isOurBucket =
         url.hostname.includes(`${bucketName}.s3`) ||
         url.pathname.startsWith(`/${bucketName}/`);
 
       if (isOurBucket) {
         if (url.hostname.startsWith(bucketName)) {
-          // Virtual-host style: bucket.s3.region.amazonaws.com/key
-          key = url.pathname.substring(1); // Remove leading slash
+          key = url.pathname.substring(1);
         } else {
-          // Path-style or other: s3.region.amazonaws.com/bucket/key
           const parts = url.pathname.split('/').filter(Boolean);
           if (parts[0] === bucketName) {
             key = parts.slice(1).join('/');
           }
         }
-        // Remove any query parameters (like previous signatures)
-        key = key.split('?')[0];
-      } else {
-        // Not our bucket, return as is
+      } 
+      // 2. Check if it's our API server /uploads (legacy/buggy)
+      else if (url.pathname.startsWith('/uploads/')) {
+        key = url.pathname.substring(1); // Remove leading slash, keep 'uploads/...'
+      }
+      else {
+        // Not something we should re-resolve
         return val;
       }
+      
+      key = key.split('?')[0];
     } catch (e) {
-      // Invalid URL, return as is
       return val;
     }
   }
 
+  // Final check: if it starts with 'uploads/' or 'production/' it's almost certainly an S3 key in our structured format
+  // Even if it didn't pass the URL check above (as a relative path).
+  
   try {
     return await getPresignedUrl(key);
   } catch (error: any) {

@@ -165,9 +165,23 @@ export const getAllTutors = async (
     Tutor.countDocuments(query),
   ]);
 
-  // For list views we skip per-tutor S3 document URL resolution (expensive async per row).
-  // Documents with their raw s3Key are still returned; detail views resolve them individually.
-  return { tutors, total, page, limit };
+  const resolvedTutors = tutors.map(t => {
+    if (t.documents && Array.isArray(t.documents)) {
+      t.documents = t.documents.map((d: any) => {
+        const rawKey = String(d?.s3Key || d?.documentUrl || '').trim();
+        if (rawKey && !rawKey.startsWith('http')) {
+          return {
+            ...d,
+            documentUrl: `https://${S3_CONFIG.BUCKET_NAME}.s3.${S3_CONFIG.REGION}.amazonaws.com/${rawKey}`
+          };
+        }
+        return d;
+      });
+    }
+    return t;
+  });
+
+  return { tutors: resolvedTutors, total, page, limit };
 };
 
 export const getTutorById = async (tutorIdOrTeacherId: string) => {
@@ -285,7 +299,8 @@ export const getPublicTutorProfile = async (teacherId: string) => {
 
   console.log('--- DEBUG PUBLIC PROFILE ---');
   console.log('TeacherID:', teacherId);
-  console.log('Documents:', JSON.stringify(tutor.documents, null, 2));
+  console.log('Total Docs in DB:', tutor.documents?.length || 0);
+  console.log('Doc Types in DB:', (tutor.documents || []).map((d: any) => d.documentType).join(', '));
   console.log('----------------------------');
 
   // Calculate real teaching hours from attendance data
@@ -678,11 +693,15 @@ export const uploadDocument = async (
 
   let uploadResult: { key: string; url: string; bucket: string };
   try {
+    const folder = documentType === 'PROFILE_PHOTO' 
+      ? S3_CONFIG.FOLDERS.PROFILE_PHOTOS 
+      : S3_CONFIG.FOLDERS.DOCUMENTS;
+
     uploadResult = await uploadFileToS3Structured(
       buffer,
       originalname,
       mimetype,
-      { entityType: 'tutors', entityId: tutorId, folder: S3_CONFIG.FOLDERS.DOCUMENTS }
+      { entityType: 'tutors', entityId: tutorId, folder }
     );
     console.log('[uploadDocument] S3 upload successful', {
       tutorId,
