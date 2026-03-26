@@ -6,6 +6,7 @@ import { body, param } from 'express-validator';
 import {
   getMyTutorSessionsForCycleController,
   generateSessionsForClassCycleController,
+  getMyCoordinatorSessionsForCycleController,
 } from '../controllers/classSessionController';
 
 const router = Router();
@@ -13,6 +14,7 @@ const router = Router();
 router.use(protect);
 
 router.get('/tutor/my', authorize(USER_ROLES.TUTOR), getMyTutorSessionsForCycleController);
+router.get('/coordinator/my', authorize(USER_ROLES.COORDINATOR), getMyCoordinatorSessionsForCycleController);
 
 router.post(
   '/class/:classId/generate',

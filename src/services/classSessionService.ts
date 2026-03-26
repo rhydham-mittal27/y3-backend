@@ -122,3 +122,22 @@ export const getTutorSessionsForCycle = async (params: {
 
   return sessions;
 };
+
+export const getCoordinatorSessionsForCycle = async (params: {
+  coordinatorUserId: string;
+  cycleMonth: number;
+  cycleYear: number;
+}) => {
+  const { coordinatorUserId, cycleMonth, cycleYear } = params;
+  if (!cycleMonth || !cycleYear) throw new ErrorResponse('cycleMonth and year are required', 400);
+
+  const sessions = await ClassSession.find({
+    coordinator: new mongoose.Types.ObjectId(coordinatorUserId),
+    cycleMonth,
+    cycleYear,
+  })
+    .populate('finalClass')
+    .sort({ sessionDate: 1, timeSlot: 1 });
+
+  return sessions;
+};
