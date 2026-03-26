@@ -20,12 +20,17 @@ import { PAYMENT_STATUS, PAYMENT_TYPE, DEMO_STATUS, VERIFICATION_FEE_AMOUNT, VER
 
 const withResolvedTutorDocumentUrls = async (tutor: any) => {
   if (!tutor) return tutor;
-  const copy: any = typeof tutor.toObject === 'function' ? tutor.toObject() : { ...tutor };
+  
+  // Create a deep enough copy to avoid mutating the original if it's a plain object
+  // If it's a Mongoose document, toObject() gives us a plain object
+  const copy: any = typeof tutor.toObject === 'function' ? tutor.toObject() : JSON.parse(JSON.stringify(tutor));
+  
   const docs = Array.isArray(copy.documents) ? copy.documents : [];
   if (docs.length === 0) return copy;
 
   copy.documents = await Promise.all(
     docs.map(async (d: any) => {
+      // Use s3Key if available, otherwise fallback to documentUrl
       const rawKey = String(d?.s3Key || d?.documentUrl || '').trim();
       return {
         ...(d || {}),
@@ -165,21 +170,7 @@ export const getAllTutors = async (
     Tutor.countDocuments(query),
   ]);
 
-  const resolvedTutors = tutors.map(t => {
-    if (t.documents && Array.isArray(t.documents)) {
-      t.documents = t.documents.map((d: any) => {
-        const rawKey = String(d?.s3Key || d?.documentUrl || '').trim();
-        if (rawKey && !rawKey.startsWith('http')) {
-          return {
-            ...d,
-            documentUrl: `https://${S3_CONFIG.BUCKET_NAME}.s3.${S3_CONFIG.REGION}.amazonaws.com/${rawKey}`
-          };
-        }
-        return d;
-      });
-    }
-    return t;
-  });
+  const resolvedTutors = await Promise.all(tutors.map(t => withResolvedTutorDocumentUrls(t)));
 
   return { tutors: resolvedTutors, total, page, limit };
 };

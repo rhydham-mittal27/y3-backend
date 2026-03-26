@@ -214,8 +214,7 @@ export const resolveS3DocumentUrl = async (val: any): Promise<any> => {
 
   let key = val.trim();
 
-  // If it's a full URL, attempt to extract the key if it's from our bucket
-  // OR if it's from our API server (legacy/buggy saves)
+  // If it's a full URL, attempt to extract the key
   if (/^https?:\/\//i.test(key)) {
     try {
       const url = new URL(key);
@@ -233,16 +232,25 @@ export const resolveS3DocumentUrl = async (val: any): Promise<any> => {
           const parts = url.pathname.split('/').filter(Boolean);
           if (parts[0] === bucketName) {
             key = parts.slice(1).join('/');
+          } else {
+            key = url.pathname.substring(1);
           }
         }
       } 
       // 2. Check if it's our API server /uploads (legacy/buggy)
-      else if (url.pathname.startsWith('/uploads/')) {
-        key = url.pathname.substring(1); // Remove leading slash, keep 'uploads/...'
+      else if (url.pathname.includes('/uploads/')) {
+        const parts = url.pathname.split('/uploads/');
+        key = 'uploads/' + parts[1];
       }
       else {
-        // Not something we should re-resolve
-        return val;
+        // If it's some other URL but it contains 'uploads/tutors' or similar, it might still be one of ours
+        const uploadIndex = url.pathname.indexOf('uploads/');
+        if (uploadIndex !== -1) {
+          key = url.pathname.substring(uploadIndex);
+        } else {
+          // Not something we should re-resolve
+          return val;
+        }
       }
       
       key = key.split('?')[0];
@@ -251,9 +259,11 @@ export const resolveS3DocumentUrl = async (val: any): Promise<any> => {
     }
   }
 
-  // Final check: if it starts with 'uploads/' or 'production/' it's almost certainly an S3 key in our structured format
-  // Even if it didn't pass the URL check above (as a relative path).
-  
+  // Remove leading slash if any
+  key = key.replace(/^\//, '');
+
+  // Final check: if it looks like an S3 key (starts with uploads/ or production/ or other entity types)
+  // or if we just want to ensure everything that's not a full URL gets treated as an S3 key
   try {
     return await getPresignedUrl(key);
   } catch (error: any) {
