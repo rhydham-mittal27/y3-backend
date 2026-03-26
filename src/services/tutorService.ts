@@ -393,8 +393,6 @@ export const getPublicTutorProfile = async (teacherId: string) => {
       const rawKey = String(d.s3Key || d.documentUrl || '').trim();
       const resolved = await resolveS3DocumentUrl(rawKey);
       
-      console.log(`[getPublicTutorProfile] Resolving Doc: Raw=${rawKey.substring(0, 30)} -> Final=${resolved.substring(0, 30)}`);
-      
       return {
         ...d,
         documentUrl: resolved
