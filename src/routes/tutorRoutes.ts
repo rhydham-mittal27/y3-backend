@@ -1,4 +1,11 @@
 import { Router } from "express";
+const router = Router();
+
+// TEMPORARY: Test route to verify deployment - MUST BE AT THE VERY TOP
+router.get("/version-test", (_req, res) => {
+  res.json({ version: "1.0.5-RESOLUTION-FIX-ACTIVE", timestamp: new Date().toISOString() });
+});
+
 import {
   createTutorProfileController,
   getTutors,
@@ -52,7 +59,7 @@ import { requireManagerPermissions } from "../middlewares/managerPermissions";
 import { uploadDocument } from "../middlewares/fileUpload";
 import { USER_ROLES } from "../config/constants";
 
-const router = Router();
+
 
 // Public read-only route for showing tutor reviews on public profiles (teacherId or internal id)
 router.get("/public/:teacherKey/reviews", getPublicTutorReviewsController);
