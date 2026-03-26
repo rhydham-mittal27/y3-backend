@@ -1,6 +1,6 @@
 import { PutObjectCommand, DeleteObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import { s3Client, S3_CONFIG } from '../config/s3';
+import { s3Client, S3_CONFIG, getS3PublicUrlForKey } from '../config/s3';
 import { v4 as uuidv4 } from 'uuid';
 import path from 'path';
 
@@ -159,6 +159,11 @@ export const deleteFileFromS3 = async (key: string): Promise<void> => {
  * @param expiresIn - URL expiry time in seconds (default: 1 hour)
  * @returns Presigned URL
  */
+console.log(`[S3_CONFIG] Bucket: ${S3_CONFIG.BUCKET_NAME}, Region: ${S3_CONFIG.REGION}, KeyPrefix: ${S3_CONFIG.FOLDER_PREFIX}`);
+if (!process.env.AWS_ACCESS_KEY_ID) {
+    console.warn('[S3_CONFIG] WARNING: AWS_ACCESS_KEY_ID is missing from environment!');
+}
+
 export const getPresignedUrl = async (
   key: string,
   expiresIn: number = S3_CONFIG.PRESIGNED_URL_EXPIRY
@@ -218,57 +223,55 @@ export const resolveS3DocumentUrl = async (val: any): Promise<any> => {
   if (/^https?:\/\//i.test(key)) {
     try {
       const url = new URL(key);
-      const bucketName = S3_CONFIG.BUCKET_NAME;
+      const bucketName = S3_CONFIG.BUCKET_NAME || 'yourshikshak-production';
 
-      // 1. Check if it's our S3 bucket
-      const isOurBucket =
-        url.hostname.includes(`${bucketName}.s3`) ||
-        url.pathname.startsWith(`/${bucketName}/`);
+      // 1. Check if it's our S3 bucket or any S3 bucket pattern
+      const isS3Url =
+        url.hostname.includes('.s3.') ||
+        url.hostname.endsWith('amazonaws.com') ||
+        (bucketName && url.pathname.startsWith(`/${bucketName}/`));
 
-      if (isOurBucket) {
-        if (url.hostname.startsWith(bucketName)) {
-          key = url.pathname.substring(1);
-        } else {
-          const parts = url.pathname.split('/').filter(Boolean);
-          if (parts[0] === bucketName) {
-            key = parts.slice(1).join('/');
-          } else {
-            key = url.pathname.substring(1);
-          }
+      if (isS3Url) {
+        // Strip bucket name from start of path if it's there
+        let path = url.pathname.substring(1);
+        if (bucketName && path.startsWith(`${bucketName}/`)) {
+          path = path.substring(bucketName.length + 1);
         }
+        key = path;
       } 
-      // 2. Check if it's our API server /uploads (legacy/buggy)
-      else if (url.pathname.includes('/uploads/')) {
-        const parts = url.pathname.split('/uploads/');
-        key = 'uploads/' + parts[1];
+      // 2. Check for common patterns including our local API server or proxy
+      else if (url.pathname.includes('uploads/')) {
+        const index = url.pathname.indexOf('uploads/');
+        key = url.pathname.substring(index);
       }
       else {
-        // If it's some other URL but it contains 'uploads/tutors' or similar, it might still be one of ours
-        const uploadIndex = url.pathname.indexOf('uploads/');
-        if (uploadIndex !== -1) {
-          key = url.pathname.substring(uploadIndex);
-        } else {
-          // Not something we should re-resolve
-          return val;
-        }
+        // Not a URL we recognize as requiring re-signing
+        return val;
       }
       
       key = key.split('?')[0];
     } catch (e) {
-      return val;
+      // If URL parsing fails, we treat it as a potential relative path below
     }
   }
 
   // Remove leading slash if any
   key = key.replace(/^\//, '');
 
-  // Final check: if it looks like an S3 key (starts with uploads/ or production/ or other entity types)
-  // or if we just want to ensure everything that's not a full URL gets treated as an S3 key
+  // Final check: ensure we always return a full URL if it's one of our keys (starts with uploads/ or production/)
   try {
-    return await getPresignedUrl(key);
+    // Attempt presigning
+    const signed = await getPresignedUrl(key);
+    if (signed && signed.startsWith('http')) return signed;
   } catch (error: any) {
-    return getPublicUrlForKey(key);
+    // Fallback error logging (internal)
+    if (process.env.NODE_ENV !== 'production') {
+      console.warn(`[resolveS3DocumentUrl] Presigning failed for key ${key}:`, error.message);
+    }
   }
+  
+  // Final fallback to public URL
+  return getS3PublicUrlForKey(key);
 };
 
 export default {

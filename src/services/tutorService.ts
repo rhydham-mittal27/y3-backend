@@ -26,15 +26,23 @@ const withResolvedTutorDocumentUrls = async (tutor: any) => {
   const copy: any = typeof tutor.toObject === 'function' ? tutor.toObject() : JSON.parse(JSON.stringify(tutor));
   
   const docs = Array.isArray(copy.documents) ? copy.documents : [];
+  console.log(`[withResolvedTutorDocumentUrls] Tutor: ${copy.teacherId || copy._id}, Docs count: ${docs.length}`);
+  
   if (docs.length === 0) return copy;
 
   copy.documents = await Promise.all(
-    docs.map(async (d: any) => {
+    docs.map(async (d: any, idx: number) => {
       // Use s3Key if available, otherwise fallback to documentUrl
       const rawKey = String(d?.s3Key || d?.documentUrl || '').trim();
+      const resolved = await resolveS3DocumentUrl(rawKey);
+      
+      if (!resolved.startsWith('http') || resolved.includes('api.yourshikshak.in')) {
+         console.warn(`[withResolvedTutorDocumentUrls] Resolution failed for Doc ${idx}: Input=${rawKey} -> Output=${resolved}`);
+      }
+      
       return {
         ...(d || {}),
-        documentUrl: await resolveS3DocumentUrl(rawKey),
+        documentUrl: resolved,
       };
     })
   );
