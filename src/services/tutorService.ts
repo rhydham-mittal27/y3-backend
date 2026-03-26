@@ -373,20 +373,37 @@ export const getPublicTutorProfile = async (teacherId: string) => {
     bio: tutor.bio,
     languagesKnown: tutor.languagesKnown,
     skills: tutor.skills,
-    documents: (tutor.documents || []).filter((d: any) => {
+    createdAt: tutor.createdAt,
+    approvalRatio: tutor.approvalRatio,
+    yearsOfExperience: tutor.yearsOfExperience,
+  };
+
+  // Resolve URLs directly here for maximum robustness
+  const resolvedDocuments = await Promise.all(
+    (tutor.documents || []).filter((d: any) => {
       const type = String(d.documentType || '').toUpperCase().trim();
       const url = String(d.documentUrl || '').toLowerCase();
       const isImage = /\.(jpg|jpeg|png|webp|gif|svg)/i.test(url);
       const isProfileType = type.includes('PROFILE') || type.includes('PHOTO') || type.includes('AVATAR');
       const isExcluded = ['AADHAR', 'PAN', 'RESUME', 'DEGREE', 'CERTIFICATE', 'MARKSHEET', 'IDCARD'].some(ex => type.includes(ex));
       return (isProfileType || isImage) && !isExcluded;
-    }),
-    createdAt: tutor.createdAt,
-    approvalRatio: tutor.approvalRatio,
-    yearsOfExperience: tutor.yearsOfExperience,
-  };
+    }).map(async (doc: any) => {
+      // Create a plain object from the subdocument if necessary
+      const d = typeof doc.toObject === 'function' ? doc.toObject() : (doc._doc || doc);
+      const rawKey = String(d.s3Key || d.documentUrl || '').trim();
+      const resolved = await resolveS3DocumentUrl(rawKey);
+      
+      console.log(`[getPublicTutorProfile] Resolving Doc: Raw=${rawKey.substring(0, 30)} -> Final=${resolved.substring(0, 30)}`);
+      
+      return {
+        ...d,
+        documentUrl: resolved
+      };
+    })
+  );
 
-  return await withResolvedTutorDocumentUrls(result);
+  (result as any).documents = resolvedDocuments;
+  return result;
 };
 
 export const updateTutorProfile = async (
