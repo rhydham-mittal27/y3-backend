@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
-import path from 'path';
+import dotenv from 'dotenv';
 
 // Force load environment variables
 dotenv.config();
