@@ -808,7 +808,16 @@ export const getCoordinatorByUserId = async (userId: string) => {
 
 export const updateCoordinator = async (
   coordinatorId: string,
-  updateData: Partial<{ specialization: string[]; maxClassCapacity: number; isActive: boolean }>,
+  updateData: Partial<{
+    specialization: string[];
+    maxClassCapacity: number;
+    isActive: boolean;
+    bio: string;
+    languagesKnown: string[];
+    skills: string[];
+    permanentAddress: string;
+    residentialAddress: string;
+  }>,
   managerUserId?: string
 ) => {
   const coordinator = await Coordinator.findById(coordinatorId);
@@ -947,6 +956,26 @@ export const updateCoordinatorVerificationStatus = async (
   return coordinator;
 };
 
+export const getCoordinatorActivityLog = async (userId: string, page: number = 1, limit: number = 20) => {
+  const skip = (page - 1) * limit;
+  const [logs, total] = await Promise.all([
+    CoordinatorActivityLog.find({ coordinator: new mongoose.Types.ObjectId(userId) })
+      .sort({ timestamp: -1 })
+      .skip(skip)
+      .limit(limit)
+      .populate({ path: 'coordinator', select: 'name email phone role' })
+      .lean(),
+    CoordinatorActivityLog.countDocuments({ coordinator: new mongoose.Types.ObjectId(userId) }),
+  ]);
+  return { logs, total };
+};
+
+export const getCoordinatorActivityLogByCoordinatorId = async (coordinatorId: string, page: number = 1, limit: number = 20) => {
+  const coordinator = await Coordinator.findById(coordinatorId);
+  if (!coordinator) throw new ErrorResponse('Coordinator not found', 404);
+  return getCoordinatorActivityLog(String(coordinator.user), page, limit);
+};
+
 export default {
   createCoordinator,
   getAllCoordinators,
@@ -964,4 +993,6 @@ export default {
   updateCoordinatorVerificationStatus,
   uploadCoordinatorDocument,
   deleteCoordinatorDocument,
+  getCoordinatorActivityLog,
+  getCoordinatorActivityLogByCoordinatorId,
 };

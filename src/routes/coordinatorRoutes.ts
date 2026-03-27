@@ -19,6 +19,8 @@ import {
   updateCoordinatorVerificationStatusController,
   uploadCoordinatorDocumentController,
   deleteCoordinatorDocumentController,
+  getMyActivityLogController,
+  getCoordinatorActivityLogController,
 } from '../controllers/coordinatorController';
 import {
   createCoordinatorValidation,
@@ -47,6 +49,8 @@ router.get('/assigned-classes', authorize(USER_ROLES.COORDINATOR), assignedClass
 router.get('/payments/summary', authorize(USER_ROLES.COORDINATOR), getPaymentSummary);
 router.get('/profile/metrics', authorize(USER_ROLES.COORDINATOR, USER_ROLES.MANAGER, USER_ROLES.ADMIN), getProfileMetrics);
 router.get('/eligible-users', authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN), getEligibleUsers);
+router.get('/my-activity-logs', authorize(USER_ROLES.COORDINATOR), getMyActivityLogController);
+router.get('/:id/activity-logs', authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN, USER_ROLES.COORDINATOR), getCoordinatorActivityLogController);
 
 router.get(
   '/pending-verifications',

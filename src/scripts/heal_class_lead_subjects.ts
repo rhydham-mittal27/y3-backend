@@ -12,47 +12,44 @@ async function healSubjects() {
     await mongoose.connect(MONGODB_URI);
     console.log('Connected to MongoDB');
 
-    const leads = await ClassLead.find({
+    // Use raw collection to bypass Mongoose Schema casting which strips out raw strings!
+    const leadsCollection = ClassLead.collection;
+    const leads = await leadsCollection.find({
       subject: { $exists: true, $ne: [] }
-    });
+    }).toArray();
 
-    console.log(`Checking ${leads.length} leads for corrupt subjects...`);
+    console.log(`Checking ${leads.length} leads for corrupt subjects natively...`);
 
     let healCount = 0;
 
     for (const lead of leads) {
       const originalSubjects = lead.subject || [];
-      if (originalSubjects.length > 0) {
-        console.log(`Lead ${lead.leadId} subjects:`, JSON.stringify(originalSubjects));
-      }
-      const newSubjects: mongoose.Types.ObjectId[] = [];
+      const newSubjects: any[] = [];
       let changed = false;
 
-      for (const s of originalSubjects as any[]) {
-        if (mongoose.Types.ObjectId.isValid(s) && String(new mongoose.Types.ObjectId(s)) === String(s)) {
-          // It's already a valid ObjectID string or object
+      for (const s of originalSubjects) {
+        // If it's already an ObjectId (MongoDB native ObjectId), keep it
+        if (s instanceof mongoose.Types.ObjectId) {
+          newSubjects.push(s);
+        } else if (typeof s === 'string' && /^[a-fA-F0-9]{24}$/.test(s)) {
           newSubjects.push(new mongoose.Types.ObjectId(s));
+          changed = true;
         } else {
           // It's a raw string like "PHYSICS" or "[ 'PHYSICS' ]"
           let subjectStr = String(s).trim();
           
-          // Handle stringified arrays like "[ 'PHYSICS' ]"
           if (subjectStr.startsWith('[') && subjectStr.endsWith(']')) {
              try {
                const cleaned = subjectStr.replace(/'/g, '"');
                const parsed = JSON.parse(cleaned);
                if (Array.isArray(parsed) && parsed.length > 0) {
-                 subjectStr = parsed[0]; // Just take first one for now or handle all
-                 // If we have multiple, we'd loop, but let's keep it simple
+                 subjectStr = parsed[0];
                }
-             } catch (e) {
-               console.log(`Failed to parse stringified array: ${subjectStr}`);
-             }
+             } catch (e) {}
           }
 
-          console.log(`Found corrupt subject "${s}" in lead ${lead.leadId}. Attempting to resolve "${subjectStr}"...`);
+          console.log(`Found corrupt subject "${s}" in lead ${lead.leadId}. Resolving "${subjectStr}"...`);
 
-          // Attempt to find Option by label or value
           const option = await Option.findOne({
             $or: [
               { label: new RegExp(`^${subjectStr}$`, 'i') },
@@ -72,14 +69,16 @@ async function healSubjects() {
       }
 
       if (changed) {
-        lead.subject = newSubjects;
-        await lead.save({ validateBeforeSave: false }); // Bypass validation in case other fields are also "corrupt"
+        await leadsCollection.updateOne(
+          { _id: lead._id },
+          { $set: { subject: newSubjects } }
+        );
         healCount++;
         console.log(`Healed lead ${lead.leadId}`);
       }
     }
 
-    console.log(`Finished healing. Total leads healed: ${healCount}`);
+    console.log(`Finished healing natively. Total leads healed: ${healCount}`);
     process.exit(0);
   } catch (error) {
     console.error('Healing failed:', error);

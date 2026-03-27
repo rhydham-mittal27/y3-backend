@@ -24,6 +24,11 @@ export interface ICoordinatorDocument extends Document {
     s3Key?: string;
     s3Bucket?: string;
   }[];
+  bio?: string;
+  languagesKnown?: string[];
+  skills?: string[];
+  permanentAddress?: string;
+  residentialAddress?: string;
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -81,6 +86,11 @@ const CoordinatorSchema: Schema<ICoordinatorDocument> = new Schema<ICoordinatorD
         s3Bucket: { type: String },
       },
     ],
+    bio: { type: String, trim: true },
+    languagesKnown: { type: [String], default: [] },
+    skills: { type: [String], default: [] },
+    permanentAddress: { type: String },
+    residentialAddress: { type: String },
     isActive: { type: Boolean, default: true },
     settings: {
       type: {
@@ -163,6 +173,13 @@ const CoordinatorSchema: Schema<ICoordinatorDocument> = new Schema<ICoordinatorD
 // Virtuals
 CoordinatorSchema.virtual('availableCapacity').get(function (this: ICoordinatorDocument) {
   return (this.maxClassCapacity || 0) - (this.activeClassesCount || 0);
+});
+
+CoordinatorSchema.virtual('isProfileComplete').get(function (this: ICoordinatorDocument) {
+  const hasBio = !!this.bio && this.bio.length > 20;
+  const hasAddress = !!this.residentialAddress;
+  const hasAadhaar = this.documents?.some((d) => d.documentType === 'AADHAAR');
+  return !!(hasBio && hasAddress && hasAadhaar);
 });
 
 // Indexes
