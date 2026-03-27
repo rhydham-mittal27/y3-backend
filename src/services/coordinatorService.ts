@@ -3,7 +3,7 @@ import Coordinator from '../models/Coordinator';
 import User from '../models/User';
 import FinalClass from '../models/FinalClass';
 import ErrorResponse from '../utils/errorResponse';
-import { USER_ROLES, MANAGER_ACTION_TYPE, FINAL_CLASS_STATUS, PAYMENT_STATUS, ATTENDANCE_STATUS, COORDINATOR_ACTION_TYPE, PAYMENT_TYPE, VERIFICATION_STATUS } from '../config/constants';
+import { USER_ROLES, MANAGER_ACTION_TYPE, FINAL_CLASS_STATUS, PAYMENT_STATUS, ATTENDANCE_STATUS, COORDINATOR_ACTION_TYPE, PAYMENT_TYPE, VERIFICATION_STATUS, VERIFICATION_FEE_DEDUCT_AMOUNT } from '../config/constants';
 import { logManagerActivity } from './managerService';
 import Manager from '../models/Manager';
 import Payment from '../models/Payment';
@@ -282,12 +282,11 @@ export const getCoordinatorPaymentSummary = async (
       TutorModel.countDocuments(query)
     ]);
     
-    // Mock payments so frontend displays seamlessly
     const mockPayments = tutors.map(t => ({
       _id: String(t._id),
       id: String(t._id),
       tutor: t.user,
-      amount: 500, // VERIFICATION_FEE_AMOUNT
+      amount: VERIFICATION_FEE_DEDUCT_AMOUNT || 700,
       status: PAYMENT_STATUS.PENDING,
       paymentType: PAYMENT_TYPE.TUTOR_VERIFICATION_FEES,
       createdAt: (t as any).createdAt || new Date(),
@@ -301,7 +300,7 @@ export const getCoordinatorPaymentSummary = async (
       page,
       limit,
       statistics: {
-        totalAmount: 0, paidAmount: 0, pendingAmount: mockPayments.length * 500,
+        totalAmount: 0, paidAmount: 0, pendingAmount: mockPayments.length * (VERIFICATION_FEE_DEDUCT_AMOUNT || 700),
         overdueAmount: 0, totalPayoutAmount: 0, paidPayoutAmount: 0,
         pendingPayoutAmount: 0, overdueCount: 0, upcomingCount: mockPayments.length, paidCount: 0
       },
