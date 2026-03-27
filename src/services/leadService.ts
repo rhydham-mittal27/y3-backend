@@ -310,10 +310,11 @@ export const getAllClassLeads = async (args: {
   if (parentName) query.parentName = { $regex: parentName, $options: 'i' };
   if (grade) query.grade = { $regex: grade, $options: 'i' };
   if (subject) {
-    if (/^[a-fA-F0-9]{24}$/.test(String(subject))) {
-      query.subject = subject;
+    const resolvedIds = await resolveSubjectIds(subject);
+    if (resolvedIds.length > 0) {
+      query.subject = { $in: resolvedIds.map(id => new mongoose.Types.ObjectId(id)) };
     } else {
-      query.subject = { $regex: subject, $options: 'i' }; // Fallback for migration/old data
+      query.subject = new mongoose.Types.ObjectId(); // No match possible
     }
   }
   if (board) query.board = board;
