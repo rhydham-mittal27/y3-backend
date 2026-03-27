@@ -257,23 +257,11 @@ export const getCoordinatorPaymentSummary = async (
     sortOrder?: 'asc' | 'desc' 
   }
 ) => {
-  const classes = await FinalClass.find({ coordinator: new mongoose.Types.ObjectId(coordinatorUserId) }).select('_id');
+  const classes = await FinalClass.find({ coordinator: new mongoose.Types.ObjectId(coordinatorUserId) }).select('_id tutor tutorUser');
   const classIds = classes.map((c) => c._id);
+  const tutorUserIds = [...new Set(classes.map(c => (c as any).tutorUser || c.tutor).filter(Boolean))];
 
   console.log(`[getCoordinatorPaymentSummary] Coordinator: ${coordinatorUserId}, Found ${classIds.length} classes`);
-
-  const query: any = { finalClass: { $in: classIds } };
-  if (filters?.status) query.status = filters.status;
-  if (filters?.classId) query.finalClass = new mongoose.Types.ObjectId(filters.classId);
-  if (filters?.paymentType) query.paymentType = filters.paymentType;
-
-  console.log(`[getCoordinatorPaymentSummary] Query:`, JSON.stringify(query));
-
-  if (filters?.fromDate || filters?.toDate) {
-    query.createdAt = {} as any;
-    if (filters.fromDate) (query.createdAt as any).$gte = filters.fromDate;
-    if (filters.toDate) (query.createdAt as any).$lte = filters.toDate;
-  }
 
   const page = filters?.page || 1;
   const limit = filters?.limit || 10;
@@ -281,6 +269,61 @@ export const getCoordinatorPaymentSummary = async (
   const sortField = filters?.sortBy || 'dueDate';
   const sortDir = filters?.sortOrder === 'desc' ? -1 : 1;
   const sort: any = { [sortField]: sortDir };
+
+  if (filters?.paymentType === PAYMENT_TYPE.TUTOR_VERIFICATION_FEES && filters?.status === PAYMENT_STATUS.PENDING) {
+    const TutorModel = mongoose.model('Tutor');
+    const query: any = {
+      user: { $in: tutorUserIds },
+      verificationFeeStatus: { $in: ['DEDUCT_FROM_FIRST_MONTH', 'PENDING'] }
+    };
+    
+    const [tutors, total] = await Promise.all([
+      TutorModel.find(query).skip(skip).limit(limit).populate('user', 'name email phone'),
+      TutorModel.countDocuments(query)
+    ]);
+    
+    // Mock payments so frontend displays seamlessly
+    const mockPayments = tutors.map(t => ({
+      _id: String(t._id),
+      id: String(t._id),
+      tutor: t.user,
+      amount: 500, // VERIFICATION_FEE_AMOUNT
+      status: PAYMENT_STATUS.PENDING,
+      paymentType: PAYMENT_TYPE.TUTOR_VERIFICATION_FEES,
+      createdAt: (t as any).createdAt || new Date(),
+      dueDate: new Date(),
+      notes: 'Pending Verification Fee'
+    }));
+
+    return {
+      payments: mockPayments,
+      total,
+      page,
+      limit,
+      statistics: {
+        totalAmount: 0, paidAmount: 0, pendingAmount: mockPayments.length * 500,
+        overdueAmount: 0, totalPayoutAmount: 0, paidPayoutAmount: 0,
+        pendingPayoutAmount: 0, overdueCount: 0, upcomingCount: mockPayments.length, paidCount: 0
+      },
+      categorized: { overdue: [], upcoming: mockPayments, paid: [] }
+    };
+  }
+
+  const query: any = { 
+    ...(filters?.paymentType === PAYMENT_TYPE.TUTOR_VERIFICATION_FEES 
+      ? { tutor: { $in: tutorUserIds } } 
+      : { finalClass: { $in: classIds } }) 
+  };
+
+  if (filters?.status) query.status = filters.status;
+  if (filters?.classId) query.finalClass = new mongoose.Types.ObjectId(filters.classId);
+  if (filters?.paymentType) query.paymentType = filters.paymentType;
+
+  if (filters?.fromDate || filters?.toDate) {
+    query.createdAt = {} as any;
+    if (filters.fromDate) (query.createdAt as any).$gte = filters.fromDate;
+    if (filters.toDate) (query.createdAt as any).$lte = filters.toDate;
+  }
 
   const [payments, total] = await Promise.all([
     Payment.find(query)

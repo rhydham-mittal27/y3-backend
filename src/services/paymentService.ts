@@ -44,7 +44,7 @@ export const createManualPayment = async (data: {
 
   return await payment.populate([
     { path: 'finalClass' },
-    { path: 'tutor', select: 'name email phone' },
+    { path: 'tutor', select: 'name email phone verificationFeeStatus' },
     { path: 'createdBy', select: 'name email' },
   ]);
 };
@@ -82,7 +82,7 @@ export const createPayment = async (attendanceId: string, createdBy: string) => 
   await payment.populate([
     { path: 'finalClass' },
     { path: 'attendance' },
-    { path: 'tutor', select: 'name email phone' },
+    { path: 'tutor', select: 'name email phone verificationFeeStatus' },
     { path: 'createdBy', select: 'name email' },
   ]);
 
@@ -255,7 +255,7 @@ export const sendPaymentReminder = async (args: { paymentId: string; reminderMes
   const { paymentId, reminderMessage } = args;
   const payment = await Payment.findById(paymentId).populate([
     { path: 'finalClass' },
-    { path: 'tutor', select: 'name email phone' },
+    { path: 'tutor', select: 'name email phone verificationFeeStatus' },
   ]);
   if (!payment) throw new ErrorResponse('Payment not found', 404);
 
@@ -326,7 +326,7 @@ export const getAllPayments = async (args: {
         { path: 'finalClass' },
         { path: 'attendance' },
         { path: 'attendanceSheet' },
-        { path: 'tutor', select: 'name email phone' },
+        { path: 'tutor', select: 'name email phone verificationFeeStatus' },
         { path: 'createdBy', select: 'name email' },
         { path: 'paidBy', select: 'name email' },
       ]),
@@ -341,7 +341,7 @@ export const getPaymentById = async (paymentId: string) => {
     { path: 'finalClass' },
     { path: 'attendance' },
     { path: 'attendanceSheet' },
-    { path: 'tutor', select: 'name email phone' },
+    { path: 'tutor', select: 'name email phone verificationFeeStatus' },
     { path: 'createdBy', select: 'name email' },
     { path: 'paidBy', select: 'name email' },
   ]);
@@ -435,7 +435,7 @@ export const updatePaymentStatus = async (
       { path: 'finalClass' },
       { path: 'attendance' },
       { path: 'attendanceSheet' },
-      { path: 'tutor', select: 'name email phone' },
+      { path: 'tutor', select: 'name email phone verificationFeeStatus' },
       { path: 'createdBy', select: 'name email' },
       { path: 'paidBy', select: 'name email' },
     ]);
@@ -511,7 +511,7 @@ export const updatePayment = async (
   await payment.populate([
     { path: 'finalClass' },
     { path: 'attendance' },
-    { path: 'tutor', select: 'name email phone' },
+    { path: 'tutor', select: 'name email phone verificationFeeStatus' },
     { path: 'createdBy', select: 'name email' },
     { path: 'paidBy', select: 'name email' },
   ]);
@@ -551,7 +551,7 @@ export const getPaymentsByTutor = async (
     .populate([
       { path: 'finalClass' },
       { path: 'attendance' },
-      { path: 'tutor', select: 'name email phone' },
+      { path: 'tutor', select: 'name email phone verificationFeeStatus' },
       { path: 'createdBy', select: 'name email' },
       { path: 'paidBy', select: 'name email' },
     ]);
@@ -592,7 +592,7 @@ export const getPaymentsByParent = async (
     .populate([
       { path: 'finalClass' },
       { path: 'attendance' },
-      { path: 'tutor', select: 'name email phone' },
+      { path: 'tutor', select: 'name email phone verificationFeeStatus' },
       { path: 'createdBy', select: 'name email' },
       { path: 'paidBy', select: 'name email' },
     ]);
@@ -613,7 +613,7 @@ export const getPaymentsByClass = async (finalClassId: string, status?: PAYMENT_
     .populate([
       { path: 'finalClass' },
       { path: 'attendance' },
-      { path: 'tutor', select: 'name email phone' },
+      { path: 'tutor', select: 'name email phone verificationFeeStatus' },
       { path: 'createdBy', select: 'name email' },
       { path: 'paidBy', select: 'name email' },
     ]);
@@ -794,7 +794,7 @@ export const generatePaymentReport = async (filters: {
     .populate([
       { path: 'finalClass' },
       { path: 'attendance' },
-      { path: 'tutor', select: 'name email phone' },
+      { path: 'tutor', select: 'name email phone verificationFeeStatus' },
       { path: 'createdBy', select: 'name email' },
       { path: 'paidBy', select: 'name email' },
     ]);
@@ -914,7 +914,7 @@ export const createPaymentForSheet = async (sheetId: string, createdBy: string) 
     { path: 'finalClass' },
     { path: 'groupClass' },
     { path: 'attendanceSheet' },
-    { path: 'tutor', select: 'name email phone' },
+    { path: 'tutor', select: 'name email phone verificationFeeStatus' },
     { path: 'createdBy', select: 'name email' },
   ]);
 
@@ -1030,4 +1030,69 @@ export const createCyclePayments = async (sheetId: string, createdBy: string) =>
   */
 };
 
+export const processManualFeeDeduction = async (tutorId: string, createdBy: string) => {
+  let tutorDoc = null;
+  if (mongoose.isValidObjectId(tutorId)) {
+    tutorDoc = await Tutor.findOne({ $or: [{ _id: tutorId }, { user: tutorId }] });
+  }
+  if (!tutorDoc) throw new ErrorResponse('Tutor not found', 404);
+  
+  if (String(tutorDoc.verificationFeeStatus) !== 'DEDUCT_FROM_FIRST_MONTH' && String(tutorDoc.verificationFeeStatus) !== 'PENDING') {
+    throw new ErrorResponse('Tutor is not opted for fee deduction or pending', 400);
+  }
+
+  const feeAmount = VERIFICATION_FEE_DEDUCT_AMOUNT || 500;
+
+  const performCollection = async (session: mongoose.ClientSession | null) => {
+    const existingFeePayment = await Payment.findOne({
+      tutor: tutorDoc.user || tutorDoc._id,
+      paymentType: PAYMENT_TYPE.TUTOR_VERIFICATION_FEES,
+      status: PAYMENT_STATUS.PENDING
+    });
+
+    if (existingFeePayment) {
+      existingFeePayment.status = PAYMENT_STATUS.PAID;
+      existingFeePayment.paymentDate = new Date();
+      existingFeePayment.paidBy = new mongoose.Types.ObjectId(createdBy);
+      existingFeePayment.notes = (existingFeePayment.notes || '') + ' Verification fee collected manually.';
+      await existingFeePayment.save({ session });
+    } else {
+      await Payment.create([{
+        tutor: tutorDoc.user || tutorDoc._id,
+        amount: feeAmount,
+        currency: 'INR',
+        status: PAYMENT_STATUS.PAID,
+        paymentType: PAYMENT_TYPE.TUTOR_VERIFICATION_FEES,
+        dueDate: new Date(),
+        paymentDate: new Date(),
+        paidBy: new mongoose.Types.ObjectId(createdBy),
+        createdBy: new mongoose.Types.ObjectId(createdBy),
+        notes: 'Verification fee collected manually'
+      }], { session });
+    }
+
+    tutorDoc.verificationFeeStatus = 'PAID';
+    tutorDoc.verificationFeePaymentDate = new Date();
+    await tutorDoc.save({ session });
+  };
+
+  const session = await mongoose.startSession();
+  try {
+    session.startTransaction();
+    await performCollection(session);
+    await session.commitTransaction();
+    return { success: true, message: 'Verification fee successfully processed' };
+  } catch (error: any) {
+    if (error.message && (error.message.includes('Transactions are not supported') || error.code === 20)) {
+       await session.abortTransaction();
+       logger.warn('Transactions not supported. Retrying without transaction.');
+       await performCollection(null);
+       return { success: true, message: 'Verification fee successfully processed' };
+    }
+    await session.abortTransaction();
+    throw error;
+  } finally {
+    session.endSession();
+  }
+};
 

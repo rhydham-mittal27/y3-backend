@@ -32,6 +32,7 @@ import {
   getAreasController,
   getTutorStatsController,
   updateVerificationFeeStatusController,
+  deductVerificationFeeController,
 } from "../controllers/tutorController";
 import { getTutorClasses } from "../controllers/finalClassController";
 import {
@@ -214,6 +215,12 @@ router.patch(
   ),
   uploadDocument, // reuse multer middleware for file upload
   updateVerificationFeeStatusController,
+);
+
+router.post(
+  "/:id/deduct-verification-fee",
+  authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN, USER_ROLES.COORDINATOR),
+  deductVerificationFeeController,
 );
 
 // Tier management and feedback routes
