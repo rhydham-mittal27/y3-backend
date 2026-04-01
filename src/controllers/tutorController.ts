@@ -33,6 +33,7 @@ import {
   getDistinctCities,
   getDistinctAreas,
   updateVerificationFeeStatus,
+  submitTutorVerification,
 } from '../services/tutorService';
 import { processManualFeeDeduction } from '../services/paymentService';
 import { PAYMENT_TYPE, PAYMENT_STATUS } from '../config/constants';
@@ -229,6 +230,12 @@ export const updateVerificationFeeStatusController = asyncHandler(async (req: Re
 export const deductVerificationFeeController = asyncHandler(async (req: AuthRequest, res: Response) => {
   const result = await processManualFeeDeduction(req.params.id, String(req.user!.id));
   return res.json(successResponse(result, result.message));
+});
+
+export const submitTutorVerificationController = asyncHandler(async (req: Request, res: Response) => {
+  const tutorId = req.params.id;
+  const tutor = await submitTutorVerification(tutorId);
+  return res.json(successResponse(tutor, 'Verification submitted for review successfully'));
 });
 
 export const getTutorsByStatus = asyncHandler(async (req: Request, res: Response) => {

@@ -33,6 +33,7 @@ import {
   getTutorStatsController,
   updateVerificationFeeStatusController,
   deductVerificationFeeController,
+  submitTutorVerificationController,
 } from "../controllers/tutorController";
 import { getTutorClasses } from "../controllers/finalClassController";
 import {
@@ -215,6 +216,12 @@ router.patch(
   ),
   uploadDocument, // reuse multer middleware for file upload
   updateVerificationFeeStatusController,
+);
+
+router.post(
+  "/:id/submit-verification",
+  authorize(USER_ROLES.TUTOR),
+  submitTutorVerificationController,
 );
 
 router.post(

@@ -80,7 +80,7 @@ const DemoDetailsSchema = new Schema<IDemoDetailsEmbedded>(
   {
     demoDate: { type: Date },
     demoTime: { type: String },
-    demoStatus: { type: String, enum: Object.values(DEMO_STATUS) },
+    demoStatus: { type: String },
     feedback: { type: String },
     assignedAt: { type: Date },
     attendanceStatus: { type: String, enum: ['PRESENT', 'ABSENT'] },
@@ -116,7 +116,7 @@ const StudentDetailSchema = new Schema<IStudentDetail>({
     match: [/^[0-9]{10}$/, 'Please enter a valid 10-digit phone number'],
   },
   // Per-student curriculum for groups
-  board: { type: String, enum: Object.values(BOARD_TYPE) },
+  board: { type: String },
   grade: { type: String },
   subject: [{ type: Schema.Types.ObjectId, ref: 'Option' }],
 }, { _id: false });
@@ -187,14 +187,14 @@ const ClassLeadSchema = new Schema<IClassLeadDocument>(
         'Board is required for single student'
       ]
     },
-    mode: { type: String, enum: Object.values(TEACHING_MODE), required: true },
+    mode: { type: String, required: true },
     location: { type: String },
     city: { type: String },
     area: { type: String },
     address: { type: String },
     timing: { type: String, required: true },
     weekdays: { type: [String] },
-    status: { type: String, enum: Object.values(CLASS_LEAD_STATUS), default: CLASS_LEAD_STATUS.NEW },
+    status: { type: String, default: CLASS_LEAD_STATUS.NEW },
     
     // Group specific fields
     numberOfStudents: {
@@ -225,8 +225,8 @@ const ClassLeadSchema = new Schema<IClassLeadDocument>(
     classDurationHours: { type: Number },
     paymentAmount: { type: Number, min: 0 },
     tutorFees: { type: Number, min: 0 },
-    preferredTutorGender: { type: String, enum: Object.values(PREFERRED_TUTOR_GENDER) },
-    leadSource: { type: String, enum: Object.values(LEAD_SOURCE) },
+    preferredTutorGender: { type: String },
+    leadSource: { type: String },
     paymentReceived: { type: Boolean, default: false },
     assignedTutor: { type: Schema.Types.ObjectId, ref: 'User' },
     demoTutor: { type: Schema.Types.ObjectId, ref: 'User' },

@@ -831,7 +831,8 @@ export const updateVerificationStatus = async (
   newStatus: VERIFICATION_STATUS,
   verificationNotes: string | undefined,
   verifiedBy: string,
-  whatsappCommunityJoined?: boolean
+  whatsappCommunityJoined?: boolean,
+  rejectionReason?: string
 ) => {
   const tutor = await Tutor.findById(tutorId);
   if (!tutor) throw new ErrorResponse('Tutor not found', 404);
@@ -842,12 +843,10 @@ export const updateVerificationStatus = async (
 
   const current = tutor.verificationStatus as VERIFICATION_STATUS;
   const valid = (from: VERIFICATION_STATUS, to: VERIFICATION_STATUS) => {
-    // Allow moving from PENDING -> UNDER_REVIEW (auto when first doc uploaded)
     if (from === VERIFICATION_STATUS.PENDING && to === VERIFICATION_STATUS.UNDER_REVIEW) return true;
-    // Allow managers to directly approve or reject from PENDING as well (for older tutors or manual flows)
     if (from === VERIFICATION_STATUS.PENDING && (to === VERIFICATION_STATUS.VERIFIED || to === VERIFICATION_STATUS.REJECTED)) return true;
-    // Normal flow: UNDER_REVIEW -> VERIFIED / REJECTED
     if (from === VERIFICATION_STATUS.UNDER_REVIEW && (to === VERIFICATION_STATUS.VERIFIED || to === VERIFICATION_STATUS.REJECTED)) return true;
+    if (from === VERIFICATION_STATUS.REJECTED && to === VERIFICATION_STATUS.UNDER_REVIEW) return true;
     return false;
   };
 
@@ -858,11 +857,15 @@ export const updateVerificationStatus = async (
   tutor.verificationStatus = newStatus;
   tutor.verificationNotes = verificationNotes;
 
-  if (newStatus === VERIFICATION_STATUS.VERIFIED || newStatus === VERIFICATION_STATUS.REJECTED) {
-    tutor.verifiedBy = new mongoose.Types.ObjectId(verifiedBy) as any;
+  if (newStatus === VERIFICATION_STATUS.REJECTED) {
+    tutor.verificationRejectionReason = rejectionReason || verificationNotes;
+  } else if (newStatus === VERIFICATION_STATUS.VERIFIED) {
+    tutor.verificationRejectionReason = undefined;
     tutor.verifiedAt = new Date();
-    // When tutor is verified, mark all existing documents as verified at the same time
-    if (newStatus === VERIFICATION_STATUS.VERIFIED && Array.isArray(tutor.documents)) {
+    tutor.verifiedBy = new mongoose.Types.ObjectId(verifiedBy) as any;
+    
+    // When tutor is verified, mark all existing documents as verified
+    if (Array.isArray(tutor.documents)) {
       const now = tutor.verifiedAt || new Date();
       tutor.documents = tutor.documents.map((d: any) => {
         if (!d) return d;
@@ -882,7 +885,7 @@ export const updateVerificationStatus = async (
   };
 
   const message = newStatus === VERIFICATION_STATUS.REJECTED
-    ? `Your verification was rejected. ${verificationNotes || ''}`
+    ? `Your verification was rejected. Reason: ${rejectionReason || verificationNotes || 'No reason provided.'}`
     : `Your verification status is now: ${newStatus}`;
 
   await createNotificationWithPreferences({
@@ -902,16 +905,16 @@ export const updateVerificationStatus = async (
     if (newStatus === VERIFICATION_STATUS.VERIFIED) {
       await Manager.findOneAndUpdate({ user: new mongoose.Types.ObjectId(verifiedBy) }, { $inc: { tutorsVerified: 1 } });
     }
-    // TODO: Use verifiedByUser for logging/display purposes
-    await User.findById(verifiedBy).select('name');
     await logManagerActivity(
       verifiedBy,
       MANAGER_ACTION_TYPE.VERIFY_TUTOR,
-      `Verified tutor ${(tutor as any).user?.name || ''} - status: ${newStatus}`,
+      `Updated tutor verification status to ${newStatus} for ${(tutor as any).user?.name || ''}`,
       { entityType: 'Tutor', entityId: String(tutor._id), entityName: (tutor as any).user?.name },
-      { oldStatus: current, newStatus, verificationNotes }
+      { oldStatus: current, newStatus, verificationNotes, rejectionReason }
     );
-  } catch { }
+  } catch (err: any) {
+    console.error('Failed to log manager activity:', err.message);
+  }
 
   return tutor;
 };
@@ -974,40 +977,56 @@ export const updateVerificationFeeStatus = async (
       throw new ErrorResponse('Failed to upload payment proof', 500);
     }
 
-    // Create a paid Payment record for bookkeeping
-    try {
-      const dueDate = verificationFeePaymentDate || new Date();
-      await Payment.create({
-        tutor: tutor.user,
-        amount: VERIFICATION_FEE_AMOUNT,
-        currency: 'INR',
-        status: PAYMENT_STATUS.PAID,
-        paymentType: PAYMENT_TYPE.TUTOR_VERIFICATION_FEES,
-        dueDate,
-        paymentDate: verificationFeePaymentDate,
-        paymentProof: verificationFeePaymentProof,
-        createdBy: tutor.user,
-      } as any);
-    } catch (err: any) {
-      console.error('Failed to create verification fee payment record', err);
-      // non-fatal: continue
+    // Check for existing verification payment to prevent duplicates
+    const existingPayment = await Payment.findOne({
+      tutor: tutor.user,
+      paymentType: PAYMENT_TYPE.TUTOR_VERIFICATION_FEES
+    });
+
+    if (!existingPayment) {
+      // Create a paid Payment record for bookkeeping
+      try {
+        const dueDate = verificationFeePaymentDate || new Date();
+        await Payment.create({
+          tutor: tutor.user,
+          amount: VERIFICATION_FEE_AMOUNT,
+          currency: 'INR',
+          status: PAYMENT_STATUS.PAID,
+          paymentType: PAYMENT_TYPE.TUTOR_VERIFICATION_FEES,
+          dueDate,
+          paymentDate: verificationFeePaymentDate,
+          paymentProof: verificationFeePaymentProof,
+          createdBy: tutor.user,
+        } as any);
+      } catch (err: any) {
+        console.error('Failed to create verification fee payment record', err);
+        // non-fatal: continue
+      }
     }
   } else if (feeStatus === 'DEDUCT_FROM_FIRST_MONTH') {
-    // Create a pending verification fee record to be deducted from first payout (bookkeeping)
-    try {
-      const dueDate = new Date();
-      await Payment.create({
-        tutor: tutor.user,
-        amount: VERIFICATION_FEE_DEDUCT_AMOUNT,
-        currency: 'INR',
-        status: PAYMENT_STATUS.PENDING,
-        paymentType: PAYMENT_TYPE.TUTOR_VERIFICATION_FEES,
-        dueDate,
-        notes: 'Deduct from first payout',
-        createdBy: tutor.user,
-      } as any);
-    } catch (err: any) {
-      console.error('Failed to create deduction verification fee record', err);
+    // Check for existing verification payment to prevent duplicates
+    const existingPayment = await Payment.findOne({
+      tutor: tutor.user,
+      paymentType: PAYMENT_TYPE.TUTOR_VERIFICATION_FEES
+    });
+
+    if (!existingPayment) {
+      // Create a pending verification fee record to be deducted from first payout (bookkeeping)
+      try {
+        const dueDate = new Date();
+        await Payment.create({
+          tutor: tutor.user,
+          amount: VERIFICATION_FEE_DEDUCT_AMOUNT,
+          currency: 'INR',
+          status: PAYMENT_STATUS.PENDING,
+          paymentType: PAYMENT_TYPE.TUTOR_VERIFICATION_FEES,
+          dueDate,
+          notes: 'Deduct from first payout',
+          createdBy: tutor.user,
+        } as any);
+      } catch (err: any) {
+        console.error('Failed to create deduction verification fee record', err);
+      }
     }
   }
 
@@ -1021,6 +1040,28 @@ export const updateVerificationFeeStatus = async (
     { path: 'verifiedBy', select: 'name email phone role' },
     { path: 'subjects', populate: { path: 'parent', populate: { path: 'parent' } } },
   ]);
+  return tutor;
+};
+
+export const submitTutorVerification = async (tutorId: string) => {
+  const tutor = await Tutor.findById(tutorId);
+  if (!tutor) throw new ErrorResponse('Tutor not found', 404);
+
+  const currentStatus = tutor.verificationStatus as VERIFICATION_STATUS;
+  
+  // Transition back to UNDER_REVIEW if REJECTED or PENDING
+  if (currentStatus === VERIFICATION_STATUS.REJECTED || currentStatus === VERIFICATION_STATUS.PENDING) {
+    tutor.verificationStatus = VERIFICATION_STATUS.UNDER_REVIEW;
+    // Clear previous rejection reason once re-submitted
+    (tutor as any).verificationRejectionReason = undefined;
+    await tutor.save();
+  }
+
+  await tutor.populate([
+    { path: 'user', select: 'name email phone role gender city preferredMode' },
+    { path: 'subjects', populate: { path: 'parent', populate: { path: 'parent' } } },
+  ]);
+
   return tutor;
 };
 

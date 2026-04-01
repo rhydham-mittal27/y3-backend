@@ -31,6 +31,7 @@ export interface ITutorDocument extends Document {
   verificationStatus: VERIFICATION_STATUS | string;
   documents: IDocumentEmbedded[];
   verificationNotes?: string;
+  verificationRejectionReason?: string;
   verifiedBy?: mongoose.Types.ObjectId | null;
   verifiedAt?: Date;
   isAvailable: boolean;
@@ -132,6 +133,7 @@ const TutorSchema = new Schema<ITutorDocument>(
     verificationStatus: { type: String, enum: Object.values(VERIFICATION_STATUS), default: VERIFICATION_STATUS.PENDING },
     documents: { type: [DocumentSchema], default: [] },
     verificationNotes: { type: String },
+    verificationRejectionReason: { type: String },
     verifiedBy: { type: Schema.Types.ObjectId, ref: 'User' },
     verifiedAt: { type: Date },
     isAvailable: { type: Boolean, default: true },

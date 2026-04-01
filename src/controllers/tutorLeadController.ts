@@ -8,6 +8,7 @@ import generateTeacherId, { generateTeacherIdWithCityCode } from '../utils/gener
 import Option from '../models/Option';
 import { TEACHING_MODE, USER_ROLES } from '../config/constants';
 import { sendLoginOtp } from '../services/authService';
+import { sendEmail } from '../utils/emailService';
 import crypto from 'crypto';
 
 function parseExperience(experience: string | undefined): { hours: number; years: number } {
@@ -28,6 +29,115 @@ function parseExperience(experience: string | undefined): { hours: number; years
     };
   }
   return { hours: num, years: 0 };
+}
+
+async function sendTutorWelcomeEmail(to: string, name: string) {
+  const subject = 'Welcome to Your Shikshak 🎉';
+
+  // Simple HTML version with basic formatting
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Welcome to Your Shikshak</title>
+  <style>
+    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f5f5f5; }
+    .container { background-color: white; padding: 40px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); }
+    .header { text-align: center; margin-bottom: 30px; padding-bottom: 20px; border-bottom: 2px solid #667eea; }
+    .logo { font-size: 32px; font-weight: bold; color: #667eea; margin-bottom: 10px; }
+    .title { color: #333; font-size: 24px; margin-bottom: 10px; }
+    .subtitle { color: #666; font-size: 16px; }
+    .section { margin: 25px 0; padding: 20px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #667eea; }
+    .section-title { color: #667eea; font-size: 18px; font-weight: bold; margin-bottom: 15px; }
+    .steps { margin: 15px 0; padding-left: 20px; }
+    .steps li { margin: 10px 0; color: #555; }
+    .button { display: inline-block; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 15px 30px; text-decoration: none; border-radius: 8px; font-weight: bold; margin: 20px 0; }
+    .features { margin: 20px 0; }
+    .feature { padding: 10px 0; border-bottom: 1px dashed #ddd; color: #555; }
+    .feature:last-child { border-bottom: none; }
+    .note { background: #fff3cd; padding: 15px; border-left: 4px solid #ffc107; margin: 20px 0; color: #856404; }
+    .divider { height: 2px; background: linear-gradient(90deg, #667eea 0%, #764ba2 100%); margin: 30px 0; }
+    .contact { margin: 20px 0; }
+    .contact-item { margin: 8px 0; color: #555; }
+    .footer { text-align: center; margin-top: 30px; padding-top: 20px; border-top: 1px solid #eee; color: #666; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="logo">Your Shikshak </div>
+      <div class="subtitle">Empowering Tutors. Connecting Students.</div>
+    </div>
+
+    <p>Dear ${name},</p>
+
+    <p><strong>Welcome to Your Shikshak </strong></p>
+
+    <p>We're excited to have you onboard! Your journey as a tutor on our platform has just begun.</p>
+
+    <p>To start receiving home and online tuition opportunities, your next step is to complete your profile.</p>
+
+    <div class="divider"></div>
+
+    <div class="section">
+      <div class="section-title"> Complete Your Profile in 4 Simple Steps:</div>
+      <ol class="steps">
+        <li>Login using your registered email ID (OTP-based login)</li>
+        <li>Fill in your personal and academic details</li>
+        <li>Add your subjects, classes, and preferred locations</li>
+        <li>Set your password for future logins</li>
+      </ol>
+      <center><a href="https://yourshikshak.in/login" class="button">Complete Your Profile Now</a></center>
+    </div>
+
+    <div class="divider"></div>
+
+    <div class="section">
+      <div class="section-title"> What You Get with Your Shikshak:</div>
+      <div class="features">
+        <div class="feature"> Access to verified tuition leads (home & online)</div>
+        <div class="feature"> Track your earnings and teaching activity</div>
+        <div class="feature"> Easy attendance marking system</div>
+        <div class="feature"> Build your professional tutor profile</div>
+        <div class="feature"> Grow your reach and increase your income</div>
+      </div>
+    </div>
+
+    <div class="note">
+      <strong> Note:</strong> Only tutors with complete profiles are eligible to receive student leads.
+    </div>
+
+    <div class="divider"></div>
+
+    <div class="section">
+      <div class="section-title"> Need Help?</div>
+      <div class="contact">
+        <div class="contact-item"> Website: <a href="https://yourshikshak.in">https://yourshikshak.in</a></div>
+        <div class="contact-item"> Email: <a href="mailto:contact@yourshikshak.in">contact@yourshikshak.in</a></div>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <p>We're here to support you at every step.<br>
+    <strong>Let's grow together with Your Shikshak </strong></p>
+
+    <div class="footer">
+      <p><strong>Best regards,</strong><br>
+      Team Your Shikshak<br>
+      <em>Empowering Tutors. Connecting Students.</em></p>
+    </div>
+  </div>
+</body>
+</html>`;
+
+  try {
+    await sendEmail(to, subject, html);
+    console.log(`[TutorWelcome] Welcome email sent to ${to}`);
+  } catch (error) {
+    console.error(`[TutorWelcome] Failed to send welcome email to ${to}:`, error);
+  }
 }
 
 export const createTutorLeadRegistrationController = asyncHandler(async (req: Request, res: Response) => {
@@ -108,12 +218,12 @@ export const createTutorLeadRegistrationController = asyncHandler(async (req: Re
   const { hours: experienceHours, years: yearsOfExperience } = parseExperience(experience);
   const preferredLocations: string[] = [];
   const preferredCities: string[] = [];
-  
+
   if (city) {
     preferredLocations.push(city);
     preferredCities.push(city);
   }
-  
+
   if (Array.isArray(preferredAreas)) preferredAreas.forEach((a: string) => {
     if (a && a.trim()) preferredLocations.push(a.trim());
   });
@@ -171,6 +281,9 @@ export const createTutorLeadRegistrationController = asyncHandler(async (req: Re
   if (teacherIdToSave) tutorPayload.teacherId = teacherIdToSave;
 
   const tutor = await Tutor.create(tutorPayload);
+
+  // Send welcome email to newly registered tutor
+  await sendTutorWelcomeEmail(user.email, user.name);
 
   const returnTeacherId = tutor.teacherId || String(tutor._id);
   return res.status(201).json(successResponse({ teacherId: returnTeacherId }, 'Tutor registered successfully'));
