@@ -32,6 +32,7 @@ export const addDailyAttendanceController = asyncHandler(async (req: AuthRequest
     studentAttendanceStatus,
     notes,
     userId: req.user!.id,
+    userRole: req.user!.role,
   });
 
   return res.status(201).json(successResponse(sheet, 'Attendance recorded successfully'));

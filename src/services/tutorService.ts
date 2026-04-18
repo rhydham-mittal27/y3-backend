@@ -225,67 +225,18 @@ export const getTutorByUserId = async (userId: string) => {
   ]);
   if (!tutor) throw new ErrorResponse('Tutor not found', 404);
 
-  const tutorUserId = new mongoose.Types.ObjectId(
-    String(((tutor.user as any)?._id) || tutor.user)
-  );
+  // Update experience hours before returning (optional, but ensures fresh data)
+  await updateTutorExperienceAndTier(userId);
+  
+  // Refetch to get updated hours
+  const updatedTutor = await Tutor.findOne({ user: userId }).populate([
+    { path: 'user', select: 'name email phone role gender city preferredMode' },
+    { path: 'verifiedBy', select: 'name email phone role' },
+    { path: 'subjects', populate: { path: 'parent', populate: { path: 'parent' } } },
+  ]);
 
-  // Compute total experience hours as: sum over all classes of
-  // (number of attendance records for that class * classLead.classDurationHours).
-  // This uses actual attendance, not just the completedSessions counter.
-
-  // First, load all classes for this tutor (any status) with their classLead.
-  const allTutorClasses = await FinalClass.find({
-    $or: [
-      { tutor: tutorUserId },
-      { tutorUser: tutorUserId },
-    ],
-  })
-    .select('classLead')
-    .populate({ path: 'classLead', select: 'classDurationHours' });
-
-  const classIdMap = new Map<string, any>();
-  const classIds: mongoose.Types.ObjectId[] = [];
-  for (const cls of allTutorClasses as any[]) {
-    const id = cls._id as mongoose.Types.ObjectId;
-    classIds.push(id);
-    classIdMap.set(String(id), cls);
-  }
-
-  let totalClassHours = 0;
-
-  if (classIds.length > 0) {
-    // Aggregate attendance counts per finalClass for this tutor using AttendanceSheet.
-    const attendanceCounts = await AttendanceSheet.aggregate([
-      {
-        $match: {
-          finalClass: { $in: classIds },
-          // We assume sheets belong to the current tutor of the class or handled via finalClass association
-          // If we want to be strict about who took the session, we might need to filter records inside sheet
-          // But totalSessionsTaken is a good approximation for the class progress.
-        },
-      },
-      {
-        $group: {
-          _id: '$finalClass',
-          count: { $sum: '$totalSessionsTaken' },
-        },
-      },
-    ]);
-
-    for (const row of attendanceCounts as any[]) {
-      const cls = classIdMap.get(String(row._id));
-      if (!cls) continue;
-      const duration = (cls.classLead as any)?.classDurationHours || 0;
-      const count = row.count || 0;
-      if (duration > 0 && count > 0) {
-        totalClassHours += duration * count;
-      }
-    }
-  }
-
-  (tutor as any).experienceHours = totalClassHours;
-
-  return await withResolvedTutorDocumentUrls(tutor);
+  if (!updatedTutor) throw new ErrorResponse('Tutor not found', 404);
+  return await withResolvedTutorDocumentUrls(updatedTutor);
 };
 
 export const getPublicTutorProfile = async (teacherId: string) => {
@@ -1484,49 +1435,50 @@ export const updateTutorExperienceAndTier = async (tutorUserId: string | mongoos
 
   const objectId = new mongoose.Types.ObjectId(String(tutorUserId));
 
-  // 1. Calculate total experience hours
-  const allTutorClasses = await FinalClass.find({
-    $or: [{ tutor: objectId }, { tutorUser: objectId }],
-  })
-    .select('classLead')
-    .populate({ path: 'classLead', select: 'classDurationHours' });
-
-  const classIdMap = new Map<string, any>();
-  const classIds: mongoose.Types.ObjectId[] = [];
-  for (const cls of allTutorClasses as any[]) {
-    const id = cls._id as mongoose.Types.ObjectId;
-    classIds.push(id);
-    classIdMap.set(String(id), cls);
-  }
-
-  let totalClassHours = 0;
-  if (classIds.length > 0) {
-    const attendanceCounts = await Attendance.aggregate([
-      {
-        $match: {
-          tutor: objectId,
-          finalClass: { $in: classIds },
-          status: { $in: [ATTENDANCE_STATUS.APPROVED, ATTENDANCE_STATUS.PARENT_APPROVED, ATTENDANCE_STATUS.COORDINATOR_APPROVED] }
-        },
-      },
-      {
-        $group: {
-          _id: '$finalClass',
-          count: { $sum: 1 },
-        },
-      },
-    ]);
-
-    for (const row of attendanceCounts as any[]) {
-      const cls = classIdMap.get(String(row._id));
-      if (!cls) continue;
-      const duration = (cls.classLead as any)?.classDurationHours || 0;
-      const count = row.count || 0;
-      if (duration > 0 && count > 0) {
-        totalClassHours += duration * count;
+  // 1. Calculate hours from AttendanceSheet (New Model - Primary)
+  const sheetAgg = await AttendanceSheet.aggregate([
+    { $unwind: '$records' },
+    { $match: { 'records.tutor': objectId } },
+    {
+      $group: {
+        _id: null,
+        total: { $sum: '$records.durationHours' }
       }
     }
-  }
+  ]);
+  const sheetHours = sheetAgg[0]?.total || 0;
+
+  // 2. Calculate hours from Attendance model (Legacy Model)
+  const legacyAgg = await Attendance.aggregate([
+    { $match: { tutor: objectId } },
+    {
+      $lookup: {
+        from: 'finalclasses',
+        localField: 'finalClass',
+        foreignField: '_id',
+        as: 'cl'
+      }
+    },
+    { $unwind: { path: '$cl', preserveNullAndEmptyArrays: true } },
+    {
+      $lookup: {
+        from: 'classleads',
+        localField: 'cl.classLead',
+        foreignField: '_id',
+        as: 'ld'
+      }
+    },
+    { $unwind: { path: '$ld', preserveNullAndEmptyArrays: true } },
+    {
+      $group: {
+        _id: null,
+        total: { $sum: { $ifNull: ['$ld.classDurationHours', 1] } }
+      }
+    }
+  ]);
+  const legacyHours = legacyAgg[0]?.total || 0;
+
+  const totalClassHours = sheetHours + legacyHours;
 
   // 2. Determine Tier
   // Default: Tier 3 (BRONZE)
@@ -1725,7 +1677,13 @@ export const getTutorAdvancedAnalytics = async (tutorUserId: string) => {
       $match: {
         'records.tutor': uid,
         'records.status': {
-          $in: [ATTENDANCE_STATUS.APPROVED, ATTENDANCE_STATUS.PARENT_APPROVED, ATTENDANCE_STATUS.COORDINATOR_APPROVED],
+          $in: [
+            ATTENDANCE_STATUS.APPROVED, 
+            ATTENDANCE_STATUS.PARENT_APPROVED, 
+            ATTENDANCE_STATUS.COORDINATOR_APPROVED,
+            ATTENDANCE_STATUS.PENDING,
+            ATTENDANCE_STATUS.REJECTED
+          ],
         },
         'records.sessionDate': { $gte: startOfMonth },
       },

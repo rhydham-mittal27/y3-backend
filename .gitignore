@@ -7,3 +7,5 @@ uploads/
 *.log
 .DS_Store
 coverage/
+# Added by code-review-graph
+.code-review-graph/

@@ -20,8 +20,9 @@ export const addDailyAttendance = async (params: {
   studentAttendances?: { student: string; status: string; notes?: string }[]; // For Group
   notes?: string;
   userId: string; // submittedBy
+  userRole?: string;
 }) => {
-  const { finalClassId, groupClassId, sessionDate, durationHours, topicCovered, studentAttendanceStatus, studentAttendances, notes, userId } = params;
+  const { finalClassId, groupClassId, sessionDate, durationHours, topicCovered, studentAttendanceStatus, studentAttendances, notes, userId, userRole } = params;
 
   if (!finalClassId && !groupClassId) {
     throw new ErrorResponse('Either finalClassId or groupClassId is required', 400);
@@ -35,7 +36,7 @@ export const addDailyAttendance = async (params: {
 
   if (groupClassId) {
     if (!mongoose.isValidObjectId(groupClassId)) throw new ErrorResponse('Invalid group class id', 400);
-    const group = await Groupleads.findById(groupClassId);
+    const group = await Groupleads.findById(groupClassId).populate('classLead');
     if (!group) throw new ErrorResponse('Groupleads not found', 404);
     if (group.status !== 'ACTIVE') throw new ErrorResponse('Groupleads must be ACTIVE to mark attendance', 400);
     
@@ -49,7 +50,7 @@ export const addDailyAttendance = async (params: {
   } else {
     // Single Class Logic
     if (!mongoose.isValidObjectId(finalClassId)) throw new ErrorResponse('Invalid class id', 400);
-    const finalClass = await FinalClass.findById(finalClassId);
+    const finalClass = await FinalClass.findById(finalClassId).populate('classLead');
     if (!finalClass) throw new ErrorResponse('Final class not found', 404);
     if (!finalClass.coordinator) throw new ErrorResponse('Class does not have an assigned coordinator', 400);
     if (String(finalClass.status) !== FINAL_CLASS_STATUS.ACTIVE) throw new ErrorResponse('Class must be ACTIVE to create attendance', 400);
@@ -61,6 +62,8 @@ export const addDailyAttendance = async (params: {
     isGroup = false;
   }
 
+  const isSpecialUser = userRole === USER_ROLES.COORDINATOR || userRole === USER_ROLES.ADMIN;
+
   // --- Validation Logic (Common & Specific) ---
   const requestedDate = new Date(sessionDate);
   const today = new Date();
@@ -71,7 +74,7 @@ export const addDailyAttendance = async (params: {
   };
 
   // Enforce submission window (only for FinalClass currently as Group schema didn't specify window)
-  if (!isGroup) {
+  if (!isSpecialUser && !isGroup) {
       const windowDays = (entity as any).attendanceSubmissionWindow ?? 2;
       const normalizedRequested = normalize(requestedDate);
       const deadlineDate = new Date(normalizedRequested);
@@ -206,7 +209,7 @@ export const addDailyAttendance = async (params: {
 
   const newRecord: IDailyAttendanceRecord = {
     sessionDate: date,
-    durationHours: durationHours || 1, // Default 1
+    durationHours: durationHours || (entity.classLead as any)?.classDurationHours || 1,
     topicCovered,
     studentAttendanceStatus: (studentAttendanceStatus as any) || STUDENT_ATTENDANCE_STATUS.PRESENT,
     status: ATTENDANCE_STATUS.PENDING,
