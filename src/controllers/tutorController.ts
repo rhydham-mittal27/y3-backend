@@ -214,8 +214,8 @@ export const updateVerificationStatusController = asyncHandler(async (req: AuthR
   const errors = validationResult(req);
   if (!errors.isEmpty()) throw new ErrorResponse(errors.array()[0].msg, 400);
 
-  const { status, verificationNotes, whatsappCommunityJoined } = req.body;
-  const tutor = await updateVerificationStatusService(req.params.id, status, verificationNotes, String(req.user!.id), whatsappCommunityJoined);
+  const { status, verificationNotes, whatsappCommunityJoined, rejectionReason } = req.body;
+  const tutor = await updateVerificationStatusService(req.params.id, status, verificationNotes, String(req.user!.id), whatsappCommunityJoined, rejectionReason);
   return res.json(successResponse(tutor, 'Verification status updated successfully'));
 });
 
