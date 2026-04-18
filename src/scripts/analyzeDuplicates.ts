@@ -1,6 +1,5 @@
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
-import path from 'path';
 import AttendanceSheet from '../models/AttendanceSheet';
 import Payment from '../models/Payment';
 
