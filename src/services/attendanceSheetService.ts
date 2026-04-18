@@ -119,7 +119,7 @@ export const addDailyAttendance = async (params: {
   const isSheetClosed = sheet && ['APPROVED', 'REJECTED'].includes(sheet.status);
   const date = new Date(sessionDate);
 
-  if (!sheet || isSheetFull || isSheetClosed || sheet.status === 'PENDING') {
+  if (!sheet || isSheetFull || isSheetClosed || !!sheet.submittedAt) {
     // Create NEW Sheet
     const nextCycle = (sheet?.cycleNumber || 0) + 1;
     
