@@ -692,7 +692,6 @@ export const uploadDocument = async (
     s3Bucket: uploadResult.bucket,
   } as any;
   try {
-    const previousStatus = tutor.verificationStatus as VERIFICATION_STATUS;
 
     if (
       documentType !== 'PROFILE_PHOTO' &&
@@ -721,19 +720,20 @@ export const uploadDocument = async (
     tutor.documents.push(doc);
 
     // Only verification documents should affect verificationStatus
+    // NOTE: Removed automatic status change to UNDER_REVIEW. 
+    // Status should only change when user explicitly clicks "Submit Verification" at the end of the form.
+    /*
     if (documentType !== 'PROFILE_PHOTO') {
-      // If tutor was pending, move to UNDER_REVIEW because a verification document was uploaded
       if (previousStatus === VERIFICATION_STATUS.PENDING) {
         tutor.verificationStatus = VERIFICATION_STATUS.UNDER_REVIEW;
       }
-
-      // If verification was previously rejected, any new upload should trigger re-review
       if (previousStatus === VERIFICATION_STATUS.REJECTED) {
         tutor.verificationStatus = VERIFICATION_STATUS.UNDER_REVIEW;
         tutor.verifiedBy = undefined as any;
         tutor.verifiedAt = undefined;
       }
     }
+    */
 
     await tutor.save();
   } catch (err: any) {

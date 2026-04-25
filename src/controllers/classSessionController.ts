@@ -158,3 +158,68 @@ export const getMyCoordinatorSessionsForCycleController = asyncHandler(async (re
 
   return res.json(successResponse(sessions));
 });
+
+export const getClassSessionsController = asyncHandler(async (req: AuthRequest, res) => {
+  const classId = req.params.classId;
+  const month = Number(req.query.month);
+  const year = Number(req.query.year);
+  const ensure = String(req.query.ensure || '').toLowerCase() === 'true';
+
+  if (!classId || !month || !year) {
+    throw new ErrorResponse('classId, month and year are required', 400);
+  }
+
+  // 1. Authorization check
+  const cls = await FinalClass.findById(classId).select('tutor coordinator status schedule classesPerMonth');
+  // Handle group class fallback if not found in FinalClass
+  let classEntity = cls;
+  if (!classEntity) {
+    const GroupClass = (await import('../models/GroupClass')).default;
+    classEntity = await GroupClass.findById(classId) as any;
+  }
+  
+  if (!classEntity) throw new ErrorResponse('Class not found', 404);
+
+  const isAdmin = req.user?.role === USER_ROLES.ADMIN;
+  const isManager = req.user?.role === USER_ROLES.MANAGER;
+  const isTutor = req.user?.role === USER_ROLES.TUTOR && String(classEntity.tutor) === String(req.user!.id);
+  const isCoord = req.user?.role === USER_ROLES.COORDINATOR && String(classEntity.coordinator) === String(req.user!.id);
+
+  if (!isAdmin && !isManager && !isTutor && !isCoord) {
+    throw new ErrorResponse('Not authorized to view sessions for this class', 403);
+  }
+
+  // 2. Optional session generation
+  if (ensure && classEntity.status === 'ACTIVE') {
+    try {
+      const sched: any = (classEntity as any).schedule || {};
+      const hasSchedule =
+        sched &&
+        Array.isArray(sched.daysOfWeek) &&
+        sched.daysOfWeek.length > 0 &&
+        Boolean(String(sched.timeSlot || '').trim());
+
+      const n = Number((classEntity as any).classesPerMonth || (classEntity as any).sessionsPerMonth || 0);
+      
+      if (hasSchedule && n > 0) {
+        await generateClassSessionsForCycle({
+          classId,
+          cycleMonth: month,
+          cycleYear: year,
+          actorUserId: req.user!.id,
+        });
+      }
+    } catch (err: any) {
+      console.warn('[class-sessions][getClassSessionsController] generation failed', { classId, month, year });
+    }
+  }
+
+  // 3. Fetch
+  const sessions = await import('../services/classSessionService').then(s => s.getClassSessionsForCycle({
+    classId,
+    cycleMonth: month,
+    cycleYear: year,
+  }));
+
+  return res.json(successResponse(sessions));
+});

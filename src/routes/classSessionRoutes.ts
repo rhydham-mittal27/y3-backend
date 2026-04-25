@@ -7,6 +7,7 @@ import {
   getMyTutorSessionsForCycleController,
   generateSessionsForClassCycleController,
   getMyCoordinatorSessionsForCycleController,
+  getClassSessionsController,
 } from '../controllers/classSessionController';
 
 const router = Router();
@@ -23,6 +24,13 @@ router.post(
   body('month').isInt({ min: 1, max: 12 }).withMessage('Invalid month'),
   body('year').isInt({ min: 2000 }).withMessage('Invalid year'),
   generateSessionsForClassCycleController
+);
+
+router.get(
+  '/class/:classId',
+  authorize(USER_ROLES.TUTOR, USER_ROLES.COORDINATOR, USER_ROLES.MANAGER, USER_ROLES.ADMIN),
+  param('classId').isMongoId().withMessage('Invalid class ID'),
+  getClassSessionsController
 );
 
 export default router;

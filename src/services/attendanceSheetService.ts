@@ -153,7 +153,7 @@ export const addDailyAttendance = async (params: {
   }
 
   // --- Auto-Pause Check (Single Class Only as per earlier task) ---
-  if (!isGroup && (sheet.cycleNumber || 1) >= 2) {
+  if (!isSpecialUser && !isGroup && (sheet.cycleNumber || 1) >= 2) {
     if (sheet.records.length === 2) {
       const payment = await Payment.findOne({
         attendanceSheet: sheet._id,
@@ -226,7 +226,10 @@ export const addDailyAttendance = async (params: {
   sheet.totalSessionsTaken = sheet.records.length;
   // Present/Absent count logic
   if (!isGroup) {
-      sheet.presentCount = sheet.records.filter((r: any) => r.studentAttendanceStatus === STUDENT_ATTENDANCE_STATUS.PRESENT).length;
+      sheet.presentCount = sheet.records.filter((r: any) => 
+          r.studentAttendanceStatus === STUDENT_ATTENDANCE_STATUS.PRESENT || 
+          r.studentAttendanceStatus === STUDENT_ATTENDANCE_STATUS.NATIONAL_HOLIDAY
+      ).length;
       sheet.absentCount = sheet.records.filter((r: any) => r.studentAttendanceStatus === STUDENT_ATTENDANCE_STATUS.ABSENT).length;
   } else {
       // For groups, assuming sessions held = sessions present for the group entity context

@@ -136,7 +136,43 @@ export const getCoordinatorSessionsForCycle = async (params: {
     cycleMonth,
     cycleYear,
   })
-    .populate('finalClass')
+    .populate({
+      path: 'finalClass',
+      populate: { path: 'classLead', select: 'classDurationHours studentName grade board' }
+    })
+    .populate({
+      path: 'groupClass',
+      populate: { path: 'classLead', select: 'classDurationHours name grade board' }
+    })
+    .sort({ sessionDate: 1, timeSlot: 1 });
+
+  return sessions;
+};
+
+export const getClassSessionsForCycle = async (params: {
+  classId: string;
+  cycleMonth: number;
+  cycleYear: number;
+}) => {
+  const { classId, cycleMonth, cycleYear } = params;
+  if (!cycleMonth || !cycleYear) throw new ErrorResponse('cycleMonth and year are required', 400);
+
+  const sessions = await ClassSession.find({
+    $or: [
+      { finalClass: new mongoose.Types.ObjectId(classId) },
+      { groupClass: new mongoose.Types.ObjectId(classId) },
+    ],
+    cycleMonth,
+    cycleYear,
+  })
+    .populate({
+      path: 'finalClass',
+      populate: { path: 'classLead', select: 'classDurationHours studentName grade board' }
+    })
+    .populate({
+      path: 'groupClass',
+      populate: { path: 'classLead', select: 'classDurationHours name grade board' }
+    })
     .sort({ sessionDate: 1, timeSlot: 1 });
 
   return sessions;
