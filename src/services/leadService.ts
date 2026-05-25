@@ -318,7 +318,6 @@ export const getAllClassLeads = async (args: {
     }
   }
   if (board) query.board = board;
-  if (board) query.board = board;
   if (mode) query.mode = mode;
   if (area) query.area = { $regex: area, $options: 'i' };
 

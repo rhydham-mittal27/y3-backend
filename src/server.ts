@@ -1,5 +1,5 @@
 import dotenv from 'dotenv';
-import express from 'express';
+import express, { RequestHandler } from 'express';
 
 import helmet from 'helmet';
 import cors from 'cors';
@@ -62,6 +62,18 @@ try {
 const app = express();
 
 const isRateLimitingEnabled = process.env.DISABLE_RATE_LIMITING !== 'true';
+
+const registerRoute = (
+  path: string,
+  router: express.Router,
+  limiter?: RequestHandler
+) => {
+  if (isRateLimitingEnabled && limiter) {
+    app.use(path, limiter, router);
+    return;
+  }
+  app.use(path, router);
+};
 
 // Connect Database
 connectDB();
@@ -170,71 +182,36 @@ if (process.env.NODE_ENV !== 'production' || process.env.ENABLE_SWAGGER === 'tru
 
 // Routes with rate limiting
 // Authentication routes - strict rate limiting
-if (isRateLimitingEnabled) {
-  app.use('/api/auth', authLimiter, authRoutes);
-} else {
-  app.use('/api/auth', authRoutes);
-}
+registerRoute('/api/auth', authRoutes, authLimiter);
 
 // Write operations - moderate rate limiting
-if (isRateLimitingEnabled) {
-  app.use('/api/leads', writeLimiter, leadRoutes);
-  app.use('/api/public/leads', writeLimiter, publicLeadRoutes);
-  app.use('/api/public/landing', writeLimiter, publicLandingRoutes);
-  app.use('/api/announcements', writeLimiter, announcementRoutes);
-  app.use('/api/notifications', writeLimiter, notificationRoutes);
-  app.use('/api/demos', writeLimiter, demoRoutes);
-  app.use('/api/coordinators', writeLimiter, coordinatorRoutes);
-  app.use('/api/final-classes', writeLimiter, finalClassRoutes);
-  app.use('/api/attendance', writeLimiter, attendanceRoutes);
-  app.use('/api/attendance-sheets', writeLimiter, attendanceSheetRoutes);
-  app.use('/api/payments', writeLimiter, paymentRoutes);
-  app.use('/api/tutors', writeLimiter, tutorRoutes);
-  app.use('/api/managers', writeLimiter, managerRoutes);
-  app.use('/api/admin', writeLimiter, adminRoutes);
-  app.use('/api/tests', writeLimiter, testRoutes);
-  app.use('/api/v1/tutor-leads', writeLimiter, tutorLeadRoutes);
-  app.use('/api/students', writeLimiter, studentRoutes);
-  app.use('/api/student-auth', authLimiter, studentAuthRoutes);
-  app.use('/api/settings', writeLimiter, settingsRoutes);
-  app.use('/api/notes', writeLimiter, noteRoutes);
-  app.use('/api/subjects', writeLimiter, subjectRoutes);
-  app.use('/api/options', writeLimiter, optionRoutes);
-  app.use('/api/class-plans', writeLimiter, classPlanRoutes);
-  app.use('/api/class-sessions', writeLimiter, classSessionRoutes);
-} else {
-  app.use('/api/leads', leadRoutes);
-  app.use('/api/public/leads', publicLeadRoutes);
-  app.use('/api/public/landing', publicLandingRoutes);
-  app.use('/api/announcements', announcementRoutes);
-  app.use('/api/notifications', notificationRoutes);
-  app.use('/api/demos', demoRoutes);
-  app.use('/api/coordinators', coordinatorRoutes);
-  app.use('/api/final-classes', finalClassRoutes);
-  app.use('/api/attendance', attendanceRoutes);
-  app.use('/api/attendance-sheets', attendanceSheetRoutes);
-  app.use('/api/payments', paymentRoutes);
-  app.use('/api/tutors', tutorRoutes);
-  app.use('/api/managers', managerRoutes);
-  app.use('/api/admin', adminRoutes);
-  app.use('/api/tests', testRoutes);
-  app.use('/api/v1/tutor-leads', tutorLeadRoutes);
-  app.use('/api/students', studentRoutes);
-  app.use('/api/student-auth', studentAuthRoutes);
-  app.use('/api/settings', settingsRoutes);
-  app.use('/api/notes', noteRoutes);
-  app.use('/api/subjects', subjectRoutes);
-  app.use('/api/options', optionRoutes);
-  app.use('/api/class-plans', classPlanRoutes);
-  app.use('/api/class-sessions', classSessionRoutes);
-}
+registerRoute('/api/leads', leadRoutes, writeLimiter);
+registerRoute('/api/public/leads', publicLeadRoutes, writeLimiter);
+registerRoute('/api/public/landing', publicLandingRoutes, writeLimiter);
+registerRoute('/api/announcements', announcementRoutes, writeLimiter);
+registerRoute('/api/notifications', notificationRoutes, writeLimiter);
+registerRoute('/api/demos', demoRoutes, writeLimiter);
+registerRoute('/api/coordinators', coordinatorRoutes, writeLimiter);
+registerRoute('/api/final-classes', finalClassRoutes, writeLimiter);
+registerRoute('/api/attendance', attendanceRoutes, writeLimiter);
+registerRoute('/api/attendance-sheets', attendanceSheetRoutes, writeLimiter);
+registerRoute('/api/payments', paymentRoutes, writeLimiter);
+registerRoute('/api/tutors', tutorRoutes, writeLimiter);
+registerRoute('/api/managers', managerRoutes, writeLimiter);
+registerRoute('/api/admin', adminRoutes, writeLimiter);
+registerRoute('/api/tests', testRoutes, writeLimiter);
+registerRoute('/api/v1/tutor-leads', tutorLeadRoutes, writeLimiter);
+registerRoute('/api/students', studentRoutes, writeLimiter);
+registerRoute('/api/student-auth', studentAuthRoutes, authLimiter);
+registerRoute('/api/settings', settingsRoutes, writeLimiter);
+registerRoute('/api/notes', noteRoutes, writeLimiter);
+registerRoute('/api/subjects', subjectRoutes, writeLimiter);
+registerRoute('/api/options', optionRoutes, writeLimiter);
+registerRoute('/api/class-plans', classPlanRoutes, writeLimiter);
+registerRoute('/api/class-sessions', classSessionRoutes, writeLimiter);
 
 // Read operations - lenient rate limiting
-if (isRateLimitingEnabled) {
-  app.use('/api/dashboard', readLimiter, dashboardRoutes);
-} else {
-  app.use('/api/dashboard', dashboardRoutes);
-}
+registerRoute('/api/dashboard', dashboardRoutes, readLimiter);
 
 // Not Found Middleware
 app.use(notFound);

@@ -16,6 +16,16 @@ import crypto from 'crypto';
 const loginOtpStore = new Map<string, { otp: string; expiresAt: Date }>();
 const changePasswordOtpStore = new Map<string, { otp: string; expiresAt: Date }>();
 
+const updateTutorMonthlyStatsSafe = async (userId: string) => {
+  try {
+    const stats = await computeTutorMonthlyStats(userId);
+    await Tutor.updateOne({ user: new mongoose.Types.ObjectId(userId) }, { $set: { monthlyStats: stats } });
+  } catch (e) {
+    // do not block login on stats update failure
+    logError(`Failed to update tutor monthlyStats: ${(e as Error).message}`);
+  }
+};
+
 export const registerUser = async (
   name: string,
   email: string,
@@ -58,46 +68,8 @@ export const registerUser = async (
   user.refreshToken = refreshToken;
   await user.save();
 
-  // Update tutor monthlyStats on login
   if (user.role === USER_ROLES.TUTOR) {
-    try {
-      const stats = await computeTutorMonthlyStats((user as any).id);
-      await Tutor.updateOne(
-        { user: user._id },
-        { $set: { monthlyStats: stats } }
-      );
-    } catch (e) {
-      // do not block login on stats update failure
-      console.error('Failed to update tutor monthlyStats on login', e);
-    }
-  }
-
-  // Update tutor monthlyStats on login
-  if (user.role === USER_ROLES.TUTOR) {
-    try {
-      const stats = await computeTutorMonthlyStats((user as any).id);
-      await Tutor.updateOne(
-        { user: user._id },
-        { $set: { monthlyStats: stats } }
-      );
-    } catch (e) {
-      // do not block login on stats update failure
-      console.error('Failed to update tutor monthlyStats on login', e);
-    }
-  }
-
-  // Update tutor monthlyStats on login
-  if (user.role === USER_ROLES.TUTOR) {
-    try {
-      const stats = await computeTutorMonthlyStats((user as any).id);
-      await Tutor.updateOne(
-        { user: user._id },
-        { $set: { monthlyStats: stats } }
-      );
-    } catch (e) {
-      // do not block login on stats update failure
-      logError(`Failed to update tutor monthlyStats: ${(e as Error).message}`);
-    }
+    await updateTutorMonthlyStatsSafe((user as any).id as string);
   }
 
   let preferredMode: string | undefined;
