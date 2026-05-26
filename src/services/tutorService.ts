@@ -28,7 +28,13 @@ const withResolvedTutorDocumentUrls = async (tutor: any) => {
   const docs = Array.isArray(copy.documents) ? copy.documents : [];
   console.log(`[withResolvedTutorDocumentUrls] Tutor: ${copy.teacherId || copy._id}, Docs count: ${docs.length}`);
   
-  if (docs.length === 0) return copy;
+  if (docs.length === 0) {
+    // Still attempt to resolve verification fee proof if present
+    if (typeof copy?.verificationFeePaymentProof === 'string' && copy.verificationFeePaymentProof.length > 0 && !/^https?:\/\//i.test(copy.verificationFeePaymentProof)) {
+      copy.verificationFeePaymentProof = await resolveS3DocumentUrl(copy.verificationFeePaymentProof);
+    }
+    return copy;
+  }
 
   copy.documents = await Promise.all(
     docs.map(async (d: any, idx: number) => {
@@ -46,6 +52,43 @@ const withResolvedTutorDocumentUrls = async (tutor: any) => {
       };
     })
   );
+
+  // Resolve payment proof URL if stored as key
+  if (typeof copy?.verificationFeePaymentProof === 'string' && copy.verificationFeePaymentProof.length > 0 && !/^https?:\/\//i.test(copy.verificationFeePaymentProof)) {
+    copy.verificationFeePaymentProof = await resolveS3DocumentUrl(copy.verificationFeePaymentProof);
+  }
+
+  // Backfill fee status/proof from Payment records if missing or stale on tutor
+  if (!copy?.verificationFeePaymentProof || copy?.verificationFeeStatus === 'PENDING') {
+    const tutorUserId = typeof copy.user === 'object' && copy.user?._id ? copy.user._id : copy.user;
+    if (tutorUserId) {
+      const payment = await Payment.findOne({
+        tutor: new mongoose.Types.ObjectId(String(tutorUserId)),
+        paymentType: PAYMENT_TYPE.TUTOR_VERIFICATION_FEES,
+      })
+        .sort({ paymentDate: -1, createdAt: -1 })
+        .select('paymentProof paymentDate status notes');
+
+
+      if (payment) {
+        if (payment.status === PAYMENT_STATUS.PAID) {
+          copy.verificationFeeStatus = 'PAID';
+        } else if (payment.status === PAYMENT_STATUS.PENDING && String(payment.notes || '').toLowerCase().includes('deduct')) {
+          copy.verificationFeeStatus = 'DEDUCT_FROM_FIRST_MONTH';
+        }
+
+        if (payment.paymentProof && !copy.verificationFeePaymentProof) {
+          const rawProof = String(payment.paymentProof);
+          copy.verificationFeePaymentProof = /^https?:\/\//i.test(rawProof)
+            ? rawProof
+            : await resolveS3DocumentUrl(rawProof);
+        }
+        if (!copy.verificationFeePaymentDate && payment.paymentDate) {
+          copy.verificationFeePaymentDate = payment.paymentDate;
+        }
+      }
+    }
+  }
   return copy;
 };
 
@@ -992,6 +1035,53 @@ export const updateVerificationFeeStatus = async (
     { path: 'subjects', populate: { path: 'parent', populate: { path: 'parent' } } },
   ]);
   return tutor;
+};
+
+export const getVerificationFeeDebug = async (tutorId: string) => {
+  const tutor = await Tutor.findById(tutorId).populate([
+    { path: 'user', select: 'name email phone role gender city preferredMode' },
+  ]);
+  if (!tutor) throw new ErrorResponse('Tutor not found', 404);
+
+  const tutorUserId = (tutor.user as any)?._id || tutor.user;
+
+  const payment = await Payment.findOne({
+    tutor: new mongoose.Types.ObjectId(String(tutorUserId)),
+    paymentType: PAYMENT_TYPE.TUTOR_VERIFICATION_FEES,
+  })
+    .sort({ paymentDate: -1, createdAt: -1 })
+    .select('status paymentProof paymentDate notes createdAt');
+
+  const paymentProofRaw = payment?.paymentProof ? String(payment.paymentProof) : undefined;
+  const paymentProofResolved = paymentProofRaw
+    ? (/^https?:\/\//i.test(paymentProofRaw)
+      ? paymentProofRaw
+      : await resolveS3DocumentUrl(paymentProofRaw))
+    : undefined;
+
+  const tutorProofRaw = tutor.verificationFeePaymentProof ? String(tutor.verificationFeePaymentProof) : undefined;
+  const tutorProofResolved = tutorProofRaw
+    ? (/^https?:\/\//i.test(tutorProofRaw)
+      ? tutorProofRaw
+      : await resolveS3DocumentUrl(tutorProofRaw))
+    : undefined;
+
+  return {
+    tutorId: String(tutor._id),
+    tutorUserId: String(tutorUserId),
+    tutorVerificationFeeStatus: tutor.verificationFeeStatus || 'PENDING',
+    tutorVerificationFeePaymentDate: tutor.verificationFeePaymentDate || null,
+    tutorVerificationFeePaymentProof: tutorProofResolved || null,
+    paymentRecord: payment
+      ? {
+        status: payment.status,
+        paymentDate: payment.paymentDate || null,
+        paymentProof: paymentProofResolved || null,
+        notes: payment.notes || null,
+        createdAt: payment.createdAt,
+      }
+      : null,
+  };
 };
 
 export const submitTutorVerification = async (tutorId: string) => {
