@@ -34,6 +34,7 @@ import {
   getDistinctAreas,
   updateVerificationFeeStatus,
   submitTutorVerification,
+  getVerificationFeeDebug,
 } from '../services/tutorService';
 import { processManualFeeDeduction } from '../services/paymentService';
 import { PAYMENT_TYPE, PAYMENT_STATUS } from '../config/constants';
@@ -225,6 +226,11 @@ export const updateVerificationFeeStatusController = asyncHandler(async (req: Re
 
   const tutor = await updateVerificationFeeStatus(req.params.id, verificationFeeStatus, file);
   return res.json(successResponse(tutor, 'Verification fee status updated successfully'));
+});
+
+export const getVerificationFeeDebugController = asyncHandler(async (req: Request, res: Response) => {
+  const result = await getVerificationFeeDebug(req.params.id);
+  return res.json(successResponse(result, 'Verification fee debug info'));
 });
 
 export const deductVerificationFeeController = asyncHandler(async (req: AuthRequest, res: Response) => {
