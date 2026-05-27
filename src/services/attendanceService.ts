@@ -217,8 +217,24 @@ export const getAllAttendance = async (args: {
              }
         },
          { $unwind: { path: '$submittedBy', preserveNullAndEmptyArrays: true } },
-         // We can add others: coordinator, submittedBy.
-         // Flatten structure to match old Attendance interface?
+         {
+             $lookup: {
+                 from: 'users',
+                 localField: 'approvedBy',
+                 foreignField: '_id',
+                 as: 'approvedBy'
+             }
+         },
+         { $unwind: { path: '$approvedBy', preserveNullAndEmptyArrays: true } },
+         {
+             $lookup: {
+                 from: 'users',
+                 localField: 'rejectedBy',
+                 foreignField: '_id',
+                 as: 'rejectedBy'
+             }
+         },
+         { $unwind: { path: '$rejectedBy', preserveNullAndEmptyArrays: true } },
          {
              $project: {
                  _id: '$records._id', // Use record ID as the main ID
@@ -231,7 +247,13 @@ export const getAllAttendance = async (args: {
                  status: '$records.status',
                  notes: '$records.notes',
                  tutor: { _id: '$tutor._id', name: '$tutor.name', email: '$tutor.email' },
-                 submittedBy: { _id: '$submittedBy._id', name: '$submittedBy.name', email: '$submittedBy.email' }, // Needs lookup if we want details
+                 submittedBy: { _id: '$submittedBy._id', name: '$submittedBy.name', email: '$submittedBy.email' },
+                 submittedAt: '$records.submittedAt',
+                 coordinatorApprovedBy: { _id: '$approvedBy._id', name: '$approvedBy.name', email: '$approvedBy.email' },
+                 coordinatorApprovedAt: '$approvedAt',
+                 rejectedBy: { _id: '$rejectedBy._id', name: '$rejectedBy.name', email: '$rejectedBy.email' },
+                 rejectedAt: '$rejectedAt',
+                 rejectionReason: '$rejectionReason',
                  // Compatibility fields
                  sessionNumber: { $literal: 0 } // deprecated
              }
@@ -283,7 +305,24 @@ export const getAttendanceById = async (attendanceId: string) => {
          }
     },
     { $unwind: { path: '$submittedBy', preserveNullAndEmptyArrays: true } },
-    
+    {
+         $lookup: {
+             from: 'users',
+             localField: 'approvedBy',
+             foreignField: '_id',
+             as: 'approvedBy'
+         }
+    },
+    { $unwind: { path: '$approvedBy', preserveNullAndEmptyArrays: true } },
+    {
+         $lookup: {
+             from: 'users',
+             localField: 'rejectedBy',
+             foreignField: '_id',
+             as: 'rejectedBy'
+         }
+    },
+    { $unwind: { path: '$rejectedBy', preserveNullAndEmptyArrays: true } },
     // Project
     {
          $project: {
@@ -297,7 +336,13 @@ export const getAttendanceById = async (attendanceId: string) => {
              status: '$records.status',
              notes: '$records.notes',
              tutor: { _id: '$tutor._id', name: '$tutor.name', email: '$tutor.email', phone: '$tutor.phone' },
-             submittedBy: { _id: '$submittedBy._id', name: '$submittedBy.name', email: '$submittedBy.email' }
+             submittedBy: { _id: '$submittedBy._id', name: '$submittedBy.name', email: '$submittedBy.email' },
+             submittedAt: '$records.submittedAt',
+             coordinatorApprovedBy: { _id: '$approvedBy._id', name: '$approvedBy.name', email: '$approvedBy.email' },
+             coordinatorApprovedAt: '$approvedAt',
+             rejectedBy: { _id: '$rejectedBy._id', name: '$rejectedBy.name', email: '$rejectedBy.email' },
+             rejectedAt: '$rejectedAt',
+             rejectionReason: '$rejectionReason'
          }
     }
   ];
@@ -566,6 +611,24 @@ export const getAttendanceByClass = async (finalClassId: string, status?: ATTEND
          }
       },
       { $unwind: { path: '$submittedBy', preserveNullAndEmptyArrays: true } },
+      {
+         $lookup: {
+             from: 'users',
+             localField: 'approvedBy',
+             foreignField: '_id',
+             as: 'approvedBy'
+         }
+      },
+      { $unwind: { path: '$approvedBy', preserveNullAndEmptyArrays: true } },
+      {
+         $lookup: {
+             from: 'users',
+             localField: 'rejectedBy',
+             foreignField: '_id',
+             as: 'rejectedBy'
+         }
+      },
+      { $unwind: { path: '$rejectedBy', preserveNullAndEmptyArrays: true } },
       // Project to flatten
       {
          $project: {
@@ -579,9 +642,13 @@ export const getAttendanceByClass = async (finalClassId: string, status?: ATTEND
              status: '$records.status',
              notes: '$records.notes',
              tutor: { _id: '$tutor._id', name: '$tutor.name', email: '$tutor.email', phone: '$tutor.phone' },
-             submittedBy: { _id: '$submittedBy._id', name: '$submittedBy.name', email: '$submittedBy.email' }
-             // Add coordinator/parent if needed for PDF export context? 
-             // PDF export uses finalClass.studentName etc.
+             submittedBy: { _id: '$submittedBy._id', name: '$submittedBy.name', email: '$submittedBy.email' },
+             submittedAt: '$records.submittedAt',
+             coordinatorApprovedBy: { _id: '$approvedBy._id', name: '$approvedBy.name', email: '$approvedBy.email' },
+             coordinatorApprovedAt: '$approvedAt',
+             rejectedBy: { _id: '$rejectedBy._id', name: '$rejectedBy.name', email: '$rejectedBy.email' },
+             rejectedAt: '$rejectedAt',
+             rejectionReason: '$rejectionReason'
          }
       }
   );
