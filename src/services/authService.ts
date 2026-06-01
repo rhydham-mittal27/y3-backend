@@ -16,6 +16,58 @@ import crypto from 'crypto';
 const loginOtpStore = new Map<string, { otp: string; expiresAt: Date }>();
 const changePasswordOtpStore = new Map<string, { otp: string; expiresAt: Date }>();
 
+const normalizeEmail = (email: string) => String(email || '').toLowerCase().trim();
+
+const getEmailCandidates = (email: string): string[] => {
+  const normalized = normalizeEmail(email);
+  const candidates = new Set<string>([normalized]);
+
+  const atIndex = normalized.lastIndexOf('@');
+  if (atIndex <= 0 || atIndex === normalized.length - 1) {
+    return Array.from(candidates);
+  }
+
+  const localPart = normalized.slice(0, atIndex);
+  const domain = normalized.slice(atIndex + 1);
+  if (domain !== 'gmail.com' && domain !== 'googlemail.com') {
+    return Array.from(candidates);
+  }
+
+  const localWithoutPlus = localPart.split('+')[0];
+  const localWithoutDots = localWithoutPlus.replace(/\./g, '');
+  const domains = ['gmail.com', 'googlemail.com'];
+
+  for (const d of domains) {
+    candidates.add(`${localPart}@${d}`);
+    candidates.add(`${localWithoutPlus}@${d}`);
+    candidates.add(`${localWithoutDots}@${d}`);
+  }
+
+  return Array.from(candidates);
+};
+
+const findUserByEmailCandidates = async (email: string) => {
+  const candidates = getEmailCandidates(email);
+  return User.findOne({ email: { $in: candidates } });
+};
+
+const findLeadByEmailCandidates = async (email: string) => {
+  const candidates = getEmailCandidates(email);
+  return ClassLead.findOne({ parentEmail: { $in: candidates } });
+};
+
+const getStoredOtpEntry = (email: string) => {
+  const candidates = getEmailCandidates(email);
+  for (const candidate of candidates) {
+    const entry = loginOtpStore.get(candidate);
+    if (entry) {
+      return { key: candidate, entry };
+    }
+  }
+
+  return null;
+};
+
 const updateTutorMonthlyStatsSafe = async (userId: string) => {
   try {
     const stats = await computeTutorMonthlyStats(userId);
@@ -36,7 +88,7 @@ export const registerUser = async (
   gender?: 'MALE' | 'FEMALE' | 'OTHER',
   role?: string
 ) => {
-  const normalizedEmail = String(email).toLowerCase().trim();
+  const normalizedEmail = normalizeEmail(email);
   const existing = await User.findOne({ email: normalizedEmail });
   if (existing) {
     throw new ErrorResponse('User already exists', 409);
@@ -139,12 +191,12 @@ export const getParentEmailByClassName = async (className: string) => {
   // First preference: existing parent user linked to the class
   const parentUser = finalClass.parent as any;
   if (parentUser && parentUser.email && parentUser.role === USER_ROLES.PARENT) {
-    resolvedEmail = String(parentUser.email).toLowerCase().trim();
+    resolvedEmail = normalizeEmail(parentUser.email);
   } else {
     // Fallback: use parentEmail from the associated class lead, if available
     const lead: any = finalClass.classLead;
     if (lead && lead.parentEmail) {
-      resolvedEmail = String(lead.parentEmail).toLowerCase().trim();
+      resolvedEmail = normalizeEmail(lead.parentEmail);
     }
   }
 
@@ -167,9 +219,9 @@ export const getParentEmailByClassName = async (className: string) => {
 };
 
 export const loginUser = async (email: string, password: string) => {
-  const normalizedEmail = String(email).toLowerCase().trim();
+  const normalizedEmail = normalizeEmail(email);
   console.log('[loginUser] Attempting login for email:', normalizedEmail);
-  const user = await User.findOne({ email: normalizedEmail }).select('+password +refreshToken');
+  const user = await User.findOne({ email: { $in: getEmailCandidates(normalizedEmail) } }).select('+password +refreshToken');
   console.log('[loginUser] User lookup result:', user ? { id: (user as any).id, email: user.email, role: user.role } : null);
   if (!user) {
     console.log('[loginUser] No user found for email, throwing Invalid credentials');
@@ -297,12 +349,12 @@ export const changePassword = async (userId: string, currentPassword: string, ne
 };
 
 export const sendLoginOtp = async (email: string) => {
-  const normalizedEmail = String(email).toLowerCase().trim();
-  let user = await User.findOne({ email: normalizedEmail });
+  const normalizedEmail = normalizeEmail(email);
+  let user = await findUserByEmailCandidates(normalizedEmail);
 
   // If no user exists yet, attempt to auto-create a PARENT user based on class leads
   if (!user) {
-    const matchingLead = await ClassLead.findOne({ parentEmail: normalizedEmail });
+    const matchingLead = await findLeadByEmailCandidates(normalizedEmail);
 
     if (matchingLead) {
       const parentName = (matchingLead as any).parentName || `Parent of ${(matchingLead as any).studentName || 'Student'}`;
@@ -330,15 +382,17 @@ export const sendLoginOtp = async (email: string) => {
     }
   }
 
+  const otpEmail = normalizeEmail(user.email);
+
   const otp = Math.floor(100000 + Math.random() * 900000).toString();
   const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
 
-  loginOtpStore.set(normalizedEmail, { otp, expiresAt });
+  loginOtpStore.set(otpEmail, { otp, expiresAt });
 
   // Attempt to send OTP via email
   try {
     await sendEmail(
-      normalizedEmail,
+      otpEmail,
       'Your Login OTP - Your Shikshak',
       `<!DOCTYPE html>
       <html>
@@ -405,18 +459,18 @@ export const sendLoginOtp = async (email: string) => {
 
   // Always log OTP in dev so it can be used for testing
   // eslint-disable-next-line no-console
-  console.log(`[sendLoginOtp] OTP for ${normalizedEmail}:`, otp);
+  console.log(`[sendLoginOtp] OTP for ${otpEmail}:`, otp);
 
   return { success: true, expiresAt };
 };
 
 export const resendLoginOtp = async (email: string) => {
-  const normalizedEmail = String(email).toLowerCase().trim();
-  let user = await User.findOne({ email: normalizedEmail });
+  const normalizedEmail = normalizeEmail(email);
+  let user = await findUserByEmailCandidates(normalizedEmail);
 
   // If no user exists yet, attempt to auto-create a PARENT user based on class leads
   if (!user) {
-    const matchingLead = await ClassLead.findOne({ parentEmail: normalizedEmail });
+    const matchingLead = await findLeadByEmailCandidates(normalizedEmail);
 
     if (matchingLead) {
       const parentName = (matchingLead as any).parentName || `Parent of ${(matchingLead as any).studentName || 'Student'}`;
@@ -444,15 +498,17 @@ export const resendLoginOtp = async (email: string) => {
     }
   }
 
+  const otpEmail = normalizeEmail(user.email);
+
   const otp = Math.floor(100000 + Math.random() * 900000).toString();
   const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
 
-  loginOtpStore.set(normalizedEmail, { otp, expiresAt });
+  loginOtpStore.set(otpEmail, { otp, expiresAt });
 
   // Use sendResendOtpEmail for resend requests
   try {
     await sendResendOtpEmail(
-      normalizedEmail,
+      otpEmail,
       'Your login OTP for Your Shikshak (Resent)',
       `<div style="font-family: Arial, sans-serif; padding: 20px; color: #333;">
          <h2 style="color: #2563eb;">Resent: Your Login OTP</h2>
@@ -469,23 +525,24 @@ export const resendLoginOtp = async (email: string) => {
   }
 
   // Always log OTP in dev so it can be used for testing
-  console.log(`[resendLoginOtp] OTP for ${normalizedEmail}:`, otp);
+  console.log(`[resendLoginOtp] OTP for ${otpEmail}:`, otp);
 
   return { success: true, expiresAt };
 };
 
 export const verifyLoginOtp = async (email: string, otp: string) => {
-  const normalizedEmail = String(email).toLowerCase().trim();
-  const entry = loginOtpStore.get(normalizedEmail);
+  const normalizedEmail = normalizeEmail(email);
+  const otpRecord = getStoredOtpEntry(normalizedEmail);
+  const entry = otpRecord?.entry;
 
   if (!entry || entry.otp !== otp || entry.expiresAt.getTime() < Date.now()) {
     throw new ErrorResponse('Invalid or expired OTP', 400);
   }
 
   // OTP is one-time use
-  loginOtpStore.delete(normalizedEmail);
+  loginOtpStore.delete(otpRecord!.key);
 
-  const user = await User.findOne({ email: normalizedEmail }).select('+refreshToken');
+  const user = await User.findOne({ email: { $in: getEmailCandidates(normalizedEmail) } }).select('+refreshToken');
   if (!user) {
     throw new ErrorResponse('User not found', 404);
   }

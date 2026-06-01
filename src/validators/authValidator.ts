@@ -1,6 +1,8 @@
 import { body } from 'express-validator';
 import { USER_ROLES } from '../config/constants';
 
+const sanitizeEmail = (value: unknown) => String(value || '').toLowerCase().trim();
+
 export const registerValidation = [
   body('name')
     .trim()
@@ -14,7 +16,7 @@ export const registerValidation = [
     .withMessage('Email is required')
     .isEmail()
     .withMessage('Invalid email format')
-    .normalizeEmail(),
+    .customSanitizer(sanitizeEmail),
   body('password')
     .notEmpty()
     .withMessage('Password is required'),
@@ -43,7 +45,7 @@ export const registerValidation = [
 ];
 
 export const loginValidation = [
-  body('email').trim().notEmpty().isEmail().normalizeEmail(),
+  body('email').trim().notEmpty().isEmail().customSanitizer(sanitizeEmail),
   body('password').notEmpty(),
 ];
 
@@ -58,7 +60,7 @@ export const sendLoginOtpValidation = [
     .withMessage('Email is required')
     .isEmail()
     .withMessage('Invalid email format')
-    .normalizeEmail(),
+    .customSanitizer(sanitizeEmail),
 ];
 
 export const verifyLoginOtpValidation = [
@@ -68,7 +70,7 @@ export const verifyLoginOtpValidation = [
     .withMessage('Email is required')
     .isEmail()
     .withMessage('Invalid email format')
-    .normalizeEmail(),
+    .customSanitizer(sanitizeEmail),
   body('otp')
     .trim()
     .notEmpty()
