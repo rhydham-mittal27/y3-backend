@@ -36,7 +36,8 @@ export const registerUser = async (
   gender?: 'MALE' | 'FEMALE' | 'OTHER',
   role?: string
 ) => {
-  const existing = await User.findOne({ email });
+  const normalizedEmail = String(email).toLowerCase().trim();
+  const existing = await User.findOne({ email: normalizedEmail });
   if (existing) {
     throw new ErrorResponse('User already exists', 409);
   }
@@ -52,7 +53,7 @@ export const registerUser = async (
 
   const user = new User({
     name,
-    email,
+    email: normalizedEmail,
     password,
     phone,
     dob: dob ? new Date(dob) : undefined,
@@ -166,8 +167,9 @@ export const getParentEmailByClassName = async (className: string) => {
 };
 
 export const loginUser = async (email: string, password: string) => {
-  console.log('[loginUser] Attempting login for email:', email);
-  const user = await User.findOne({ email }).select('+password +refreshToken');
+  const normalizedEmail = String(email).toLowerCase().trim();
+  console.log('[loginUser] Attempting login for email:', normalizedEmail);
+  const user = await User.findOne({ email: normalizedEmail }).select('+password +refreshToken');
   console.log('[loginUser] User lookup result:', user ? { id: (user as any).id, email: user.email, role: user.role } : null);
   if (!user) {
     console.log('[loginUser] No user found for email, throwing Invalid credentials');
