@@ -17,6 +17,7 @@ import DemoHistory from '../models/DemoHistory';
 import AttendanceSheet from '../models/AttendanceSheet';
 import { createNotificationWithPreferences } from './notificationService';
 import { PAYMENT_STATUS, PAYMENT_TYPE, DEMO_STATUS, VERIFICATION_FEE_AMOUNT, VERIFICATION_FEE_DEDUCT_AMOUNT } from '../config/constants';
+import { sendTutorVerificationSubmittedEmail } from './tutorEmailService';
 
 const withResolvedTutorDocumentUrls = async (tutor: any) => {
   if (!tutor) return tutor;
@@ -1102,6 +1103,16 @@ export const submitTutorVerification = async (tutorId: string) => {
     { path: 'user', select: 'name email phone role gender city preferredMode' },
     { path: 'subjects', populate: { path: 'parent', populate: { path: 'parent' } } },
   ]);
+
+  // Send verification-submitted email to the tutor
+  const tutorUser = tutor.user as any;
+  if (tutorUser?.email) {
+    await sendTutorVerificationSubmittedEmail(
+      tutorUser.email,
+      tutorUser.name || 'Teacher',
+      (tutor as any).teacherId
+    );
+  }
 
   return tutor;
 };
