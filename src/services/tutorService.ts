@@ -3,10 +3,11 @@ import Tutor from '../models/Tutor';
 import User from '../models/User';
 import Notification from '../models/Notification';
 import ErrorResponse from '../utils/errorResponse';
-import { DOCUMENT_TYPES, USER_ROLES, VERIFICATION_STATUS, MANAGER_ACTION_TYPE, TUTOR_TIER, FINAL_CLASS_STATUS, TEST_STATUS, ATTENDANCE_STATUS } from '../config/constants';
+import { DOCUMENT_TYPES, USER_ROLES, VERIFICATION_STATUS, MANAGER_ACTION_TYPE, TUTOR_TIER, FINAL_CLASS_STATUS, TEST_STATUS, ATTENDANCE_STATUS, CHANGE_ACTION } from '../config/constants';
 import { uploadFileToS3Structured, deleteFileFromS3, resolveS3DocumentUrl } from '../services/s3Service';
 import { S3_CONFIG } from '../config/s3';
 import { logManagerActivity } from './managerService';
+import { logChange } from './changeService';
 import Manager from '../models/Manager';
 import TutorFeedback from '../models/TutorFeedback';
 import Attendance from '../models/Attendance';
@@ -907,6 +908,16 @@ export const updateVerificationStatus = async (
       { entityType: 'Tutor', entityId: String(tutor._id), entityName: (tutor as any).user?.name },
       { oldStatus: current, newStatus, verificationNotes, rejectionReason }
     );
+    await logChange({
+      collection: 'Tutor',
+      documentId: String(tutor._id),
+      documentRef: (tutor as any).user?.name,
+      action: CHANGE_ACTION.STATUS_CHANGE,
+      before: { verificationStatus: current },
+      after: { verificationStatus: newStatus, verificationNotes, rejectionReason },
+      changedBy: verifiedBy,
+      reason: newStatus === VERIFICATION_STATUS.REJECTED ? rejectionReason : undefined,
+    });
   } catch (err: any) {
     console.error('Failed to log manager activity:', err.message);
   }
