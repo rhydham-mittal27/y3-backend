@@ -6,8 +6,9 @@ import Announcement from '../models/Announcement';
 import DemoHistory from '../models/DemoHistory';
 import { createNotificationWithPreferences } from './notificationService';
 import ErrorResponse from '../utils/errorResponse';
-import { CLASS_LEAD_STATUS, DEMO_STATUS, MANAGER_ACTION_TYPE, USER_ROLES } from '../config/constants';
+import { CLASS_LEAD_STATUS, DEMO_STATUS, MANAGER_ACTION_TYPE, USER_ROLES, CHANGE_ACTION } from '../config/constants';
 import { logManagerActivity } from './managerService';
+import { logChange } from './changeService';
 import Manager from '../models/Manager';
 import { convertLeadToFinalClass } from './finalClassService';
 import { resolveSubjectIds } from './leadService';
@@ -289,6 +290,18 @@ export const updateDemoStatus = async (
       { entityType: 'Demo', entityId: String(latestHistory?._id || lead._id), entityName: lead.studentName },
       { oldStatus: currentStatus, newStatus, feedback, rejectionReason }
     );
+    await logChange({
+      collection: 'DemoHistory',
+      documentId: String(latestHistory?._id || lead._id),
+      documentRef: lead.studentName,
+      action: CHANGE_ACTION.STATUS_CHANGE,
+      before: { status: currentStatus },
+      after: { status: newStatus, feedback, rejectionReason },
+      changedBy: updatedBy,
+      changedByRole: String(updatedByRole),
+      reason: newStatus === DEMO_STATUS.REJECTED ? rejectionReason : undefined,
+      relatedTo: { collection: 'ClassLead', documentId: String(lead._id) },
+    });
   } catch { }
   return lead;
 };

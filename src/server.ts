@@ -47,6 +47,7 @@ import optionRoutes from './routes/optionRoutes';
 import classPlanRoutes from './routes/classPlanRoutes';
 import publicLandingRoutes from './routes/publicLandingRoutes';
 import classSessionRoutes from './routes/classSessionRoutes';
+import changeRoutes from './routes/changeRoutes';
 
 // Load environment variables
 dotenv.config();
@@ -212,6 +213,7 @@ registerRoute('/api/class-sessions', classSessionRoutes, writeLimiter);
 
 // Read operations - lenient rate limiting
 registerRoute('/api/dashboard', dashboardRoutes, readLimiter);
+registerRoute('/api/changes', changeRoutes, readLimiter);
 
 // Not Found Middleware
 app.use(notFound);
