@@ -8,8 +8,9 @@ import CoordinatorAnnouncement from '../models/CoordinatorAnnouncement';
 import FinalClass from '../models/FinalClass';
 import Coordinator from '../models/Coordinator';
 import ErrorResponse from '../utils/errorResponse';
-import { USER_ROLES, CLASS_LEAD_STATUS, MANAGER_ACTION_TYPE } from '../config/constants';
+import { USER_ROLES, CLASS_LEAD_STATUS, MANAGER_ACTION_TYPE, CHANGE_ACTION } from '../config/constants';
 import { logManagerActivity } from './managerService';
+import { logChange } from './changeService';
 
 export const createAnnouncement = async (classLeadId: string, postedBy: string) => {
   const lead = await ClassLead.findById(classLeadId).populate({
@@ -20,11 +21,6 @@ export const createAnnouncement = async (classLeadId: string, postedBy: string) 
     throw new ErrorResponse('Class lead not found', 404);
   }
 
-  const existing = await Announcement.findOne({ classLead: classLeadId });
-  if (existing) {
-    throw new ErrorResponse('Announcement already exists for this class lead', 409);
-  }
-
   // Optional rule: allow announcing NEW, already ANNOUNCED, or REJECTED (after demo rejection)
   if (![
     CLASS_LEAD_STATUS.NEW,
@@ -32,6 +28,32 @@ export const createAnnouncement = async (classLeadId: string, postedBy: string) 
     CLASS_LEAD_STATUS.REJECTED,
   ].includes(lead.status as any)) {
     throw new ErrorResponse('Lead is not eligible for announcement', 400);
+  }
+
+  const existing = await Announcement.findOne({ classLead: classLeadId });
+  if (existing) {
+    // If the lead was rejected (e.g. after a failed demo), the old announcement
+    // must be removed so a fresh announcement can be posted for the re-opened lead.
+    if (lead.status === CLASS_LEAD_STATUS.REJECTED) {
+      await logChange({
+        collection: 'Announcement',
+        documentId: String(existing._id),
+        documentRef: (lead as any).studentName,
+        action: CHANGE_ACTION.DELETE,
+        before: {
+          classLead: existing.classLead,
+          postedAt: existing.postedAt,
+          isActive: existing.isActive,
+          interestedTutorsCount: existing.interestedTutors?.length ?? 0,
+        },
+        changedBy: postedBy,
+        reason: 'Deleted stale announcement — lead reposted after rejection',
+        relatedTo: { collection: 'ClassLead', documentId: String(classLeadId) },
+      });
+      await Announcement.findByIdAndDelete(existing._id);
+    } else {
+      throw new ErrorResponse('Announcement already exists for this class lead', 409);
+    }
   }
 
   const announcement = await Announcement.create({
@@ -77,6 +99,20 @@ export const createAnnouncement = async (classLeadId: string, postedBy: string) 
       { entityType: 'Announcement', entityId: String(announcement._id), entityName: (lead as any).studentName },
       { classLeadId, totalTutorsNotified: tutors.length }
     );
+    await logChange({
+      collection: 'Announcement',
+      documentId: String(announcement._id),
+      documentRef: (lead as any).studentName,
+      action: CHANGE_ACTION.CREATE,
+      after: {
+        classLead: classLeadId,
+        postedAt: announcement.postedAt,
+        totalTutorsNotified: tutors.length,
+        leadStatus: lead.status,
+      },
+      changedBy: postedBy,
+      relatedTo: { collection: 'ClassLead', documentId: String(classLeadId) },
+    });
   } catch {}
 
   return populated;
@@ -482,9 +518,20 @@ export const getRecommendedTutorsForLead = async (classLeadId: string) => {
   return enriched.sort((a, b) => (b.matchPercentage || 0) - (a.matchPercentage || 0));
 };
 
-export const deactivateAnnouncement = async (announcementId: string) => {
+export const deactivateAnnouncement = async (announcementId: string, deactivatedBy?: string) => {
+  const prev = await Announcement.findById(announcementId);
+  if (!prev) throw new ErrorResponse('Announcement not found', 404);
   const updated = await Announcement.findByIdAndUpdate(announcementId, { $set: { isActive: false } }, { new: true });
-  if (!updated) throw new ErrorResponse('Announcement not found', 404);
+  if (deactivatedBy) {
+    await logChange({
+      collection: 'Announcement',
+      documentId: announcementId,
+      action: CHANGE_ACTION.UPDATE,
+      before: { isActive: prev.isActive },
+      after: { isActive: false },
+      changedBy: deactivatedBy,
+    });
+  }
   return updated;
 };
 

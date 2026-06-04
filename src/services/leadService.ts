@@ -17,6 +17,8 @@ import Manager from '../models/Manager';
 import Student from '../models/Student';
 import Option from '../models/Option';
 import { logManagerActivity } from './managerService';
+import { logChange } from './changeService';
+import { CHANGE_ACTION } from '../config/constants';
 import FinalClass from '../models/FinalClass';
 import Payment from '../models/Payment';
 import Announcement from '../models/Announcement';
@@ -263,6 +265,14 @@ export const createClassLead = async (params: {
       { entityType: 'ClassLead', entityId: String(lead._id), entityName: lead.studentName },
       { grade: lead.grade, subject: lead.subject, board: lead.board, mode: lead.mode, leadId }
     );
+    await logChange({
+      collection: 'ClassLead',
+      documentId: String(lead._id),
+      documentRef: lead.studentName,
+      action: CHANGE_ACTION.CREATE,
+      after: { leadId, grade: lead.grade, mode: lead.mode, board: lead.board, status: lead.status },
+      changedBy: createdBy,
+    });
   } catch {}
   return (leadWithInternalNotes as any) || lead;
 };
@@ -503,6 +513,14 @@ export const updateClassLead = async (
       { entityType: 'ClassLead', entityId: String(lead._id), entityName: lead.studentName },
       updateData
     );
+    await logChange({
+      collection: 'ClassLead',
+      documentId: String(lead._id),
+      documentRef: lead.studentName,
+      action: CHANGE_ACTION.UPDATE,
+      after: updateData as Record<string, any>,
+      changedBy: createdBy,
+    });
   } catch {}
   return (populated as any) || lead;
 };
@@ -672,10 +690,22 @@ export const updateClassLeadStatus = async (
     { path: 'assignedTutor', select: 'name email phone' },
     { path: 'subject', select: '_id label value type' },
   ]);
+  try {
+    const actorId = String(_userId);
+    await logChange({
+      collection: 'ClassLead',
+      documentId: String(lead._id),
+      documentRef: lead.studentName,
+      action: CHANGE_ACTION.STATUS_CHANGE,
+      before: { status: current },
+      after: { status: newStatus },
+      changedBy: actorId,
+    });
+  } catch {}
   return lead;
 };
 
-export const deleteClassLead = async (leadId: string) => {
+export const deleteClassLead = async (leadId: string, deletedBy?: string) => {
   const existing = await ClassLead.findById(leadId);
   if (!existing) {
     throw new ErrorResponse('Class lead not found', 404);
@@ -683,12 +713,27 @@ export const deleteClassLead = async (leadId: string) => {
   await ClassLead.findByIdAndDelete(leadId);
   try {
     const createdBy = String((existing.createdBy as any)?._id || existing.createdBy);
+    const actor = deletedBy || createdBy;
     await logManagerActivity(
       createdBy,
       MANAGER_ACTION_TYPE.DELETE_CLASS_LEAD,
       `Deleted class lead for student ${existing.studentName}`,
       { entityType: 'ClassLead', entityId: String(existing._id), entityName: existing.studentName }
     );
+    await logChange({
+      collection: 'ClassLead',
+      documentId: String(existing._id),
+      documentRef: existing.studentName,
+      action: CHANGE_ACTION.DELETE,
+      before: {
+        studentName: existing.studentName,
+        status: existing.status,
+        grade: existing.grade,
+        mode: existing.mode,
+        leadId: existing.leadId,
+      },
+      changedBy: actor,
+    });
   } catch {}
   return true;
 };
