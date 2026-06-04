@@ -12,9 +12,11 @@ import {
   ATTENDANCE_STATUS,
   MANAGER_ACTION_TYPE,
   VERIFICATION_FEE_DEDUCT_AMOUNT,
+  CHANGE_ACTION,
 } from '../config/constants';
 import logger, { logError } from '../utils/logger';
 import { logManagerActivity } from './managerService';
+import { logChange } from './changeService';
 import Manager from '../models/Manager';
 import { createNotificationWithPreferences } from './notificationService';
 
@@ -465,6 +467,18 @@ export const updatePaymentStatus = async (
             newStatus 
           }
         );
+        await logChange({
+          collection: 'Payment',
+          documentId: String(payment._id),
+          documentRef: `INR ${payment.amount} — ${(payment as any).tutor?.name || ''}`,
+          action: CHANGE_ACTION.STATUS_CHANGE,
+          before: { status: current },
+          after: { status: newStatus, paymentMethod, transactionId },
+          changedBy: paidBy,
+          relatedTo: payment.finalClass
+            ? { collection: 'FinalClass', documentId: String((payment.finalClass as any)?._id || payment.finalClass) }
+            : undefined,
+        });
       } catch (e) {
         logError(`Failed to log manager activity: ${String(e)}`);
       }

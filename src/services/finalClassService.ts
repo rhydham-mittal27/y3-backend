@@ -8,8 +8,9 @@ import User from '../models/User';
 import Notification from '../models/Notification';
 import Student from '../models/Student';
 import ErrorResponse from '../utils/errorResponse';
-import { CLASS_LEAD_STATUS, FINAL_CLASS_STATUS, MANAGER_ACTION_TYPE, ATTENDANCE_STATUS, USER_ROLES } from '../config/constants';
+import { CLASS_LEAD_STATUS, FINAL_CLASS_STATUS, MANAGER_ACTION_TYPE, ATTENDANCE_STATUS, USER_ROLES, CHANGE_ACTION } from '../config/constants';
 import { logManagerActivity } from './managerService';
+import { logChange } from './changeService';
 import Manager from '../models/Manager';
 import { createAdvancePaymentForFinalClass } from './paymentService';
 import { generateStudentId } from '../utils/generateStudentId';
@@ -412,6 +413,21 @@ export const convertLeadToFinalClass = async (params: {
         { entityType: 'FinalClass', entityId: String(created._id), entityName: studentName },
         { classLeadId, tutorId: String(lead.assignedTutor), coordinatorId: coordinatorUserIdToUse, startDate }
       );
+      await logChange({
+        collection: 'FinalClass',
+        documentId: String(created._id),
+        documentRef: studentName,
+        action: CHANGE_ACTION.CREATE,
+        after: {
+          classLead: classLeadId,
+          tutor: String(lead.assignedTutor),
+          coordinator: coordinatorUserIdToUse,
+          status: FINAL_CLASS_STATUS.ACTIVE,
+          startDate,
+        },
+        changedBy: convertedBy,
+        relatedTo: { collection: 'ClassLead', documentId: classLeadId },
+      });
     } catch {}
 
     const createdObj = created.toObject();
@@ -723,6 +739,22 @@ export const updateFinalClassStatus = async (
       { path: 'convertedBy', select: 'name email role' },
       { path: 'subject', populate: { path: 'parent', populate: { path: 'parent' } } },
     ]);
+
+    // Log the status change to the Changes collection
+    try {
+      const actor = String((cls as any).convertedBy?._id || (cls as any).convertedBy || '');
+      if (actor) {
+        await logChange({
+          collection: 'FinalClass',
+          documentId: classId,
+          documentRef: (cls as any).studentName,
+          action: CHANGE_ACTION.STATUS_CHANGE,
+          before: { status: current },
+          after: { status: newStatus },
+          changedBy: actor,
+        });
+      }
+    } catch {}
 
     return cls;
   } catch (err: any) {
