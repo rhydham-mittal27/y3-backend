@@ -23,8 +23,8 @@ export const assignDemo = async (
 ) => {
   const lead = await ClassLead.findById(classLeadId);
   if (!lead) throw new ErrorResponse('Class lead not found', 404);
-  if (lead.status !== CLASS_LEAD_STATUS.ANNOUNCED)
-    throw new ErrorResponse('Lead is not in announced state', 400);
+  if (lead.status !== CLASS_LEAD_STATUS.ANNOUNCED && lead.status !== CLASS_LEAD_STATUS.REJECTED)
+    throw new ErrorResponse('Lead is not in announced or rejected state', 400);
 
   const announcement = await Announcement.findOne({ classLead: classLeadId });
   if (!announcement) throw new ErrorResponse('Announcement not found for this lead', 404);
