@@ -117,36 +117,54 @@ export const updateMyProfileController = asyncHandler(async (req: AuthRequest, r
 
   // Lock permanent identity fields for verified tutors
   if (tutorUser && (tutorUser as any).verificationStatus === 'VERIFIED') {
-    const lockedFieldsMapping: Record<string, string> = {
-      fullName: 'name',
-      email: 'email',
-      phoneNumber: 'phone',
-      permanentAddress: 'permanentAddress',
-      residentialAddress: 'residentialAddress'
-    };
+    const userDoc = await (mongoose.models.User || mongoose.model('User')).findById(req.user!.id);
+    const changedLockedFields: string[] = [];
 
-    const changedLockedFields = Object.entries(lockedFieldsMapping).filter(([frontendKey, backendKey]) => {
-      // Only check if the field is present in the request body
-      if (!(frontendKey in req.body)) return false;
+    const strDiff = (newVal: any, oldVal: any) => String(newVal || '').trim() !== String(oldVal || '').trim();
 
-      const newValue = req.body[frontendKey];
-      let oldValue: any;
-
-      if (['fullName', 'email', 'phoneNumber'].includes(frontendKey)) {
-        // These fields map to the user sub-document
-        oldValue = (tutorUser as any).user?.[backendKey];
-      } else {
-        // These fields map directly to the tutor document
-        oldValue = (tutorUser as any)[backendKey];
+    if ('fullName' in req.body && strDiff(req.body.fullName, userDoc?.name)) {
+      changedLockedFields.push('fullName');
+    }
+    if ('email' in req.body && strDiff(req.body.email, userDoc?.email)) {
+      changedLockedFields.push('email');
+    }
+    if ('phoneNumber' in req.body && strDiff(req.body.phoneNumber, userDoc?.phone)) {
+      changedLockedFields.push('phoneNumber');
+    }
+    if ('gender' in req.body && strDiff(req.body.gender, userDoc?.gender)) {
+      changedLockedFields.push('gender');
+    }
+    if ('dob' in req.body) {
+      const newDob = req.body.dob ? new Date(req.body.dob).toDateString() : '';
+      const oldDob = userDoc?.dob ? new Date(userDoc.dob).toDateString() : '';
+      if (newDob !== oldDob) changedLockedFields.push('dob');
+    }
+    if ('qualification' in req.body && strDiff(req.body.qualification, tutorUser.qualifications?.[0])) {
+      changedLockedFields.push('qualification');
+    }
+    if ('experience' in req.body) {
+      const parseExpYears = (exp: string | undefined): number => {
+        if (!exp) return 0;
+        const num = Number((exp.match(/\d+/)?.[0] ?? '0'));
+        return isFinite(num) && num > 0 ? num : 0;
+      };
+      if (parseExpYears(req.body.experience) !== (tutorUser.yearsOfExperience || 0)) {
+        changedLockedFields.push('experience');
       }
-
-      // If the field is not provided in DB yet, any non-empty value is a change
-      // If it is provided, compare values while being robust to nulls/types
-      const normalizedNew = String(newValue || '').trim();
-      const normalizedOld = String(oldValue || '').trim();
-
-      return normalizedNew !== normalizedOld;
-    }).map(([frontendKey]) => frontendKey);
+    }
+    if ('permanentAddress' in req.body && strDiff(req.body.permanentAddress, tutorUser.permanentAddress)) {
+      changedLockedFields.push('permanentAddress');
+    }
+    if ('residentialAddress' in req.body && strDiff(req.body.residentialAddress, tutorUser.residentialAddress)) {
+      changedLockedFields.push('residentialAddress');
+    }
+    if ('extracurricularActivities' in req.body) {
+      const newExtra = Array.isArray(req.body.extracurricularActivities) ? [...req.body.extracurricularActivities].map(String).sort() : [];
+      const oldExtra = Array.isArray(tutorUser.extracurricularActivities) ? [...tutorUser.extracurricularActivities].map(String).sort() : [];
+      if (JSON.stringify(newExtra) !== JSON.stringify(oldExtra)) {
+        changedLockedFields.push('extracurricularActivities');
+      }
+    }
 
     if (changedLockedFields.length > 0) {
       throw new ErrorResponse(

@@ -483,6 +483,7 @@ export const getMyProfileForEdit = async (userId: string) => {
     bio: tutor?.bio || '',
     languagesKnown: tutor?.languagesKnown || [],
     skills: tutor?.skills || [],
+    verificationStatus: tutor?.verificationStatus || 'PENDING',
   };
 };
 
