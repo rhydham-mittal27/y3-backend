@@ -8,6 +8,7 @@ import ErrorResponse from '../utils/errorResponse';
 import { ATTENDANCE_STATUS, STUDENT_ATTENDANCE_STATUS, FINAL_CLASS_STATUS, PAYMENT_TYPE, PAYMENT_STATUS, USER_ROLES } from '../config/constants';
 import { createPaymentForSheet, createCyclePayments } from './paymentService';
 import { updateTutorExperienceAndTier } from './tutorService';
+import { generateClassSessionsForCycle } from './classSessionService';
 import logger from '../utils/logger';
 
 export const addDailyAttendance = async (params: {
@@ -149,6 +150,22 @@ export const addDailyAttendance = async (params: {
       await createCyclePayments(String(sheet._id), userId);
     } catch (paymentErr) {
       logger.error(`Failed to create cycle payments for sheet ${sheet._id}: ${paymentErr}`);
+    }
+
+    // Auto-generate ClassSession timetable for this cycle, anchored to the
+    // actual first attendance date so the schedule reflects real start.
+    if (!isGroup && finalClassId) {
+      try {
+        await generateClassSessionsForCycle({
+          classId: finalClassId,
+          cycleMonth: date.getMonth() + 1,
+          cycleYear: date.getFullYear(),
+          anchorDate: date,
+        });
+      } catch (sessionErr) {
+        // Non-fatal: timetable generation failing should not block attendance
+        logger.warn(`[timetable] auto-generate failed for class ${finalClassId} cycle ${nextCycle}: ${sessionErr}`);
+      }
     }
   }
 

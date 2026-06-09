@@ -38,6 +38,8 @@ import managerRoutes from './routes/managerRoutes';
 import adminRoutes from './routes/adminRoutes';
 import testRoutes from './routes/testRoutes';
 import tutorLeadRoutes from './routes/tutorLeadRoutes';
+import parentLeadRoutes from './routes/parentLeadRoutes';
+import parentRoutes from './routes/parentRoutes';
 import studentRoutes from './routes/studentRoutes';
 import studentAuthRoutes from './routes/studentAuth';
 import settingsRoutes from './routes/settingsRoutes';
@@ -47,6 +49,7 @@ import optionRoutes from './routes/optionRoutes';
 import classPlanRoutes from './routes/classPlanRoutes';
 import publicLandingRoutes from './routes/publicLandingRoutes';
 import classSessionRoutes from './routes/classSessionRoutes';
+import shiftRequestRoutes from './routes/shiftRequestRoutes';
 import changeRoutes from './routes/changeRoutes';
 
 // Load environment variables
@@ -202,6 +205,8 @@ registerRoute('/api/managers', managerRoutes, writeLimiter);
 registerRoute('/api/admin', adminRoutes, writeLimiter);
 registerRoute('/api/tests', testRoutes, writeLimiter);
 registerRoute('/api/v1/tutor-leads', tutorLeadRoutes, writeLimiter);
+registerRoute('/api/v1/parent-leads', parentLeadRoutes, writeLimiter);
+registerRoute('/api/v1/parents', parentRoutes, writeLimiter);
 registerRoute('/api/students', studentRoutes, writeLimiter);
 registerRoute('/api/student-auth', studentAuthRoutes, authLimiter);
 registerRoute('/api/settings', settingsRoutes, writeLimiter);
@@ -210,6 +215,7 @@ registerRoute('/api/subjects', subjectRoutes, writeLimiter);
 registerRoute('/api/options', optionRoutes, writeLimiter);
 registerRoute('/api/class-plans', classPlanRoutes, writeLimiter);
 registerRoute('/api/class-sessions', classSessionRoutes, writeLimiter);
+registerRoute('/api/shift-requests', shiftRequestRoutes, writeLimiter);
 
 // Read operations - lenient rate limiting
 registerRoute('/api/dashboard', dashboardRoutes, readLimiter);
