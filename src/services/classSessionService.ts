@@ -36,8 +36,10 @@ export const generateClassSessionsForCycle = async (params: {
   cycleMonth: number;
   cycleYear: number;
   actorUserId?: string;
+  /** When provided, sessions start from this exact date instead of the first-of-month anchor. */
+  anchorDate?: Date;
 }) => {
-  const { classId, cycleMonth, cycleYear } = params;
+  const { classId, cycleMonth, cycleYear, anchorDate } = params;
   if (!cycleMonth || !cycleYear) throw new ErrorResponse('cycleMonth and cycleYear are required', 400);
   if (cycleMonth < 1 || cycleMonth > 12) throw new ErrorResponse('Invalid cycleMonth', 400);
 
@@ -59,7 +61,11 @@ export const generateClassSessionsForCycle = async (params: {
   const n = Number(cls.classesPerMonth || cls.totalSessions || 0);
   if (!Number.isFinite(n) || n <= 0) throw new ErrorResponse('classesPerMonth must be set to generate sessions', 400);
 
-  const anchorStart = computeCycleAnchorStart({ cycleMonth, cycleYear, scheduleStartDate });
+  // If anchorDate is explicitly provided (e.g. from first attendance), use it directly.
+  // Otherwise fall back to the month-based anchor computation.
+  const anchorStart = anchorDate
+    ? startOfDay(new Date(anchorDate))
+    : computeCycleAnchorStart({ cycleMonth, cycleYear, scheduleStartDate });
 
   // Iterate day-by-day until we generate N sessions. Spill-over into next month is allowed.
   const pickedDates: Date[] = [];
@@ -102,6 +108,58 @@ export const generateClassSessionsForCycle = async (params: {
   }
 
   return sessionDocs;
+};
+
+/**
+ * Shifts all PLANNED ClassSessions for a class+cycle by shiftDays.
+ * Only moves sessions that are still in PLANNED status.
+ */
+export const applyShiftToPlannedSessions = async (params: {
+  classId: string;
+  cycleNumber: number;
+  shiftDays: number;
+}) => {
+  const { classId, cycleNumber, shiftDays } = params;
+
+  // ClassSession uses cycleMonth/cycleYear, not cycleNumber directly.
+  // We find sessions by finalClass + PLANNED status, then filter by matching
+  // the cycle via the AttendanceSheet cycleNumber through sessionNumber ordering.
+  // Simplest approach: find all PLANNED sessions for the class, ordered by date,
+  // grouped by (cycleYear, cycleMonth). The cycleNumber maps to the Nth distinct
+  // (cycleYear, cycleMonth) group when sorted ascending.
+  const allPlanned = await ClassSession.find({
+    finalClass: new mongoose.Types.ObjectId(classId),
+    status: 'PLANNED',
+  }).sort({ sessionDate: 1 });
+
+  // Group into cycles by (cycleYear, cycleMonth) in chronological order
+  const cycleGroups: Map<string, typeof allPlanned> = new Map();
+  for (const s of allPlanned) {
+    const key = `${s.cycleYear}-${String(s.cycleMonth).padStart(2, '0')}`;
+    if (!cycleGroups.has(key)) cycleGroups.set(key, []);
+    cycleGroups.get(key)!.push(s);
+  }
+
+  const sortedKeys = Array.from(cycleGroups.keys()).sort();
+  const targetKey = sortedKeys[cycleNumber - 1];
+  if (!targetKey) return [];
+
+  const sessions = cycleGroups.get(targetKey)!;
+  const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+  const updated = await Promise.all(
+    sessions.map((s) => {
+      const newDate = new Date(s.sessionDate.getTime() + shiftDays * MS_PER_DAY);
+      newDate.setHours(0, 0, 0, 0);
+      return ClassSession.findByIdAndUpdate(
+        s._id,
+        { $set: { sessionDate: newDate } },
+        { new: true },
+      );
+    }),
+  );
+
+  return updated.filter(Boolean);
 };
 
 export const getTutorSessionsForCycle = async (params: {
