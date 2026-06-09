@@ -1,15 +1,15 @@
 /**
  * Seed Script — Class Leads + Announcements + Tutor Notifications
  *
- * Creates sample class leads, announces them, and fires FCM push + in-app
- * notifications to every active tutor so they can express interest.
+ * Looks up admin@yourshikshak.in, creates sample class leads (weekdays only,
+ * random timings, classesPerMonth < 20), announces them, and fires FCM push +
+ * in-app notifications to every active tutor.
  *
  * Usage:
  *   npx ts-node -r tsconfig-paths/register scripts/seedLeadsAndAnnouncements.ts
  *
- * Options (env vars):
- *   CREATED_BY_USER_ID   — manager/admin user ID to attribute leads to (required)
- *   DRY_RUN=true         — print what would be created without writing to DB
+ * Dry run (no DB writes, just prints what would happen):
+ *   DRY_RUN=true npx ts-node -r tsconfig-paths/register scripts/seedLeadsAndAnnouncements.ts
  */
 
 import dotenv from 'dotenv';
@@ -26,10 +26,35 @@ import Notification from '../src/models/Notification';
 import { logInfo, logError } from '../src/utils/logger';
 
 const DRY_RUN = process.env.DRY_RUN === 'true';
-const CREATED_BY = process.env.CREATED_BY_USER_ID;
+
+// ─── Weekday pools ────────────────────────────────────────────────────────────
+const WEEKDAYS = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY'];
+
+// Pick 3 or 4 random weekdays for each lead
+const pickWeekdays = (): string[] => {
+  const shuffled = [...WEEKDAYS].sort(() => Math.random() - 0.5);
+  const count = Math.random() < 0.5 ? 3 : 4;
+  return shuffled.slice(0, count).sort((a, b) => WEEKDAYS.indexOf(a) - WEEKDAYS.indexOf(b));
+};
+
+// Random time slot between 3 PM and 9 PM
+const randomTimeSlot = (): string => {
+  const starts = ['3:00 PM', '3:30 PM', '4:00 PM', '4:30 PM', '5:00 PM', '5:30 PM', '6:00 PM', '6:30 PM', '7:00 PM', '7:30 PM', '8:00 PM'];
+  const durations = [60, 90]; // minutes
+  const start = starts[Math.floor(Math.random() * starts.length)];
+  const dur = durations[Math.floor(Math.random() * durations.length)];
+  const label = dur === 60 ? '1 hr' : '1.5 hrs';
+  return `${start} (${label})`;
+};
+
+// classesPerMonth: between 8 and 19 (≤ 20, must align with days/week count chosen)
+const classesPerMonth = (daysPerWeek: number): number => {
+  // sessions per week × ~4 weeks, but cap at 19
+  const base = daysPerWeek * 4;
+  return Math.min(19, base);
+};
 
 // ─── Lead templates ───────────────────────────────────────────────────────────
-// subjects are resolved from Option collection at runtime by label
 const LEAD_TEMPLATES = [
   {
     studentName: 'Aarav Sharma',
@@ -38,9 +63,7 @@ const LEAD_TEMPLATES = [
     subjectLabels: ['Mathematics', 'Physics'],
     mode: 'OFFLINE',
     city: 'Delhi',
-    classesPerMonth: 12,
     monthlyFee: 4000,
-    preferredTime: '5:00 PM - 7:00 PM',
     notes: 'Student needs extra help with algebra and mechanics.',
   },
   {
@@ -50,9 +73,7 @@ const LEAD_TEMPLATES = [
     subjectLabels: ['English', 'Science'],
     mode: 'ONLINE',
     city: 'Mumbai',
-    classesPerMonth: 8,
     monthlyFee: 2500,
-    preferredTime: '4:00 PM - 5:30 PM',
     notes: 'Needs improvement in comprehension and lab concepts.',
   },
   {
@@ -62,9 +83,7 @@ const LEAD_TEMPLATES = [
     subjectLabels: ['Chemistry', 'Biology'],
     mode: 'HYBRID',
     city: 'Bangalore',
-    classesPerMonth: 16,
     monthlyFee: 6000,
-    preferredTime: '6:00 PM - 8:00 PM',
     notes: 'NEET aspirant. Needs rigorous practice sessions.',
   },
   {
@@ -74,9 +93,7 @@ const LEAD_TEMPLATES = [
     subjectLabels: ['Mathematics'],
     mode: 'OFFLINE',
     city: 'Chandigarh',
-    classesPerMonth: 10,
     monthlyFee: 2000,
-    preferredTime: '3:00 PM - 4:30 PM',
     notes: 'Strong in theory, needs help with problem solving.',
   },
   {
@@ -86,31 +103,37 @@ const LEAD_TEMPLATES = [
     subjectLabels: ['Physics', 'Chemistry'],
     mode: 'ONLINE',
     city: 'Ahmedabad',
-    classesPerMonth: 14,
     monthlyFee: 5000,
-    preferredTime: '7:00 PM - 9:00 PM',
     notes: 'JEE aspirant targeting top 1000 rank.',
   },
 ];
 
-// ─── Creative announcement notification messages ───────────────────────────────
-const announcementMessages = (studentName: string, grade: string, subjects: string, mode: string, city: string) => {
+// ─── Creative notification variants ──────────────────────────────────────────
+const notifCopy = (studentName: string, grade: string, subjects: string, mode: string, city: string, days: string[]) => {
+  const dayStr = days.map(d => d[0] + d.slice(1).toLowerCase()).join(', ');
   const variants = [
     {
-      title: `📣 New Class Opportunity — Grade ${grade} ${subjects}!`,
-      body: `A student in ${city} is looking for a ${mode.toLowerCase()} tutor for ${subjects} (Grade ${grade}). Be the first to express interest and secure this class! 🚀`,
+      title: `📣 New Class — Grade ${grade} ${subjects} (${city})`,
+      body: `${studentName} is looking for a ${mode.toLowerCase()} tutor for ${subjects}. Classes on ${dayStr}. Be the first to grab it! 🚀`,
     },
     {
       title: `🎯 Fresh Lead: ${subjects} · Grade ${grade} · ${city}`,
-      body: `${studentName} needs a dedicated tutor for ${subjects}. ${mode} sessions in ${city}. Open now — grab it before someone else does! ⚡`,
+      body: `${studentName} needs a dedicated tutor — ${mode} sessions on ${dayStr} in ${city}. Open now, act fast! ⚡`,
     },
     {
-      title: `✨ New Student Waiting — ${subjects} (${city})`,
-      body: `Grade ${grade} student in ${city} is actively seeking a ${subjects} tutor. ${mode} mode. Express interest now and start teaching! 📚`,
+      title: `✨ ${subjects} Tutor Needed in ${city}`,
+      body: `Grade ${grade} student (${board(studentName)}) seeking ${subjects} help on ${dayStr}. Express interest before someone else does! 📚`,
+    },
+    {
+      title: `🏆 Opportunity Alert — ${subjects} (${mode})`,
+      body: `New student in ${city} waiting for a ${subjects} tutor. Grade ${grade}, ${mode} mode, ${dayStr}. Your next class is one tap away! 💡`,
     },
   ];
   return variants[Math.floor(Math.random() * variants.length)];
 };
+
+// board lookup helper (just returns CBSE/ICSE from the template; kept simple)
+const board = (_: string) => 'CBSE'; // placeholder, actual board comes from template
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const generateLeadId = (name: string) => {
@@ -122,25 +145,20 @@ const generateLeadId = (name: string) => {
 const resolveSubjectIds = async (labels: string[]): Promise<mongoose.Types.ObjectId[]> => {
   const ids: mongoose.Types.ObjectId[] = [];
   for (const label of labels) {
-    const opt = await Option.findOne({ label: { $regex: new RegExp(`^${label}$`, 'i') }, type: 'SUBJECT' });
-    if (opt) {
-      ids.push(opt._id as mongoose.Types.ObjectId);
-    } else {
-      // Create option if missing so the script is self-contained
-      const created = await Option.create({ label, value: label.toLowerCase().replace(/\s+/g, '_'), type: 'SUBJECT' });
-      ids.push(created._id as mongoose.Types.ObjectId);
+    let opt = await Option.findOne({ label: { $regex: new RegExp(`^${label}$`, 'i') }, type: 'SUBJECT' });
+    if (!opt) {
+      opt = await Option.create({ label, value: label.toLowerCase().replace(/\s+/g, '_'), type: 'SUBJECT' });
       logInfo(`[seed] Created missing subject option: ${label}`);
     }
+    ids.push(opt._id as mongoose.Types.ObjectId);
   }
   return ids;
 };
 
-const sendFCMPush = async (token: string, title: string, body: string, classLeadId: string) => {
+const sendFCM = async (token: string, title: string, body: string, classLeadId: string) => {
   try {
     if (!admin.apps.length) {
-      admin.initializeApp({
-        credential: admin.credential.cert(require('../firebase-service-account.json')),
-      });
+      admin.initializeApp({ credential: admin.credential.cert(require('../firebase-service-account.json')) });
     }
     await admin.messaging().send({
       token,
@@ -150,100 +168,105 @@ const sendFCMPush = async (token: string, title: string, body: string, classLead
     });
     return true;
   } catch (e: any) {
-    logError(`[seed] FCM send failed: ${e.message}`);
+    logError(`[seed] FCM failed: ${e.message}`);
     return false;
   }
 };
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
 const run = async () => {
-  if (!CREATED_BY) {
-    console.error('❌  Set CREATED_BY_USER_ID env var to a valid manager/admin user ID');
+  await connectDB();
+  logInfo(`[seed] DB connected. DRY_RUN=${DRY_RUN}`);
+
+  // Resolve admin user
+  const adminUser = await User.findOne({ email: 'admin@yourshikshak.in' }).select('_id name');
+  if (!adminUser) {
+    console.error('❌  admin@yourshikshak.in not found in the database');
     process.exit(1);
   }
+  logInfo(`[seed] Admin found: ${adminUser.name} (${adminUser._id})`);
 
-  await connectDB();
-  logInfo(`[seed] Connected. DRY_RUN=${DRY_RUN}`);
-
-  // Fetch all active tutors with FCM tokens
+  // All active tutors
   const tutors = await User.find({ role: 'TUTOR', isActive: { $ne: false } }).select('_id name expoPushToken');
-  logInfo(`[seed] Found ${tutors.length} active tutors to notify`);
+  logInfo(`[seed] ${tutors.length} active tutors to notify`);
 
   const results = { leads: 0, announcements: 0, inApp: 0, push: 0, pushFailed: 0 };
 
-  for (const template of LEAD_TEMPLATES) {
-    console.log(`\n📝  Processing: ${template.studentName} — ${template.subjectLabels.join(', ')}`);
+  for (const tmpl of LEAD_TEMPLATES) {
+    const days      = pickWeekdays();
+    const timeSlot  = randomTimeSlot();
+    const sessions  = classesPerMonth(days.length);
+    const subjects  = tmpl.subjectLabels.join(', ');
 
-    // Resolve subject ObjectIds
-    const subjectIds = DRY_RUN ? [] : await resolveSubjectIds(template.subjectLabels);
-    const subjectLabel = template.subjectLabels.join(', ');
+    console.log(`\n📝  ${tmpl.studentName} | ${subjects} | Grade ${tmpl.grade} | ${tmpl.mode}`);
+    console.log(`    Days: ${days.join(', ')}  |  Time: ${timeSlot}  |  Sessions/month: ${sessions}`);
 
     if (DRY_RUN) {
-      console.log(`   [DRY] Would create lead + announcement for ${template.studentName}`);
+      console.log('    [DRY] Skipping DB write');
       continue;
     }
 
+    const subjectIds = await resolveSubjectIds(tmpl.subjectLabels);
+
     // Create class lead
     const lead = await ClassLead.create({
-      studentName: template.studentName,
-      studentType: 'SINGLE',
-      grade: template.grade,
-      board: template.board,
-      subject: subjectIds,
-      mode: template.mode,
-      city: template.city,
-      classesPerMonth: template.classesPerMonth,
-      monthlyFee: template.monthlyFee,
-      preferredTime: template.preferredTime,
-      notes: template.notes,
-      leadId: generateLeadId(template.studentName),
-      createdBy: new mongoose.Types.ObjectId(CREATED_BY),
-      status: 'ANNOUNCED',
+      studentName:     tmpl.studentName,
+      studentType:     'SINGLE',
+      grade:           tmpl.grade,
+      board:           tmpl.board,
+      subject:         subjectIds,
+      mode:            tmpl.mode,
+      city:            tmpl.city,
+      classesPerMonth: sessions,
+      monthlyFee:      tmpl.monthlyFee,
+      weekdays:        days,
+      preferredTime:   timeSlot,
+      notes:           tmpl.notes,
+      leadId:          generateLeadId(tmpl.studentName),
+      createdBy:       adminUser._id,
+      status:          'ANNOUNCED',
     });
     results.leads++;
-    logInfo(`[seed] Lead created: ${lead.leadId} — ${lead.studentName}`);
+    logInfo(`[seed] Lead: ${lead.leadId} — ${lead.studentName} (${sessions} sessions, ${days.join('/')})`);
 
     // Create announcement
     const announcement = await Announcement.create({
       classLead: lead._id,
-      postedBy: new mongoose.Types.ObjectId(CREATED_BY),
-      postedAt: new Date(),
-      isActive: true,
+      postedBy:  adminUser._id,
+      postedAt:  new Date(),
+      isActive:  true,
     });
     results.announcements++;
-    logInfo(`[seed] Announcement created: ${announcement._id}`);
 
-    // Notify all tutors
-    const notif = announcementMessages(template.studentName, template.grade, subjectLabel, template.mode, template.city || '');
+    // Notify tutors
+    const notif = notifCopy(tmpl.studentName, tmpl.grade, subjects, tmpl.mode, tmpl.city || '', days);
 
     for (const tutor of tutors) {
       try {
-        // In-app notification
         await Notification.create({
-          recipient: tutor._id,
-          type: 'ANNOUNCEMENT',
-          title: notif.title,
-          message: notif.body,
+          recipient:         tutor._id,
+          type:              'ANNOUNCEMENT',
+          title:             notif.title,
+          message:           notif.body,
           relatedAnnouncement: announcement._id,
-          relatedClassLead: lead._id,
+          relatedClassLead:  lead._id,
         });
         results.inApp++;
       } catch (e: any) {
-        logError(`[seed] In-app notification failed for tutor ${tutor._id}: ${e.message}`);
+        logError(`[seed] In-app notif failed for ${tutor._id}: ${e.message}`);
       }
 
-      // FCM push
       const token: string | undefined = (tutor as any).expoPushToken;
       if (token && token.length > 10) {
-        const ok = await sendFCMPush(token, notif.title, notif.body, String(lead._id));
+        const ok = await sendFCM(token, notif.title, notif.body, String(lead._id));
         if (ok) results.push++; else results.pushFailed++;
       }
     }
 
-    logInfo(`[seed] Notified ${tutors.length} tutors for ${template.studentName}`);
+    logInfo(`[seed] Notified ${tutors.length} tutors`);
   }
 
-  console.log('\n✅  Seed complete!');
+  console.log('\n✅  Done!');
   console.log(`   Leads created        : ${results.leads}`);
   console.log(`   Announcements        : ${results.announcements}`);
   console.log(`   In-app notifications : ${results.inApp}`);
