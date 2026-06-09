@@ -8,6 +8,7 @@ import { createCoordinator } from '../services/coordinatorService';
 import { USER_ROLES } from '../config/constants';
 import { AuthRequest } from '../types';
 import { sendEmail } from '../utils/emailService';
+import User from '../models/User';
 
 export const register = asyncHandler(async (req, res) => {
   const errors = validationResult(req);
@@ -286,4 +287,12 @@ export const verifyChangePasswordOtpHandler = asyncHandler(async (req: AuthReque
   const { otp, newPassword } = req.body as { otp: string; newPassword: string };
   const result = await verifyChangePasswordWithOtp(req.user.id, otp, newPassword);
   return res.status(200).json(successResponse(result, 'Password changed successfully'));
+});
+
+export const savePushTokenHandler = asyncHandler(async (req: AuthRequest, res) => {
+  if (!req.user) throw new ErrorResponse('Not authenticated', 401);
+  const { expoPushToken } = req.body as { expoPushToken?: string };
+  if (!expoPushToken) throw new ErrorResponse('expoPushToken is required', 400);
+  await User.findByIdAndUpdate(req.user.id, { expoPushToken });
+  return res.status(200).json(successResponse(null, 'Push token saved'));
 });

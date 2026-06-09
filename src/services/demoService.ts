@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import admin from 'firebase-admin';
 import ClassLead from '../models/ClassLead';
 import Tutor from '../models/Tutor';
 import User from '../models/User';
@@ -72,14 +73,65 @@ export const assignDemo = async (
   } catch { }
 
   try {
+    // Build rich notification copy — Zomato-style: punchy, specific, action-oriented
+    const subjectRaw = (lead as any).subject;
+    const subjectLabel: string = Array.isArray(subjectRaw) && subjectRaw.length
+      ? subjectRaw.map((s: any) => s.label ?? s.value ?? '').filter(Boolean).join(', ')
+      : 'your subject';
+
+    const dateStr = new Date(demoDate).toLocaleDateString('en-IN', {
+      weekday: 'long', day: 'numeric', month: 'long',
+    });
+
+    const notifTitle = `🎯 Demo Locked In — ${subjectLabel}!`;
+    const notifBody  =
+      `You're on! A live demo for ${(lead as any).studentName || 'a student'} ` +
+      `is set for ${dateStr} at ${demoTime}. ` +
+      `Show up, shine bright, and make it count. You've got this! 🚀`;
+
+    // Save in-app notification
     await createNotificationWithPreferences({
       recipient: tutorUserId,
       type: 'DEMO_ASSIGNED',
-      title: 'New demo assigned',
-      message: `A demo has been scheduled on ${new Date(demoDate).toDateString()} at ${demoTime}.`,
+      title: notifTitle,
+      message: notifBody,
       relatedClassLead: lead._id,
     });
-  } catch { }
+
+    // Send FCM push to the tutor's device
+    const tutorUser = await User.findById(tutorUserId).select('expoPushToken');
+    const fcmToken: string | undefined = (tutorUser as any)?.expoPushToken;
+
+    if (fcmToken && fcmToken.length > 10) {
+      if (!admin.apps.length) {
+        admin.initializeApp({
+          credential: admin.credential.cert(require('../../firebase-service-account.json')),
+        });
+      }
+
+      const fcmMessage: admin.messaging.Message = {
+        token: fcmToken,
+        notification: { title: notifTitle, body: notifBody },
+        android: {
+          priority: 'high',
+          notification: { channelId: 'announcements', sound: 'default' },
+        },
+        data: {
+          type: 'DEMO_ASSIGNED',
+          classLeadId: String(lead._id),
+          demoDate: demoDate.toISOString(),
+          demoTime,
+          deepLink: `yourshikshak://demos`,
+        },
+      };
+
+      admin.messaging().send(fcmMessage)
+        .then(() => console.log(`[Push] Demo assigned notification sent to tutor ${tutorUserId}`))
+        .catch((err) => console.error('[Push] FCM demo notification error:', err));
+    }
+  } catch (err) {
+    console.error('[Demo] Notification error:', err);
+  }
 
   return lead;
 };

@@ -17,6 +17,7 @@ import Payment from '../models/Payment';
 import DemoHistory from '../models/DemoHistory';
 import AttendanceSheet from '../models/AttendanceSheet';
 import { createNotificationWithPreferences } from './notificationService';
+import * as admin from 'firebase-admin';
 import { PAYMENT_STATUS, PAYMENT_TYPE, DEMO_STATUS, VERIFICATION_FEE_AMOUNT, VERIFICATION_FEE_DEDUCT_AMOUNT } from '../config/constants';
 import { sendTutorVerificationSubmittedEmail } from './tutorEmailService';
 
@@ -891,6 +892,39 @@ export const updateVerificationStatus = async (
     title: titleMap[newStatus],
     message,
   } as any);
+
+  // Send FCM push notification for VERIFIED or REJECTED only
+  if (newStatus === VERIFICATION_STATUS.VERIFIED || newStatus === VERIFICATION_STATUS.REJECTED) {
+    try {
+      const tutorUser = await User.findById(tutor.user).select('expoPushToken');
+      const fcmToken: string | undefined = (tutorUser as any)?.expoPushToken;
+      if (fcmToken && fcmToken.length > 10) {
+        if (!admin.apps.length) {
+          admin.initializeApp({
+            credential: admin.credential.cert(require('../../firebase-service-account.json')),
+          });
+        }
+        const fcmMessage: admin.messaging.Message = {
+          token: fcmToken,
+          notification: { title: titleMap[newStatus], body: message },
+          android: {
+            priority: 'high',
+            notification: { channelId: 'announcements', sound: 'default' },
+          },
+          data: {
+            type: 'VERIFICATION',
+            status: newStatus,
+            deepLink: 'yourshikshak://profile',
+          },
+        };
+        admin.messaging().send(fcmMessage)
+          .then(() => console.log(`[Push] Verification ${newStatus} notification sent to tutor ${tutor.user}`))
+          .catch((err) => console.error('[Push] FCM verification notification error:', err));
+      }
+    } catch (err) {
+      console.error('[Push] Verification push error:', err);
+    }
+  }
 
   await tutor.populate([
     { path: 'user', select: 'name email phone role gender city preferredMode' },

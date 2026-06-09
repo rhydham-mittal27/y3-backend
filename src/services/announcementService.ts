@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import admin from 'firebase-admin';
 import Announcement from '../models/Announcement';
 import ClassLead from '../models/ClassLead';
 import Tutor from '../models/Tutor';
@@ -66,14 +67,39 @@ export const createAnnouncement = async (classLeadId: string, postedBy: string) 
     await ClassLead.findByIdAndUpdate(classLeadId, { $set: { status: CLASS_LEAD_STATUS.ANNOUNCED } });
   }
 
-  const tutors = await User.find({ role: USER_ROLES.TUTOR, isActive: true }).select('_id name email');
+  const tutors = await User.find({ role: USER_ROLES.TUTOR, isActive: true }).select('_id name email expoPushToken');
   if (tutors.length > 0) {
     const subjectNames = Array.isArray(lead.subject)
       ? lead.subject.map((s: any) => (typeof s === 'object' && s.label ? s.label : String(s))).join(', ')
       : (typeof lead.subject === 'object' && (lead.subject as any).label ? (lead.subject as any).label : String(lead.subject));
 
-    const title = `New class opportunity: ${lead.grade} - ${subjectNames}`;
-    const message = `A new class lead has been announced. Timing: ${lead.timing}. Mode: ${lead.mode}.`;
+    const feesInfo = (() => {
+      const l = lead as any;
+      if (l.studentDetails?.length) {
+        const fees = l.studentDetails.map((s: any) => s.tutorFees).filter((f: any) => typeof f === 'number');
+        if (!fees.length) return null;
+        const min = Math.min(...fees);
+        const max = Math.max(...fees);
+        return min === max ? `₹${min}/mo` : `₹${min}–${max}/mo`;
+      }
+      if (typeof l.tutorFees === 'number') return `₹${l.tutorFees}/mo`;
+      return null;
+    })();
+
+    const locationParts = [(lead as any).area, (lead as any).city].filter(Boolean);
+    const locationInfo = locationParts.length ? locationParts.join(', ') : null;
+
+    const gradeStr = (lead as any).grade ? `${(lead as any).grade} ` : '';
+    const isOffline = (lead as any).mode?.toUpperCase() === 'OFFLINE';
+    const title = isOffline && locationInfo
+      ? `🎉 ${gradeStr}student needs help with ${subjectNames} at ${locationInfo}!`
+      : `🎉 Your Next Student is Waiting!`;
+    const modeStr = (lead as any).mode
+      ? ((lead as any).mode.charAt(0).toUpperCase() + (lead as any).mode.slice(1).toLowerCase())
+      : 'Flexible';
+    const feesLine = feesInfo ? `\n💰 Fees: ${feesInfo}` : '';
+    const locationLine = isOffline && locationInfo ? `\n📍 Location: ${locationInfo}` : '';
+    const message = `A ${gradeStr}student needs help with ${subjectNames}.\n\n📖 Subject: ${subjectNames}\n🌍 ${modeStr} Classes\n⏰ Available: ${(lead as any).timing}${locationLine}${feesLine}\n\n🔥 Apply now and start teaching today.`;
 
     await Notification.insertMany(
       tutors.map((t) => ({
@@ -85,6 +111,47 @@ export const createAnnouncement = async (classLeadId: string, postedBy: string) 
         relatedClassLead: lead._id,
       }))
     );
+
+    // Send FCM push notifications directly via firebase-admin
+    const fcmTokens: string[] = tutors
+      .map((t: any) => t.expoPushToken)
+      .filter((tok: any): tok is string => typeof tok === 'string' && tok.length > 10);
+
+    if (fcmTokens.length > 0) {
+      if (!admin.apps.length) {
+        admin.initializeApp({
+          credential: admin.credential.cert(require('../../firebase-service-account.json')),
+        });
+      }
+
+      const fcmMessage: admin.messaging.MulticastMessage = {
+        tokens: fcmTokens,
+        notification: { title, body: message },
+        android: {
+          priority: 'high',
+          notification: { channelId: 'announcements', sound: 'default' },
+        },
+        apns: {
+          payload: {
+            aps: {
+              sound: 'default',
+              category: 'ANNOUNCEMENT_CATEGORY',
+            },
+          },
+        },
+        data: {
+          type: 'ANNOUNCEMENT',
+          announcementId: String(announcement._id),
+          classLeadId: String(lead._id),
+          deepLink: `yourshikshak://announcement/${announcement._id}`,
+          expressInterestDeepLink: `yourshikshak://express-interest/${announcement._id}`,
+        },
+      };
+
+      admin.messaging().sendEachForMulticast(fcmMessage)
+        .then((res) => console.log(`[Push] sent: ${res.successCount} ok, ${res.failureCount} failed`))
+        .catch((err) => console.error('[Push] FCM error:', err));
+    }
   }
 
   const populated = await Announcement.findById(announcement._id)
@@ -163,6 +230,7 @@ export const getTutorAvailableAnnouncements = async (params: {
   const { tutorUserId, page, limit, isActive, sortBy, sortOrder } = params;
 
   const query: any = {
+    classLead: { $ne: null },
     'interestedTutors.tutor': { $ne: new mongoose.Types.ObjectId(tutorUserId) },
   };
   if (typeof isActive === 'boolean') {

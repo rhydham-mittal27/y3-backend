@@ -32,6 +32,7 @@ export interface IUserDocument extends Document {
     lastActiveAt: Date;
     registeredAt: Date;
   }[];
+  expoPushToken?: string;
   lastLoginAt?: Date;
   lastLoginDevice?: string;
   createdAt: Date;
@@ -95,6 +96,7 @@ const UserSchema: Schema<IUserDocument> = new Schema<IUserDocument>(
         registeredAt: { type: Date, default: Date.now },
       },
     ],
+    expoPushToken: { type: String, default: null },
     lastLoginAt: { type: Date },
     lastLoginDevice: { type: String },
   },
