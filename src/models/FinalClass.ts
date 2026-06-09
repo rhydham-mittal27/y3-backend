@@ -51,6 +51,8 @@ export interface IFinalClassDocument extends Document {
   monthlyFees?: number;
   tutorMonthlyFees?: number;
   sheetCount?: number;
+  cycleStartPending?: boolean;
+  currentCycleNumber?: number;
 }
 
 const FinalClassSchema: Schema<IFinalClassDocument> = new Schema<IFinalClassDocument>(
@@ -96,6 +98,8 @@ const FinalClassSchema: Schema<IFinalClassDocument> = new Schema<IFinalClassDocu
         timeSlot: { type: String, required: true },
       },
     ],
+    cycleStartPending: { type: Boolean, default: false },
+    currentCycleNumber: { type: Number, default: 1, min: 1 },
     tutorHistory: [
       {
         tutor: { type: Schema.Types.ObjectId, ref: 'User', required: true },

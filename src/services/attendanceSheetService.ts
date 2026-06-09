@@ -9,6 +9,10 @@ import { ATTENDANCE_STATUS, STUDENT_ATTENDANCE_STATUS, FINAL_CLASS_STATUS, PAYME
 import { createPaymentForSheet, createCyclePayments } from './paymentService';
 import { updateTutorExperienceAndTier } from './tutorService';
 import { generateClassSessionsForCycle } from './classSessionService';
+import ClassSession from '../models/ClassSession';
+import User from '../models/User';
+import admin from 'firebase-admin';
+import { createNotificationWithPreferences } from './notificationService';
 import logger from '../utils/logger';
 
 export const addDailyAttendance = async (params: {
@@ -152,18 +156,21 @@ export const addDailyAttendance = async (params: {
       logger.error(`Failed to create cycle payments for sheet ${sheet._id}: ${paymentErr}`);
     }
 
-    // Auto-generate ClassSession timetable for this cycle, anchored to the
-    // actual first attendance date so the schedule reflects real start.
+    // Auto-generate ClassSession timetable for this cycle — only for classes
+    // that don't use the tutor-chosen start date flow (cycleStartPending not tracked).
     if (!isGroup && finalClassId) {
       try {
-        await generateClassSessionsForCycle({
-          classId: finalClassId,
-          cycleMonth: date.getMonth() + 1,
-          cycleYear: date.getFullYear(),
-          anchorDate: date,
-        });
+        const clsForCheck: any = await FinalClass.findById(finalClassId).select('currentCycleNumber cycleStartPending');
+        const usesNewFlow = clsForCheck && typeof clsForCheck.currentCycleNumber === 'number';
+        if (!usesNewFlow) {
+          await generateClassSessionsForCycle({
+            classId: finalClassId,
+            cycleMonth: date.getMonth() + 1,
+            cycleYear: date.getFullYear(),
+            anchorDate: date,
+          });
+        }
       } catch (sessionErr) {
-        // Non-fatal: timetable generation failing should not block attendance
         logger.warn(`[timetable] auto-generate failed for class ${finalClassId} cycle ${nextCycle}: ${sessionErr}`);
       }
     }
@@ -265,16 +272,60 @@ export const addDailyAttendance = async (params: {
   await sheet.save();
 
   // Keep FinalClass session progress in sync with attendance submissions (Single Class only)
-  // Only increment up to the planned monthly sessions.
   if (!isGroup && finalClassId) {
-    await FinalClass.findOneAndUpdate(
-      {
-        _id: new mongoose.Types.ObjectId(finalClassId),
-        completedSessions: { $lt: sessionLimit },
-      },
+    const updatedCls: any = await FinalClass.findOneAndUpdate(
+      { _id: new mongoose.Types.ObjectId(finalClassId), completedSessions: { $lt: sessionLimit } },
       { $inc: { completedSessions: 1 } },
-      { new: true }
+      { new: true },
     );
+
+    // Mark matching ClassSession as COMPLETED
+    try {
+      await ClassSession.findOneAndUpdate(
+        { finalClass: new mongoose.Types.ObjectId(finalClassId), sessionDate: date, status: 'PLANNED' },
+        { $set: { status: 'COMPLETED' } },
+      );
+    } catch { /* non-fatal */ }
+
+    // Cycle completion: when all classesPerMonth sessions have attendance records
+    try {
+      if (updatedCls && sheet.totalSessionsTaken >= sessionLimit) {
+        const cycleNum = updatedCls.currentCycleNumber || sheet.cycleNumber || 1;
+        const nextCycle = cycleNum + 1;
+        await FinalClass.findByIdAndUpdate(finalClassId, {
+          cycleStartPending: true,
+          currentCycleNumber: nextCycle,
+          completedSessions: 0,
+        });
+
+        // Notify tutor
+        const tutorUser: any = await User.findById(updatedCls.tutor).select('expoPushToken name');
+        const notifTitle = `📅 Cycle ${cycleNum} Complete!`;
+        const notifBody = `Great work on ${updatedCls.studentName || 'your class'}! Set your start date for Cycle ${nextCycle} to keep the momentum going.`;
+
+        await createNotificationWithPreferences({
+          recipient: String(updatedCls.tutor),
+          type: 'GENERAL',
+          title: notifTitle,
+          message: notifBody,
+        });
+
+        const fcmToken: string | undefined = tutorUser?.expoPushToken;
+        if (fcmToken && fcmToken.length > 10) {
+          if (!admin.apps.length) {
+            admin.initializeApp({ credential: admin.credential.cert(require('../../firebase-service-account.json')) });
+          }
+          admin.messaging().send({
+            token: fcmToken,
+            notification: { title: notifTitle, body: notifBody },
+            android: { priority: 'high', notification: { channelId: 'announcements', sound: 'default' } },
+            data: { type: 'CYCLE_COMPLETE', finalClassId, cycleNumber: String(nextCycle) },
+          }).catch((e: any) => logger.error('[Push] cycle complete:', e));
+        }
+      }
+    } catch (e) {
+      logger.error('[AttendanceSheet] cycle completion check failed:', e);
+    }
   }
 
   // Update Tutor Experience & Tier logic

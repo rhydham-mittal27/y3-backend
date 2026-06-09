@@ -111,6 +111,78 @@ export const generateClassSessionsForCycle = async (params: {
 };
 
 /**
+ * Generates ClassSessions for a cycle starting from a tutor-chosen date.
+ * Uses cycleNumber (not month/year) as the primary cycle identifier.
+ */
+export const generateSessionsFromStartDate = async (params: {
+  classId: string;
+  startDate: Date;
+  cycleNumber: number;
+}) => {
+  const { classId, startDate, cycleNumber } = params;
+
+  const cls: any = await FinalClass.findById(classId);
+  if (!cls) throw new ErrorResponse('Final class not found', 404);
+
+  const schedule: any = cls.schedule || {};
+  const daysOfWeek: string[] = Array.isArray(schedule.daysOfWeek)
+    ? schedule.daysOfWeek.map(normalizeDayName)
+    : [];
+  const timeSlot: string = String(schedule.timeSlot || '').trim();
+
+  if (!daysOfWeek.length) throw new ErrorResponse('Schedule daysOfWeek is required to generate sessions', 400);
+  if (!timeSlot) throw new ErrorResponse('Schedule timeSlot is required to generate sessions', 400);
+
+  const n = Number(cls.classesPerMonth || 0);
+  if (!Number.isFinite(n) || n <= 0) throw new ErrorResponse('classesPerMonth must be set to generate sessions', 400);
+
+  const anchor = startOfDay(new Date(startDate));
+
+  const pickedDates: Date[] = [];
+  for (let d = new Date(anchor); pickedDates.length < n; d.setDate(d.getDate() + 1)) {
+    const dayName = dayIndexToName(d);
+    if (!daysOfWeek.includes(dayName)) continue;
+    pickedDates.push(new Date(d));
+    if (pickedDates.length > n + 1000) break;
+  }
+
+  const sessionDocs: IClassSessionDocument[] = [];
+  for (let i = 0; i < pickedDates.length; i++) {
+    const sessionDate = pickedDates[i];
+    const doc = await ClassSession.findOneAndUpdate(
+      { finalClass: cls._id, cycleNumber, sessionNumber: i + 1 },
+      {
+        $setOnInsert: { finalClass: cls._id, status: 'PLANNED' },
+        $set: {
+          sessionDate,
+          timeSlot,
+          tutor: cls.tutor,
+          coordinator: cls.coordinator,
+          cycleMonth: sessionDate.getMonth() + 1,
+          cycleYear: sessionDate.getFullYear(),
+          cycleNumber,
+        },
+      },
+      { new: true, upsert: true },
+    );
+    sessionDocs.push(doc as any);
+  }
+
+  return sessionDocs;
+};
+
+export const getSessionsByCycleNumber = async (params: {
+  classId: string;
+  cycleNumber: number;
+}) => {
+  const { classId, cycleNumber } = params;
+  return ClassSession.find({
+    finalClass: new mongoose.Types.ObjectId(classId),
+    cycleNumber,
+  }).sort({ sessionDate: 1 });
+};
+
+/**
  * Shifts all PLANNED ClassSessions for a class+cycle by shiftDays.
  * Only moves sessions that are still in PLANNED status.
  */
