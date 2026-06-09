@@ -247,7 +247,10 @@ export const getTutorSessionsForCycle = async (params: {
     cycleMonth,
     cycleYear,
   })
-    .populate('finalClass')
+    .populate({
+      path: 'finalClass',
+      populate: { path: 'subject', select: 'label value name' },
+    })
     .sort({ sessionDate: 1, timeSlot: 1 });
 
   return sessions;
