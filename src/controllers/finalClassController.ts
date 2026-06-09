@@ -430,6 +430,65 @@ export const repostLeadController = asyncHandler(async (req: AuthRequest, res) =
   return res.status(201).json(successResponse(result, 'Class reposted as lead successfully'));
 });
 
+export const getPendingCycleStartsController = asyncHandler(async (req: AuthRequest, res) => {
+  const classes = await FinalClass.find({
+    tutor: req.user!.id,
+    status: FINAL_CLASS_STATUS.ACTIVE,
+    cycleStartPending: true,
+  }).select('_id className studentName classesPerMonth currentCycleNumber schedule');
+
+  return res.json(successResponse(classes));
+});
+
+export const setCycleStartController = asyncHandler(async (req: AuthRequest, res) => {
+  const classId = req.params.id as string;
+  const { startDate } = req.body as { startDate?: string };
+  if (!startDate) throw new ErrorResponse('startDate is required', 400);
+
+  const cls: any = await FinalClass.findOne({
+    _id: classId,
+    tutor: req.user!.id,
+    status: FINAL_CLASS_STATUS.ACTIVE,
+    cycleStartPending: true,
+  });
+  if (!cls) throw new ErrorResponse('Class not found or no pending cycle start', 404);
+
+  const cycleNumber = cls.currentCycleNumber || 1;
+  const { generateSessionsFromStartDate } = await import('../services/classSessionService');
+  const sessions = await generateSessionsFromStartDate({
+    classId,
+    startDate: new Date(startDate),
+    cycleNumber,
+  });
+
+  // Create AttendanceSheet for this cycle
+  const AttendanceSheet = (await import('../models/AttendanceSheet')).default;
+  const startDateObj = new Date(startDate);
+  await AttendanceSheet.findOneAndUpdate(
+    { finalClass: cls._id, cycleNumber },
+    {
+      $setOnInsert: {
+        finalClass: cls._id,
+        sheetType: 'SINGLE',
+        coordinator: cls.coordinator,
+        month: startDateObj.getMonth() + 1,
+        year: startDateObj.getFullYear(),
+        cycleNumber,
+        periodLabel: `Cycle ${cycleNumber}`,
+        records: [],
+        status: 'PENDING',
+        createdBy: req.user!.id,
+        totalSessionsPlanned: cls.classesPerMonth || 0,
+      },
+    },
+    { upsert: true, new: true },
+  );
+
+  await FinalClass.findByIdAndUpdate(classId, { cycleStartPending: false, completedSessions: 0 });
+
+  return res.json(successResponse({ sessions, cycleNumber }, `Cycle ${cycleNumber} timetable generated`));
+});
+
 export default {
   convertToFinalClass,
   getFinalClasses,

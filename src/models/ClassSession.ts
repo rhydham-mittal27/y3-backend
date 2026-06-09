@@ -12,6 +12,7 @@ export interface IClassSessionDocument extends Document {
   timeSlot: string;
   cycleMonth: number;
   cycleYear: number;
+  cycleNumber?: number;
   sessionNumber: number;
   status: CLASS_SESSION_STATUS;
   createdAt: Date;
@@ -29,6 +30,7 @@ const ClassSessionSchema: Schema<IClassSessionDocument> = new Schema<IClassSessi
 
     cycleMonth: { type: Number, required: true, min: 1, max: 12, index: true },
     cycleYear: { type: Number, required: true, min: 2000, index: true },
+    cycleNumber: { type: Number, min: 1, index: true },
 
     sessionNumber: { type: Number, required: true, min: 1 },
 
@@ -48,6 +50,7 @@ ClassSessionSchema.pre('validate', function (next) {
 // Indexes - Supporting both types
 ClassSessionSchema.index({ finalClass: 1, cycleYear: 1, cycleMonth: 1, sessionNumber: 1 }, { unique: true, sparse: true });
 ClassSessionSchema.index({ groupClass: 1, cycleYear: 1, cycleMonth: 1, sessionNumber: 1 }, { unique: true, sparse: true });
+ClassSessionSchema.index({ finalClass: 1, cycleNumber: 1, sessionNumber: 1 }, { unique: true, sparse: true });
 ClassSessionSchema.index({ finalClass: 1, sessionDate: 1 }, { unique: true, sparse: true });
 ClassSessionSchema.index({ groupClass: 1, sessionDate: 1 }, { unique: true, sparse: true });
 

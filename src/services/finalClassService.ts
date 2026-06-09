@@ -319,6 +319,8 @@ export const convertLeadToFinalClass = async (params: {
       status: FINAL_CLASS_STATUS.ACTIVE,
       notes,
       classesPerMonth: lead.classesPerMonth,
+      cycleStartPending: true,
+      currentCycleNumber: 1,
       testPerMonth: 1,
       attendanceSubmissionWindow: typeof attendanceSubmissionWindow === 'number' ? attendanceSubmissionWindow : 2,
       monthlyFees: typeof monthlyFees === 'number' ? monthlyFees : (lead.paymentAmount || 0),

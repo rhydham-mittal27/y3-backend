@@ -16,6 +16,8 @@ import {
   tutorLeavingController,
   repostLeadController,
   renewFinalClassController,
+  getPendingCycleStartsController,
+  setCycleStartController,
 } from '../controllers/finalClassController';
 import {
   convertToFinalClassValidation,
@@ -42,6 +44,8 @@ router.get(
   authorize(USER_ROLES.TUTOR),
   getMyClassesController
 );
+router.get('/tutor/pending-cycle-start', authorize(USER_ROLES.TUTOR), getPendingCycleStartsController);
+router.post('/:id/start-cycle', authorize(USER_ROLES.TUTOR), classIdValidation, setCycleStartController);
 router.get('/tutor/:tutorId', authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN, USER_ROLES.TUTOR), tutorIdParamValidation, getTutorClasses);
 router.get(
   '/parent/my-classes',
