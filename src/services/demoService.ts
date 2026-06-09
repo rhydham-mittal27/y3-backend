@@ -269,7 +269,7 @@ export const updateDemoStatus = async (
     if (tutorProfile) await Tutor.findByIdAndUpdate(tutorProfile._id, { $inc: { demosApproved: 1 } });
     lead.status = CLASS_LEAD_STATUS.CONVERTED;
 
-    // Notify tutor
+    // Notify tutor — in-app + FCM push
     if (lead.assignedTutor) {
       try {
         const creativeMessages = [
@@ -280,14 +280,37 @@ export const updateDemoStatus = async (
           { title: '✨ They chose YOU!', message: `${lead.studentName}'s family approved your demo. A new journey begins — make every session count!` },
         ];
         const pick = creativeMessages[Math.floor(Math.random() * creativeMessages.length)];
+        const tutorUserId = String(lead.assignedTutor);
+
+        // In-app notification
         await createNotificationWithPreferences({
-          recipient: String(lead.assignedTutor),
+          recipient: tutorUserId,
           type: 'GENERAL',
           title: pick.title,
           message: pick.message,
+          relatedClassLead: lead._id,
         });
+
+        // FCM push
+        const tutorUser = await User.findById(tutorUserId).select('expoPushToken');
+        const fcmToken: string | undefined = (tutorUser as any)?.expoPushToken;
+        if (fcmToken && fcmToken.length > 10) {
+          if (!admin.apps.length) {
+            admin.initializeApp({
+              credential: admin.credential.cert(require('../../firebase-service-account.json')),
+            });
+          }
+          admin.messaging().send({
+            token: fcmToken,
+            notification: { title: pick.title, body: pick.message },
+            android: { priority: 'high', notification: { channelId: 'announcements', sound: 'default' } },
+            data: { type: 'DEMO_APPROVED', classLeadId: String(lead._id), deepLink: 'yourshikshak://demos' },
+          })
+            .then(() => console.log(`[Push] Demo approval notification sent to tutor ${tutorUserId}`))
+            .catch((err) => console.error('[Push] FCM demo approval error:', err));
+        }
       } catch (e) {
-        // non-fatal
+        console.error('[Demo] Approval notification error:', e);
       }
     }
   }
