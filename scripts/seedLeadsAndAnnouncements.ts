@@ -212,6 +212,7 @@ const run = async () => {
     const lead = await ClassLead.create({
       studentName:     tmpl.studentName,
       studentType:     'SINGLE',
+      studentGender:   Math.random() < 0.5 ? 'M' : 'F',
       grade:           tmpl.grade,
       board:           tmpl.board,
       subject:         subjectIds,
@@ -220,6 +221,7 @@ const run = async () => {
       classesPerMonth: sessions,
       monthlyFee:      tmpl.monthlyFee,
       weekdays:        days,
+      timing:          timeSlot,
       preferredTime:   timeSlot,
       notes:           tmpl.notes,
       leadId:          generateLeadId(tmpl.studentName),
