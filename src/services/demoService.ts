@@ -268,6 +268,28 @@ export const updateDemoStatus = async (
     const tutorProfile = await Tutor.findOne({ user: lead.assignedTutor });
     if (tutorProfile) await Tutor.findByIdAndUpdate(tutorProfile._id, { $inc: { demosApproved: 1 } });
     lead.status = CLASS_LEAD_STATUS.CONVERTED;
+
+    // Notify tutor
+    if (lead.assignedTutor) {
+      try {
+        const creativeMessages = [
+          { title: '🚀 You nailed it!', message: `${lead.studentName}'s family loved your demo — you've got a new class! Time to shine.` },
+          { title: '🌟 Star Teacher Alert!', message: `Your demo with ${lead.studentName} was a hit. The class is officially yours — let's make magic happen!` },
+          { title: '🎯 Another one secured!', message: `Demo approved for ${lead.studentName}. Your teaching spoke for itself. Welcome your newest student!` },
+          { title: '🏆 Class confirmed!', message: `Great news! ${lead.studentName}'s demo has been approved. You're on a roll — keep it up!` },
+          { title: '✨ They chose YOU!', message: `${lead.studentName}'s family approved your demo. A new journey begins — make every session count!` },
+        ];
+        const pick = creativeMessages[Math.floor(Math.random() * creativeMessages.length)];
+        await createNotificationWithPreferences({
+          recipient: String(lead.assignedTutor),
+          type: 'GENERAL',
+          title: pick.title,
+          message: pick.message,
+        });
+      } catch (e) {
+        // non-fatal
+      }
+    }
   }
   if (newStatus === DEMO_STATUS.REJECTED) {
     lead.status = CLASS_LEAD_STATUS.REJECTED as any;
