@@ -286,6 +286,28 @@ export const updateDemoStatus = async (
           title: pick.title,
           message: pick.message,
         });
+
+        // FCM push
+        const tutorUser = await User.findById(lead.assignedTutor).select('expoPushToken');
+        const fcmToken: string | undefined = (tutorUser as any)?.expoPushToken;
+        if (fcmToken && fcmToken.length > 10) {
+          if (!admin.apps.length) {
+            admin.initializeApp({
+              credential: admin.credential.cert(require('../../firebase-service-account.json')),
+            });
+          }
+          admin.messaging().send({
+            token: fcmToken,
+            notification: { title: pick.title, body: pick.message },
+            android: {
+              priority: 'high',
+              notification: { channelId: 'announcements', sound: 'default' },
+            },
+            data: { type: 'DEMO_APPROVED', classLeadId: String(lead._id) },
+          })
+            .then(() => console.log(`[Push] Demo approved notification sent to tutor ${lead.assignedTutor}`))
+            .catch((err: any) => console.error('[Push] FCM demo approved error:', err));
+        }
       } catch (e) {
         // non-fatal
       }
