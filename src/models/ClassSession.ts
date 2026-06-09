@@ -47,12 +47,10 @@ ClassSessionSchema.pre('validate', function (next) {
   next();
 });
 
-// Indexes - Supporting both types
+// Indexes
 ClassSessionSchema.index({ finalClass: 1, cycleYear: 1, cycleMonth: 1, sessionNumber: 1 }, { unique: true, sparse: true });
-ClassSessionSchema.index({ groupClass: 1, cycleYear: 1, cycleMonth: 1, sessionNumber: 1 }, { unique: true, sparse: true });
 ClassSessionSchema.index({ finalClass: 1, cycleNumber: 1, sessionNumber: 1 }, { unique: true, sparse: true });
 ClassSessionSchema.index({ finalClass: 1, sessionDate: 1 }, { unique: true, sparse: true });
-ClassSessionSchema.index({ groupClass: 1, sessionDate: 1 }, { unique: true, sparse: true });
 
 const ClassSession: Model<IClassSessionDocument> =
   mongoose.models.ClassSession || mongoose.model<IClassSessionDocument>('ClassSession', ClassSessionSchema);
