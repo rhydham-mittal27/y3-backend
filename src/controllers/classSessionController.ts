@@ -15,7 +15,7 @@ export const getMyTutorSessionsForCycleController = asyncHandler(async (req: Aut
 
   if (ensure) {
     const classes = await FinalClass.find({ tutor: req.user!.id, status: 'ACTIVE' }).select(
-      '_id schedule classesPerMonth tutor coordinator'
+      '_id schedule classesPerMonth tutor coordinator cycleStartPending currentCycleNumber'
     );
 
     let attempted = 0;
@@ -26,6 +26,12 @@ export const getMyTutorSessionsForCycleController = asyncHandler(async (req: Aut
     for (const cls of classes) {
       const classId = String((cls as any)._id);
       try {
+        // Skip classes waiting for tutor to choose a start date
+        if ((cls as any).cycleStartPending) {
+          skipped += 1;
+          continue;
+        }
+
         const sched: any = (cls as any).schedule || {};
         const hasSchedule =
           sched &&
@@ -120,12 +126,14 @@ export const getMyCoordinatorSessionsForCycleController = asyncHandler(async (re
 
   if (ensure) {
     const classes = await FinalClass.find({ coordinator: req.user!.id, status: 'ACTIVE' }).select(
-      '_id schedule classesPerMonth tutor coordinator'
+      '_id schedule classesPerMonth tutor coordinator cycleStartPending'
     );
 
     for (const cls of classes) {
       const classId = String((cls as any)._id);
       try {
+        if ((cls as any).cycleStartPending) continue;
+
         const sched: any = (cls as any).schedule || {};
         const hasSchedule =
           sched &&
@@ -170,7 +178,7 @@ export const getClassSessionsController = asyncHandler(async (req: AuthRequest, 
   }
 
   // 1. Authorization check
-  const cls = await FinalClass.findById(classId).select('tutor coordinator status schedule classesPerMonth');
+  const cls = await FinalClass.findById(classId).select('tutor coordinator status schedule classesPerMonth cycleStartPending');
   // Handle group class fallback if not found in FinalClass
   let classEntity = cls;
   if (!classEntity) {
@@ -189,8 +197,8 @@ export const getClassSessionsController = asyncHandler(async (req: AuthRequest, 
     throw new ErrorResponse('Not authorized to view sessions for this class', 403);
   }
 
-  // 2. Optional session generation
-  if (ensure && classEntity.status === 'ACTIVE') {
+  // 2. Optional session generation — skip for classes waiting on tutor start date
+  if (ensure && classEntity.status === 'ACTIVE' && !(classEntity as any).cycleStartPending) {
     try {
       const sched: any = (classEntity as any).schedule || {};
       const hasSchedule =

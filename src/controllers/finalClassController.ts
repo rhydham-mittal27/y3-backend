@@ -454,6 +454,15 @@ export const setCycleStartController = asyncHandler(async (req: AuthRequest, res
   if (!cls) throw new ErrorResponse('Class not found or no pending cycle start', 404);
 
   const cycleNumber = cls.currentCycleNumber || 1;
+
+  // Remove any stale sessions that were auto-generated before tutor set a start date
+  const ClassSession = (await import('../models/ClassSession')).default;
+  await ClassSession.deleteMany({
+    finalClass: cls._id,
+    cycleNumber: { $exists: false },
+    status: 'PLANNED',
+  });
+
   const { generateSessionsFromStartDate } = await import('../services/classSessionService');
   const sessions = await generateSessionsFromStartDate({
     classId,
