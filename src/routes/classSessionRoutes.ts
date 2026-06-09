@@ -8,6 +8,7 @@ import {
   generateSessionsForClassCycleController,
   getMyCoordinatorSessionsForCycleController,
   getClassSessionsController,
+  rescheduleSessionController,
 } from '../controllers/classSessionController';
 
 const router = Router();
@@ -31,6 +32,15 @@ router.get(
   authorize(USER_ROLES.TUTOR, USER_ROLES.COORDINATOR, USER_ROLES.MANAGER, USER_ROLES.ADMIN),
   param('classId').isMongoId().withMessage('Invalid class ID'),
   getClassSessionsController
+);
+
+router.patch(
+  '/:sessionId/reschedule',
+  authorize(USER_ROLES.TUTOR, USER_ROLES.MANAGER, USER_ROLES.ADMIN),
+  param('sessionId').isMongoId().withMessage('Invalid session ID'),
+  body('newDate').isISO8601().withMessage('newDate must be a valid ISO date'),
+  body('newTimeSlot').optional().isString().withMessage('newTimeSlot must be a string'),
+  rescheduleSessionController
 );
 
 export default router;
