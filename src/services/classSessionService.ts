@@ -310,3 +310,40 @@ export const getClassSessionsForCycle = async (params: {
 
   return sessions;
 };
+
+/**
+ * Reschedule a single PLANNED ClassSession to a new date (and optionally a new time slot).
+ * Updates cycleMonth/cycleYear to reflect the new date.
+ */
+export const rescheduleSession = async (params: {
+  sessionId: string;
+  newDate: Date;
+  newTimeSlot?: string;
+  actorUserId: string;
+  isAdmin?: boolean;
+}) => {
+  const { sessionId, newDate, newTimeSlot, actorUserId, isAdmin } = params;
+
+  const session = await ClassSession.findById(sessionId);
+  if (!session) throw new ErrorResponse('Session not found', 404);
+
+  if (session.status !== 'PLANNED') {
+    throw new ErrorResponse(
+      `Cannot reschedule a session that is already ${session.status.toLowerCase()}`,
+      400,
+    );
+  }
+
+  if (!isAdmin && String(session.tutor) !== String(actorUserId)) {
+    throw new ErrorResponse('Not authorised to reschedule this session', 403);
+  }
+
+  const date = startOfDay(new Date(newDate));
+  session.sessionDate = date;
+  session.cycleMonth  = date.getMonth() + 1;
+  session.cycleYear   = date.getFullYear();
+  if (newTimeSlot) session.timeSlot = newTimeSlot;
+
+  await session.save();
+  return session;
+};

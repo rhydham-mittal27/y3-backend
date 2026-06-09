@@ -4,7 +4,7 @@ import { successResponse } from '../utils/responseFormatter';
 import ErrorResponse from '../utils/errorResponse';
 import FinalClass from '../models/FinalClass';
 import { USER_ROLES } from '../config/constants';
-import { generateClassSessionsForCycle, getTutorSessionsForCycle, getCoordinatorSessionsForCycle } from '../services/classSessionService';
+import { generateClassSessionsForCycle, getTutorSessionsForCycle, getCoordinatorSessionsForCycle, rescheduleSession } from '../services/classSessionService';
 import { AuthRequest } from '../types';
 
 export const getMyTutorSessionsForCycleController = asyncHandler(async (req: AuthRequest, res) => {
@@ -230,4 +230,27 @@ export const getClassSessionsController = asyncHandler(async (req: AuthRequest, 
   }));
 
   return res.json(successResponse(sessions));
+});
+
+export const rescheduleSessionController = asyncHandler(async (req: AuthRequest, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) throw new ErrorResponse(errors.array()[0].msg, 400);
+
+  const { sessionId } = req.params;
+  const { newDate, newTimeSlot } = req.body as { newDate: string; newTimeSlot?: string };
+
+  if (!newDate) throw new ErrorResponse('newDate is required', 400);
+
+  const isAdmin =
+    req.user?.role === USER_ROLES.ADMIN || req.user?.role === USER_ROLES.MANAGER;
+
+  const session = await rescheduleSession({
+    sessionId,
+    newDate: new Date(newDate),
+    newTimeSlot,
+    actorUserId: req.user!.id,
+    isAdmin,
+  });
+
+  return res.json(successResponse(session, 'Session rescheduled'));
 });
