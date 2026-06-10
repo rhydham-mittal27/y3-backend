@@ -994,12 +994,8 @@ export const updateVerificationFeeStatus = async (
   let verificationFeePaymentProof = tutor.verificationFeePaymentProof;
   let verificationFeePaymentDate = tutor.verificationFeePaymentDate;
 
-  if (feeStatus === 'PAID') {
-    if (!paymentProofFile) {
-      throw new ErrorResponse('Payment proof is required when status is PAID', 400);
-    }
-
-    // Upload proof
+  if (feeStatus === 'PENDING' && paymentProofFile) {
+    // User uploaded a screenshot — upload it and create a PENDING payment awaiting admin review
     const buffer = paymentProofFile.buffer;
     const originalname = paymentProofFile.originalname;
     const mimetype = paymentProofFile.mimetype;
@@ -1018,14 +1014,63 @@ export const updateVerificationFeeStatus = async (
       throw new ErrorResponse('Failed to upload payment proof', 500);
     }
 
-    // Check for existing verification payment to prevent duplicates
+    const existingPayment = await Payment.findOne({
+      tutor: tutor.user,
+      paymentType: PAYMENT_TYPE.TUTOR_VERIFICATION_FEES,
+    });
+
+    if (!existingPayment) {
+      try {
+        await Payment.create({
+          tutor: tutor.user,
+          amount: VERIFICATION_FEE_AMOUNT,
+          currency: 'INR',
+          status: PAYMENT_STATUS.PENDING,
+          paymentType: PAYMENT_TYPE.TUTOR_VERIFICATION_FEES,
+          dueDate: verificationFeePaymentDate,
+          paymentProof: verificationFeePaymentProof,
+          notes: 'Awaiting admin verification',
+          createdBy: tutor.user,
+        } as any);
+      } catch (err: any) {
+        console.error('Failed to create verification fee payment record', err);
+      }
+    } else {
+      // Update existing record with new proof
+      await Payment.updateOne(
+        { _id: existingPayment._id },
+        { $set: { paymentProof: verificationFeePaymentProof, status: PAYMENT_STATUS.PENDING, notes: 'Awaiting admin verification' } }
+      );
+    }
+  } else if (feeStatus === 'PAID') {
+    if (!paymentProofFile) {
+      throw new ErrorResponse('Payment proof is required when status is PAID', 400);
+    }
+
+    const buffer = paymentProofFile.buffer;
+    const originalname = paymentProofFile.originalname;
+    const mimetype = paymentProofFile.mimetype;
+
+    try {
+      const uploadResult = await uploadFileToS3Structured(
+        buffer,
+        originalname,
+        mimetype,
+        { entityType: 'tutors', entityId: tutorId, folder: 'verification-fees' }
+      );
+      verificationFeePaymentProof = uploadResult.key;
+      verificationFeePaymentDate = new Date();
+    } catch (err: any) {
+      console.error('Failed to upload payment proof', err);
+      throw new ErrorResponse('Failed to upload payment proof', 500);
+    }
+
     const existingPayment = await Payment.findOne({
       tutor: tutor.user,
       paymentType: PAYMENT_TYPE.TUTOR_VERIFICATION_FEES
     });
 
     if (!existingPayment) {
-      // Create a paid Payment record for bookkeeping
       try {
         const dueDate = verificationFeePaymentDate || new Date();
         await Payment.create({
@@ -1041,7 +1086,6 @@ export const updateVerificationFeeStatus = async (
         } as any);
       } catch (err: any) {
         console.error('Failed to create verification fee payment record', err);
-        // non-fatal: continue
       }
     }
   } else if (feeStatus === 'DEDUCT_FROM_FIRST_MONTH') {
