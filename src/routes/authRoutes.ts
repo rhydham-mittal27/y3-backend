@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { register, login, refreshToken, logout, getMe, changePasswordHandler, sendLoginOtpHandler, resendLoginOtpHandler, verifyLoginOtpHandler, parentLoginLookupHandler, acceptTermsHandler, sendChangePasswordOtpHandler, resendChangePasswordOtpHandler, verifyChangePasswordOtpHandler, savePushTokenHandler } from '../controllers/authController';
+import { register, login, refreshToken, logout, getMe, changePasswordHandler, sendLoginOtpHandler, resendLoginOtpHandler, verifyLoginOtpHandler, parentLoginLookupHandler, acceptTermsHandler, sendChangePasswordOtpHandler, resendChangePasswordOtpHandler, verifyChangePasswordOtpHandler, savePushTokenHandler, deleteAccountHandler } from '../controllers/authController';
 import { registerValidation, loginValidation, refreshTokenValidation, sendLoginOtpValidation, verifyLoginOtpValidation, parentLoginLookupValidation, verifyChangePasswordOtpValidation } from '../validators/authValidator';
 import { changePasswordValidation } from '../validators/settingsValidator';
 import protect from '../middlewares/auth';
@@ -25,5 +25,6 @@ router.post('/change-password-otp/verify', protect, verifyChangePasswordOtpValid
 
 router.post('/accept-terms', protect, acceptTermsHandler);
 router.post('/push-token', protect, savePushTokenHandler);
+router.delete('/account', protect, deleteAccountHandler);
 
 export default router;
