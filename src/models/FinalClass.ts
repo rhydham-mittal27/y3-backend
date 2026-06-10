@@ -1,5 +1,6 @@
-import mongoose, { Schema, Document, Model } from 'mongoose';
+import mongoose, { Schema, Model } from 'mongoose';
 import { FINAL_CLASS_STATUS } from '../config/constants';
+import { softDeletePlugin, SoftDeleteDocument } from '../utils/softDelete.plugin';
 
 export interface ITutorHistory {
   tutor: mongoose.Types.ObjectId;
@@ -9,7 +10,7 @@ export interface ITutorHistory {
   replacedBy?: mongoose.Types.ObjectId;
 }
 
-export interface IFinalClassDocument extends Document {
+export interface IFinalClassDocument extends SoftDeleteDocument {
   _id: mongoose.Types.ObjectId;
   className: string;
   classLead: mongoose.Types.ObjectId;
@@ -142,6 +143,8 @@ FinalClassSchema.pre('validate', function (next) {
   }
   next();
 });
+
+FinalClassSchema.plugin(softDeletePlugin);
 
 const FinalClass: Model<IFinalClassDocument> =
   mongoose.models.FinalClass || mongoose.model<IFinalClassDocument>('FinalClass', FinalClassSchema);

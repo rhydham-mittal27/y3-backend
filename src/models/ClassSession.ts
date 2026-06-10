@@ -1,8 +1,9 @@
-import mongoose, { Schema, Document, Model } from 'mongoose';
+import mongoose, { Schema, Model } from 'mongoose';
+import { softDeletePlugin, SoftDeleteDocument } from '../utils/softDelete.plugin';
 
 export type CLASS_SESSION_STATUS = 'PLANNED' | 'COMPLETED' | 'CANCELLED';
 
-export interface IClassSessionDocument extends Document {
+export interface IClassSessionDocument extends SoftDeleteDocument {
   _id: mongoose.Types.ObjectId;
   finalClass?: mongoose.Types.ObjectId;
   groupClass?: mongoose.Types.ObjectId;
@@ -51,6 +52,8 @@ ClassSessionSchema.pre('validate', function (next) {
 ClassSessionSchema.index({ finalClass: 1, cycleYear: 1, cycleMonth: 1, sessionNumber: 1 }, { unique: true, sparse: true });
 ClassSessionSchema.index({ finalClass: 1, cycleNumber: 1, sessionNumber: 1 }, { unique: true, sparse: true });
 ClassSessionSchema.index({ finalClass: 1, sessionDate: 1 }, { unique: true, sparse: true });
+
+ClassSessionSchema.plugin(softDeletePlugin);
 
 const ClassSession: Model<IClassSessionDocument> =
   mongoose.models.ClassSession || mongoose.model<IClassSessionDocument>('ClassSession', ClassSessionSchema);

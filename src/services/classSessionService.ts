@@ -8,13 +8,13 @@ const DAYS_ORDER = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SAT
 const normalizeDayName = (d: string) => String(d || '').trim().toUpperCase();
 
 const dayIndexToName = (date: Date) => {
-  const weekdayIndex = (date.getDay() + 6) % 7; // Sun=0..Sat=6 -> Mon=0..Sun=6
+  const weekdayIndex = (date.getUTCDay() + 6) % 7; // Sun=0..Sat=6 -> Mon=0..Sun=6
   return DAYS_ORDER[weekdayIndex];
 };
 
 const startOfDay = (d: Date) => {
   const nd = new Date(d);
-  nd.setHours(0, 0, 0, 0);
+  nd.setUTCHours(0, 0, 0, 0);
   return nd;
 };
 
@@ -246,6 +246,7 @@ export const getTutorSessionsForCycle = async (params: {
     tutor: new mongoose.Types.ObjectId(tutorUserId),
     cycleMonth,
     cycleYear,
+    status: { $ne: 'CANCELLED' },
   })
     .populate({
       path: 'finalClass',

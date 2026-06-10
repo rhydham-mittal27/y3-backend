@@ -1,6 +1,7 @@
-import mongoose, { Schema, Document, Model } from 'mongoose';
+import mongoose, { Schema, Model } from 'mongoose';
 import { TEACHING_MODE, VERIFICATION_STATUS, TUTOR_TIER } from '../config/constants';
 import { getS3PublicUrlForKey } from '../config/s3';
+import { softDeletePlugin, SoftDeleteDocument } from '../utils/softDelete.plugin';
 
 export interface IDocumentEmbedded {
   documentType: 'AADHAAR' | 'CERTIFICATE' | 'EXPERIENCE_PROOF' | 'DEGREE' | 'PROFILE_PHOTO' | 'OTHER';
@@ -13,7 +14,7 @@ export interface IDocumentEmbedded {
   s3Bucket?: string;
 }
 
-export interface ITutorDocument extends Document {
+export interface ITutorDocument extends SoftDeleteDocument {
   _id: mongoose.Types.ObjectId;
   teacherId?: string;
   user: mongoose.Types.ObjectId;
@@ -242,6 +243,8 @@ TutorSchema.index({ tier: 1 });
 TutorSchema.index({ tier: 1, verificationStatus: 1 });         // tier management queries
 TutorSchema.index({ pendingTierChange: 1 }, { sparse: true }); // pending tier changes count
 
+
+TutorSchema.plugin(softDeletePlugin);
 
 const Tutor: Model<ITutorDocument> =
   mongoose.models.Tutor || mongoose.model<ITutorDocument>('Tutor', TutorSchema);
