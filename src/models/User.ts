@@ -1,9 +1,10 @@
-import mongoose, { Schema, Document, Model } from 'mongoose';
+import mongoose, { Schema, Model } from 'mongoose';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import { USER_ROLES, TEACHING_MODE } from '../config/constants';
+import { softDeletePlugin, SoftDeleteDocument } from '../utils/softDelete.plugin';
 
-export interface IUserDocument extends Document {
+export interface IUserDocument extends SoftDeleteDocument {
   _id: mongoose.Types.ObjectId;
   name: string;
   email: string;
@@ -202,6 +203,8 @@ UserSchema.methods.removeAllDevices = async function () {
   this.devices = [];
   await this.save();
 };
+
+UserSchema.plugin(softDeletePlugin);
 
 const User: Model<IUserDocument> = mongoose.models.User || mongoose.model<IUserDocument>('User', UserSchema);
 

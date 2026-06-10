@@ -1435,7 +1435,7 @@ export const getTutorPerformanceMetrics = async (params: { tutorId: string; coor
   let classQuery: any = { status: FINAL_CLASS_STATUS.ACTIVE };
   // guessing field names: tutor or tutorUser
   classQuery.$or = [
-    { tutor: new mongoose.Types.ObjectId(String(tutor._id)) },
+    { tutor: new mongoose.Types.ObjectId(String((tutor.user as any)?._id ?? tutor.user)) },
     { tutorUser: tutor.user },
   ];
   if (coordinatorUserId) classQuery.coordinator = new mongoose.Types.ObjectId(coordinatorUserId);
@@ -1498,7 +1498,7 @@ export const getTutorPerformanceMetrics = async (params: { tutorId: string; coor
 
   return {
     tutor,
-    classesAssigned: tutor.classesAssigned,
+    classesAssigned: classes.length,
     classesCompleted: tutor.classesCompleted,
     totalClassHours,
     attendanceApprovalRate,

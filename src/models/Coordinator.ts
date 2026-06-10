@@ -1,8 +1,9 @@
-import mongoose, { Schema, Document, Model } from 'mongoose';
+import mongoose, { Schema, Model } from 'mongoose';
 import { VERIFICATION_STATUS } from '../config/constants';
 import { getS3PublicUrlForKey } from '../config/s3';
+import { softDeletePlugin, SoftDeleteDocument } from '../utils/softDelete.plugin';
 
-export interface ICoordinatorDocument extends Document {
+export interface ICoordinatorDocument extends SoftDeleteDocument {
   _id: mongoose.Types.ObjectId;
   user: mongoose.Types.ObjectId;
   assignedClasses: mongoose.Types.ObjectId[];
@@ -185,6 +186,8 @@ CoordinatorSchema.virtual('isProfileComplete').get(function (this: ICoordinatorD
 // Indexes
 CoordinatorSchema.index({ isActive: 1 });
 CoordinatorSchema.index({ isActive: 1, activeClassesCount: 1 });
+
+CoordinatorSchema.plugin(softDeletePlugin);
 
 const Coordinator: Model<ICoordinatorDocument> =
   mongoose.models.Coordinator || mongoose.model<ICoordinatorDocument>('Coordinator', CoordinatorSchema);
