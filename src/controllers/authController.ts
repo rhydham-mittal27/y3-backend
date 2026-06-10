@@ -2,7 +2,7 @@ import { validationResult } from 'express-validator';
 import asyncHandler from '../utils/asyncHandler';
 import { successResponse } from '../utils/responseFormatter';
 import ErrorResponse from '../utils/errorResponse';
-import { registerUser, loginUser, refreshAccessToken, logoutUser, changePassword, sendLoginOtp, resendLoginOtp, verifyLoginOtp, getParentEmailByClassName, acceptTerms, sendChangePasswordOtp, resendChangePasswordOtp, verifyChangePasswordWithOtp } from '../services/authService';
+import { registerUser, loginUser, refreshAccessToken, logoutUser, changePassword, sendLoginOtp, resendLoginOtp, verifyLoginOtp, getParentEmailByClassName, acceptTerms, sendChangePasswordOtp, resendChangePasswordOtp, verifyChangePasswordWithOtp, restoreAndLoginUser } from '../services/authService';
 import { createManagerProfile } from '../services/managerService';
 import { createCoordinator } from '../services/coordinatorService';
 import { USER_ROLES } from '../config/constants';
@@ -296,6 +296,13 @@ export const savePushTokenHandler = asyncHandler(async (req: AuthRequest, res) =
   if (!expoPushToken) throw new ErrorResponse('expoPushToken is required', 400);
   await User.findByIdAndUpdate(req.user.id, { expoPushToken });
   return res.status(200).json(successResponse(null, 'Push token saved'));
+});
+
+export const restoreAccountHandler = asyncHandler(async (req, res) => {
+  const { email, password } = req.body as { email: string; password: string };
+  if (!email || !password) throw new ErrorResponse('email and password are required', 400);
+  const result = await restoreAndLoginUser(email, password);
+  return res.status(200).json(successResponse(result, 'Account restored successfully'));
 });
 
 export const deleteAccountHandler = asyncHandler(async (req: AuthRequest, res) => {

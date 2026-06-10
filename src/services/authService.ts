@@ -224,6 +224,15 @@ export const loginUser = async (email: string, password: string) => {
   const user = await User.findOne({ email: { $in: getEmailCandidates(normalizedEmail) } }).select('+password +refreshToken');
   console.log('[loginUser] User lookup result:', user ? { id: (user as any).id, email: user.email, role: user.role } : null);
   if (!user) {
+    // Check if a soft-deleted account exists for this email
+    const deletedUser = await User.findOne({
+      email: { $in: getEmailCandidates(normalizedEmail) },
+      deletedAt: { $ne: null },
+    }).select('+password');
+    if (deletedUser) {
+      const isMatch = await deletedUser.comparePassword(password);
+      if (isMatch) throw new ErrorResponse('ACCOUNT_PENDING_DELETION', 403);
+    }
     console.log('[loginUser] No user found for email, throwing Invalid credentials');
     throw new ErrorResponse('Invalid credentials', 401);
   }
@@ -794,4 +803,28 @@ export const verifyChangePasswordWithOtp = async (userId: string, otp: string, n
   changePasswordOtpStore.delete(userId);
 
   return { success: true, message: 'Password changed successfully' };
+};
+
+export const restoreAndLoginUser = async (email: string, password: string) => {
+  const normalizedEmail = normalizeEmail(email);
+
+  const user = await User.findOne({
+    email: { $in: getEmailCandidates(normalizedEmail) },
+    deletedAt: { $ne: null },
+  }).select('+password +refreshToken');
+
+  if (!user) throw new ErrorResponse('No account pending deletion found for this email', 404);
+
+  const isMatch = await user.comparePassword(password);
+  if (!isMatch) throw new ErrorResponse('Invalid credentials', 401);
+
+  // Restore user
+  await (user as any).restore();
+
+  // Restore associated Tutor profile if it was soft-deleted
+  const tutor = await Tutor.findOne({ user: user._id, deletedAt: { $ne: null } });
+  if (tutor) await (tutor as any).restore();
+
+  // Complete login via the standard flow now that the user is active again
+  return loginUser(email, password);
 };
