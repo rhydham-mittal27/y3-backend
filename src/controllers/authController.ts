@@ -9,6 +9,7 @@ import { USER_ROLES } from '../config/constants';
 import { AuthRequest } from '../types';
 import { sendEmail } from '../utils/emailService';
 import User from '../models/User';
+import Tutor from '../models/Tutor';
 
 export const register = asyncHandler(async (req, res) => {
   const errors = validationResult(req);
@@ -295,4 +296,21 @@ export const savePushTokenHandler = asyncHandler(async (req: AuthRequest, res) =
   if (!expoPushToken) throw new ErrorResponse('expoPushToken is required', 400);
   await User.findByIdAndUpdate(req.user.id, { expoPushToken });
   return res.status(200).json(successResponse(null, 'Push token saved'));
+});
+
+export const deleteAccountHandler = asyncHandler(async (req: AuthRequest, res) => {
+  if (!req.user) throw new ErrorResponse('Not authenticated', 401);
+
+  const user = await User.findById(req.user.id);
+  if (!user) throw new ErrorResponse('User not found', 404);
+
+  // Soft-delete associated Tutor profile if exists
+  const tutor = await Tutor.findOne({ user: req.user.id });
+  if (tutor) await (tutor as any).softDelete();
+
+  // Invalidate refresh token so all sessions are immediately revoked
+  (user as any).refreshToken = null;
+  await (user as any).softDelete();
+
+  return res.status(200).json(successResponse(null, 'Your account has been scheduled for deletion. All data will be permanently removed after 30 days.'));
 });
