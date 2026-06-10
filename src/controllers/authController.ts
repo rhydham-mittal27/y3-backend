@@ -2,7 +2,7 @@ import { validationResult } from 'express-validator';
 import asyncHandler from '../utils/asyncHandler';
 import { successResponse } from '../utils/responseFormatter';
 import ErrorResponse from '../utils/errorResponse';
-import { registerUser, loginUser, refreshAccessToken, logoutUser, changePassword, sendLoginOtp, resendLoginOtp, verifyLoginOtp, getParentEmailByClassName, acceptTerms, sendChangePasswordOtp, resendChangePasswordOtp, verifyChangePasswordWithOtp, restoreAndLoginUser } from '../services/authService';
+import { registerUser, loginUser, refreshAccessToken, logoutUser, changePassword, sendLoginOtp, resendLoginOtp, verifyLoginOtp, getParentEmailByClassName, acceptTerms, sendChangePasswordOtp, resendChangePasswordOtp, verifyChangePasswordWithOtp, restoreAndLoginUser, sendRegistrationOtp, verifyRegistrationOtp } from '../services/authService';
 import { createManagerProfile } from '../services/managerService';
 import { createCoordinator } from '../services/coordinatorService';
 import { USER_ROLES } from '../config/constants';
@@ -320,4 +320,18 @@ export const deleteAccountHandler = asyncHandler(async (req: AuthRequest, res) =
   await (user as any).softDelete();
 
   return res.status(200).json(successResponse(null, 'Your account has been scheduled for deletion. All data will be permanently removed after 30 days.'));
+});
+
+export const sendRegistrationOtpHandler = asyncHandler(async (req, res) => {
+  const { email } = req.body;
+  if (!email) throw new ErrorResponse('Email is required', 400);
+  await sendRegistrationOtp(email);
+  return res.status(200).json(successResponse(null, 'OTP sent to your email'));
+});
+
+export const verifyRegistrationOtpHandler = asyncHandler(async (req, res) => {
+  const { email, otp } = req.body;
+  if (!email || !otp) throw new ErrorResponse('Email and OTP are required', 400);
+  verifyRegistrationOtp(email, otp);
+  return res.status(200).json(successResponse(null, 'Email verified successfully'));
 });

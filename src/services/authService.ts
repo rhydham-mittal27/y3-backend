@@ -15,6 +15,8 @@ import crypto from 'crypto';
 
 const loginOtpStore = new Map<string, { otp: string; expiresAt: Date }>();
 const changePasswordOtpStore = new Map<string, { otp: string; expiresAt: Date }>();
+const registrationOtpStore = new Map<string, { otp: string; expiresAt: Date }>();
+const verifiedEmailStore = new Set<string>(); // emails cleared after successful registration
 
 const normalizeEmail = (email: string) => String(email || '').toLowerCase().trim();
 
@@ -94,6 +96,10 @@ export const registerUser = async (
     throw new ErrorResponse('User already exists', 409);
   }
 
+  if (role === 'TUTOR' && !isEmailVerifiedForRegistration(normalizedEmail)) {
+    throw new ErrorResponse('Email must be verified before registering as a tutor', 400);
+  }
+
   // Validate password strength
   const passwordValidation = validatePassword(password);
   if (!passwordValidation.isValid) {
@@ -123,6 +129,7 @@ export const registerUser = async (
 
   if (user.role === USER_ROLES.TUTOR) {
     await updateTutorMonthlyStatsSafe((user as any).id as string);
+    consumeVerifiedEmail(normalizedEmail);
   }
 
   let preferredMode: string | undefined;
@@ -804,6 +811,56 @@ export const verifyChangePasswordWithOtp = async (userId: string, otp: string, n
 
   return { success: true, message: 'Password changed successfully' };
 };
+
+export const sendRegistrationOtp = async (email: string) => {
+  const normalizedEmail = normalizeEmail(email);
+  const otp = Math.floor(100000 + Math.random() * 900000).toString();
+  const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+  registrationOtpStore.set(normalizedEmail, { otp, expiresAt });
+
+  try {
+    await sendEmail(
+      normalizedEmail,
+      'Verify Your Email - YourShikshak',
+      `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
+        body{font-family:Arial,sans-serif;background:#f4f4f4;margin:0;padding:0}
+        .container{max-width:500px;margin:40px auto;background:#fff;border-radius:12px;padding:36px;box-shadow:0 2px 12px rgba(0,0,0,0.08)}
+        .otp{font-size:40px;font-weight:bold;color:#0052FF;letter-spacing:10px;text-align:center;margin:24px 0;font-family:monospace}
+        .footer{color:#999;font-size:12px;margin-top:24px;text-align:center}
+      </style></head><body>
+        <div class="container">
+          <h2 style="color:#0A1628;text-align:center">Verify Your Email</h2>
+          <p style="color:#555;text-align:center">Use the code below to verify your email address for YourShikshak tutor registration.</p>
+          <div class="otp">${otp}</div>
+          <p style="color:#888;text-align:center;font-size:13px">This code expires in <strong>10 minutes</strong>.</p>
+          <div class="footer">If you didn't request this, ignore this email.</div>
+        </div>
+      </body></html>`
+    );
+  } catch (e) {
+    console.error('[sendRegistrationOtp] Failed to send email:', e);
+  }
+  console.log(`[sendRegistrationOtp] OTP for ${normalizedEmail}:`, otp);
+};
+
+export const verifyRegistrationOtp = (email: string, otp: string) => {
+  const normalizedEmail = normalizeEmail(email);
+  const entry = registrationOtpStore.get(normalizedEmail);
+  if (!entry) throw new ErrorResponse('No OTP found for this email. Please request a new one.', 400);
+  if (new Date() > entry.expiresAt) {
+    registrationOtpStore.delete(normalizedEmail);
+    throw new ErrorResponse('OTP has expired. Please request a new one.', 400);
+  }
+  if (entry.otp !== otp.trim()) throw new ErrorResponse('Invalid OTP. Please try again.', 400);
+  registrationOtpStore.delete(normalizedEmail);
+  verifiedEmailStore.add(normalizedEmail);
+};
+
+export const isEmailVerifiedForRegistration = (email: string) =>
+  verifiedEmailStore.has(normalizeEmail(email));
+
+export const consumeVerifiedEmail = (email: string) =>
+  verifiedEmailStore.delete(normalizeEmail(email));
 
 export const restoreAndLoginUser = async (email: string, password: string) => {
   const normalizedEmail = normalizeEmail(email);
