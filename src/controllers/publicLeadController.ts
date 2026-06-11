@@ -232,13 +232,15 @@ export const getPublicLead = asyncHandler(async (req, res) => {
     const isUnpopulated = firstSubj && (typeof firstSubj === 'string' || mongoose.Types.ObjectId.isValid(firstSubj)) && !(firstSubj as any).label;
 
     if (isUnpopulated) {
-      const subjectIds = lead.subject.map((s: any) => (s._id || s));
-      const subjectOptions = await Option.find({ _id: { $in: subjectIds } })
-        .populate({ path: 'parent', populate: { path: 'parent' } });
-      
-      if (subjectOptions.length > 0) {
-        // Force the lead object to use these populated subjects
-        (lead as any).subject = subjectOptions;
+      const subjectIds = lead.subject
+        .map((s: any) => (s._id || s))
+        .filter((id: any) => mongoose.Types.ObjectId.isValid(id));
+      if (subjectIds.length) {
+        const subjectOptions = await Option.find({ _id: { $in: subjectIds } })
+          .populate({ path: 'parent', populate: { path: 'parent' } });
+        if (subjectOptions.length > 0) {
+          (lead as any).subject = subjectOptions;
+        }
       }
     }
   }
