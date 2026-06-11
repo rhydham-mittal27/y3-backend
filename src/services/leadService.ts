@@ -294,11 +294,13 @@ export const getAllClassLeads = async (args: {
   mode?: string;
   createdByName?: string;
   area?: string;
+  leadSource?: string;
 }) => {
-  const { page, limit, status, createdBy, createdByIds, search, sortBy, sortOrder, studentName, parentName, grade, subject, board, mode, createdByName, area } = args;
+  const { page, limit, status, createdBy, createdByIds, search, sortBy, sortOrder, studentName, parentName, grade, subject, board, mode, createdByName, area, leadSource } = args;
 
   const query: any = {};
   if (status) query.status = status;
+  if (leadSource) query.leadSource = leadSource;
   
   if (createdByIds && createdByIds.length > 0) {
     query.createdBy = { $in: createdByIds.map(id => new mongoose.Types.ObjectId(id)) };

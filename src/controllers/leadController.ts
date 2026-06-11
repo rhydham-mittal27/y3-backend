@@ -141,6 +141,7 @@ export const getLeads = asyncHandler(async (req: AuthRequest, res) => {
   const mode = (req.query.mode as string) || undefined;
   let createdByName = (req.query.createdByName as string) || undefined;
   const area = (req.query.area as string) || undefined;
+  const leadSource = (req.query.leadSource as string) || undefined;
 
   // Enforce role-based visibility
   let createdByIds: string[] | undefined;
@@ -178,6 +179,7 @@ export const getLeads = asyncHandler(async (req: AuthRequest, res) => {
     mode,
     createdByName,
     area,
+    leadSource,
   });
 
   return res.json(paginatedResponse(leads, page, limit, total));
