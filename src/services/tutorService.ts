@@ -151,7 +151,10 @@ export const getAllTutors = async (
   const query: any = {};
   if (verificationStatus) query.verificationStatus = verificationStatus;
   if (typeof isAvailable === 'boolean') query.isAvailable = isAvailable;
-  if (subjects && subjects.length) query.subjects = { $in: subjects };
+  if (subjects && subjects.length) {
+    const validSubjectIds = subjects.filter(s => mongoose.isValidObjectId(s));
+    if (validSubjectIds.length) query.subjects = { $in: validSubjectIds.map(s => new mongoose.Types.ObjectId(s)) };
+  }
   if (teacherId) query.teacherId = { $regex: teacherId, $options: 'i' };
   if (preferredMode) query.preferredMode = preferredMode;
   if (area) query.preferredLocations = { $regex: area, $options: 'i' };
