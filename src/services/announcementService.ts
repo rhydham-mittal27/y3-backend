@@ -267,7 +267,13 @@ export const getTutorAvailableAnnouncements = async (params: {
   const sortField = sortBy || 'postedAt';
   sort[sortField] = sortOrder === 'asc' ? 1 : -1;
 
-  const [announcements, total] = await Promise.all([
+  const myInterestQuery: any = {
+    classLead: { $ne: null },
+    'interestedTutors.tutor': new mongoose.Types.ObjectId(tutorUserId),
+    postedAt: { $gte: startOfWeek },
+  };
+
+  const [announcements, total, myInterestCount] = await Promise.all([
     Announcement.find(query)
       .skip(skip)
       .limit(limit)
@@ -282,9 +288,10 @@ export const getTutorAvailableAnnouncements = async (params: {
       })
       .populate('postedBy', 'name email role'),
     Announcement.countDocuments(query),
+    Announcement.countDocuments(myInterestQuery),
   ]);
 
-  return { announcements, total, page, limit };
+  return { announcements, total, page, limit, myInterestCount };
 };
 
 export const getAnnouncementById = async (announcementId: string) => {

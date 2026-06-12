@@ -57,7 +57,7 @@ export const getTutorAvailableAnnouncementsController = asyncHandler(
 
   const isActive = typeof isActiveParam !== 'undefined' ? isActiveParam === 'true' : true;
 
-  const { announcements, total } = await getTutorAvailableAnnouncements({
+  const { announcements, total, myInterestCount } = await getTutorAvailableAnnouncements({
     tutorUserId,
     page,
     limit,
@@ -65,7 +65,9 @@ export const getTutorAvailableAnnouncementsController = asyncHandler(
     sortBy,
     sortOrder,
   });
-  return res.status(200).json(paginatedResponse(announcements, page, limit, total));
+  const response = paginatedResponse(announcements, page, limit, total) as any;
+  response.myInterestCount = myInterestCount;
+  return res.status(200).json(response);
 });
 
 export const getAnnouncement = asyncHandler(async (req, res) => {
