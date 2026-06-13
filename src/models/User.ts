@@ -33,6 +33,7 @@ export interface IUserDocument extends SoftDeleteDocument {
     lastActiveAt: Date;
     registeredAt: Date;
   }[];
+  userType?: 'PARENT' | 'STUDENT';
   expoPushToken?: string;
   lastLoginAt?: Date;
   lastLoginDevice?: string;
@@ -97,6 +98,7 @@ const UserSchema: Schema<IUserDocument> = new Schema<IUserDocument>(
         registeredAt: { type: Date, default: Date.now },
       },
     ],
+    userType: { type: String, enum: ['PARENT', 'STUDENT'], default: 'PARENT' },
     expoPushToken: { type: String, default: null },
     lastLoginAt: { type: Date },
     lastLoginDevice: { type: String },
