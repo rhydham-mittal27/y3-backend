@@ -49,6 +49,9 @@ import publicLandingRoutes from './routes/publicLandingRoutes';
 import classSessionRoutes from './routes/classSessionRoutes';
 import shiftRequestRoutes from './routes/shiftRequestRoutes';
 import changeRoutes from './routes/changeRoutes';
+import parentRoutes from './routes/parentRoutes';
+import parentLeadRoutes from './routes/parentLeadRoutes';
+import teacherRequestRoutes from './routes/teacherRequestRoutes';
 
 // Load environment variables
 dotenv.config();
@@ -203,6 +206,9 @@ registerRoute('/api/managers', managerRoutes, writeLimiter);
 registerRoute('/api/admin', adminRoutes, writeLimiter);
 registerRoute('/api/tests', testRoutes, writeLimiter);
 registerRoute('/api/v1/tutor-leads', tutorLeadRoutes, writeLimiter);
+registerRoute('/api/v1/parents', parentRoutes, writeLimiter);
+registerRoute('/api/v1/parent-leads', parentLeadRoutes, writeLimiter);
+registerRoute('/api/v1/teacher-requests', teacherRequestRoutes, writeLimiter);
 registerRoute('/api/students', studentRoutes, writeLimiter);
 registerRoute('/api/student-auth', studentAuthRoutes, authLimiter);
 registerRoute('/api/settings', settingsRoutes, writeLimiter);
