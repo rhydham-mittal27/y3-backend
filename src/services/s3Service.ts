@@ -264,10 +264,7 @@ export const resolveS3DocumentUrl = async (val: any): Promise<any> => {
     const signed = await getPresignedUrl(key);
     if (signed && signed.startsWith('http')) return signed;
   } catch (error: any) {
-    // Fallback error logging (internal)
-    if (process.env.NODE_ENV !== 'production') {
-      console.warn(`[resolveS3DocumentUrl] Presigning failed for key ${key}:`, error.message);
-    }
+    console.warn(`[resolveS3DocumentUrl] Presigning failed for key ${key}:`, error.message);
   }
   
   // Final fallback to public URL
