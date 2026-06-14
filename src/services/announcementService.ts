@@ -394,144 +394,222 @@ export const expressInterest = async (announcementId: string, tutorUserId: strin
   return updatedAnnouncement;
 };
 
-export const computeMatchPercentage = (cl: any, tutor: any): number => {
+// ─── Lead Match Scoring ──────────────────────────────────────────────────────
+//
+// ONLINE  (out of 90, normalised to 100):
+//   Subject 50% | Grade 30% | Timing 10%   (city/area skipped)
+//
+// OFFLINE (out of 100):
+//   City 35% | Subject 25% | Grade 20% | Area 15% | Timing 5%
+//
+// Hard filters (tutor excluded before scoring):
+//   - isAvailable = false
+//   - verificationStatus ≠ VERIFIED
+//   - Subject overlap = 0
+//   - OFFLINE/HYBRID: tutor preferredLocations must include lead area
+//   - preferredTutorGender is M/F and tutor gender doesn't match
+//
+// 100% score → "Recommend for you" push notification sent to tutor
+// ─────────────────────────────────────────────────────────────────────────────
+
+const normalize = (s: any) => String(s || '').trim().toLowerCase();
+
+const subjectIds = (arr: any[]): string[] =>
+  arr.map((s: any) => normalize(s?._id ?? s)).filter(Boolean);
+
+const timingOverlapScore = (leadTiming: string, tutorSlots: string[]): number => {
+  if (!leadTiming || !tutorSlots.length) return 0;
+  const lead = normalize(leadTiming);
+  for (const slot of tutorSlots) {
+    if (normalize(slot) === lead) return 1;
+  }
+  // ±1 hour partial — simple hour extraction heuristic
+  const hourOf = (t: string) => { const m = t.match(/(\d{1,2})/); return m ? parseInt(m[1], 10) : -1; };
+  const lh = hourOf(lead);
+  for (const slot of tutorSlots) {
+    if (lh >= 0 && Math.abs(hourOf(normalize(slot)) - lh) <= 1) return 0.5;
+  }
+  return 0;
+};
+
+export const computeMatchPercentage = (cl: any, tutor: any, _tutorUserGender?: string): number => {
   if (!cl || !tutor) return 0;
 
-  const normalize = (s: any) => String(s || '').trim().toLowerCase();
+  const isOffline = ['offline', 'hybrid'].includes(normalize(cl.mode));
 
-  // 1. Subject Match (40%)
-  const leadSubjects: string[] = (Array.isArray(cl.subject) ? cl.subject : cl.subject ? [String(cl.subject)] : []).map(normalize).filter(Boolean);
-  const tutorSubjects: string[] = (Array.isArray(tutor.subjects) ? tutor.subjects : []).map(normalize).filter(Boolean);
-  const preferredSubjects: string[] = (Array.isArray(tutor.settings?.preferredSubjects) ? tutor.settings.preferredSubjects : []).map(normalize).filter(Boolean);
-  const tutorAllSubjects = new Set<string>([...tutorSubjects, ...preferredSubjects]);
+  // ── Subject ──────────────────────────────────────────────────────────────
+  const leadSubjectIds = subjectIds(Array.isArray(cl.subject) ? cl.subject : cl.subject ? [cl.subject] : []);
+  const tutorSubjectIds = new Set<string>([
+    ...subjectIds(Array.isArray(tutor.subjects) ? tutor.subjects : []),
+    ...subjectIds(Array.isArray(tutor.settings?.preferredSubjects) ? tutor.settings.preferredSubjects : []),
+  ]);
+  const subjectOverlap = leadSubjectIds.filter(id => tutorSubjectIds.has(id)).length;
+  const subjectScore = leadSubjectIds.length > 0 ? subjectOverlap / leadSubjectIds.length : 0;
 
-  const subjectApplicable = leadSubjects.length > 0;
-  const matchingSubjects = leadSubjects.filter((s) => tutorAllSubjects.has(s));
-  const subjectMatchScore = subjectApplicable ? matchingSubjects.length / leadSubjects.length : 0;
+  // ── Grade ─────────────────────────────────────────────────────────────────
+  const leadGrade = normalize(cl.grade);
+  const tutorGrades = (Array.isArray(tutor.preferredGrades) ? tutor.preferredGrades : []).map(normalize);
+  const gradeScore = leadGrade && tutorGrades.length ? (tutorGrades.includes(leadGrade) ? 1 : 0) : 0;
 
-  // 2. Mode Match (20%)
-  const leadMode = normalize(cl.mode);
-  const tutorPreferredMode = normalize(tutor.preferredMode || tutor.settings?.teachingModePreference);
-  const modeApplicable = !!(leadMode && tutorPreferredMode);
+  // ── Timing ────────────────────────────────────────────────────────────────
+  const tutorSlots: string[] = [
+    ...(Array.isArray(tutor.settings?.availabilityPreferences?.timeSlots) ? tutor.settings.availabilityPreferences.timeSlots : []),
+  ];
+  const timingScore = timingOverlapScore(cl.timing, tutorSlots);
 
-  let modeScore = 0;
-  if (modeApplicable) {
-    if (leadMode === tutorPreferredMode) {
-      modeScore = 1;
-    } else if (tutorPreferredMode === 'hybrid') {
-      modeScore = 0.75;
+  if (!isOffline) {
+    // ONLINE: subject 50 | grade 30 | timing 10  (total possible = 90 → normalise to 100)
+    const raw = subjectScore * 50 + gradeScore * 30 + timingScore * 10;
+    return Math.round((raw / 90) * 100);
+  }
+
+  // OFFLINE: city 35 | subject 25 | grade 20 | area 15 | timing 5
+  const leadCity = normalize(cl.city);
+  const tutorCities = (Array.isArray(tutor.preferredCities) ? tutor.preferredCities : []).map(normalize);
+  const cityScore = leadCity && tutorCities.length ? (tutorCities.includes(leadCity) ? 1 : 0) : 0;
+
+  const leadArea = normalize(cl.area || cl.location);
+  const tutorAreas = (Array.isArray(tutor.preferredLocations) ? tutor.preferredLocations : []).map(normalize);
+  const areaScore = leadArea && tutorAreas.length ? (tutorAreas.includes(leadArea) ? 1 : 0) : 0;
+
+  const raw =
+    cityScore    * 35 +
+    subjectScore * 25 +
+    gradeScore   * 20 +
+    areaScore    * 15 +
+    timingScore  *  5;
+
+  return Math.round(raw);
+};
+
+// Returns true if tutor passes ALL hard filters for a given lead
+const passeHardFilters = (tutor: any, lead: any, tutorUserGender?: string): boolean => {
+  // Already guaranteed VERIFIED + isAvailable at DB query level — guard here as well
+  if (!tutor.isAvailable) return false;
+  if (tutor.verificationStatus !== 'VERIFIED') return false;
+
+  // Subject overlap must be > 0
+  const leadSubjectIds = subjectIds(Array.isArray(lead.subject) ? lead.subject : lead.subject ? [lead.subject] : []);
+  const tutorSubjectIds = new Set<string>([
+    ...subjectIds(Array.isArray(tutor.subjects) ? tutor.subjects : []),
+    ...subjectIds(Array.isArray(tutor.settings?.preferredSubjects) ? tutor.settings.preferredSubjects : []),
+  ]);
+  if (leadSubjectIds.length > 0 && !leadSubjectIds.some(id => tutorSubjectIds.has(id))) return false;
+
+  // OFFLINE/HYBRID: tutor must have lead area in preferredLocations
+  const isOffline = ['offline', 'hybrid'].includes(normalize(lead.mode));
+  if (isOffline) {
+    const leadArea = normalize(lead.area || lead.location);
+    if (leadArea) {
+      const tutorAreas = (Array.isArray(tutor.preferredLocations) ? tutor.preferredLocations : []).map(normalize);
+      if (tutorAreas.length > 0 && !tutorAreas.includes(leadArea)) return false;
     }
   }
 
-  // 3. City Match (20%)
-  const leadCity = normalize(cl.city);
-  const tutorPreferredCities = (Array.isArray(tutor.preferredCities) ? tutor.preferredCities : []).map(normalize).filter(Boolean);
-  const cityApplicable = !!(leadCity && tutorPreferredCities.length > 0);
-  const cityMatch = cityApplicable && tutorPreferredCities.includes(leadCity);
-
-  // 4. Area Match (20%)
-  const leadArea = normalize(cl.area || cl.location);
-  const tutorPreferredLocations = (Array.isArray(tutor.preferredLocations) ? tutor.preferredLocations : []).map(normalize).filter(Boolean);
-  const areaApplicable = !!(leadArea && tutorPreferredLocations.length > 0);
-  const areaMatch = areaApplicable && tutorPreferredLocations.some((loc: string) => !!loc && loc === leadArea);
-
-  // Dynamic Weighting (Total 1.0)
-  const weights = { subject: 0.4, mode: 0.2, city: 0.2, area: 0.2 };
-  let totalWeight = 0;
-  let weightedScore = 0;
-
-  if (subjectApplicable) {
-    totalWeight += weights.subject;
-    weightedScore += subjectMatchScore * weights.subject;
-  }
-  if (modeApplicable) {
-    totalWeight += weights.mode;
-    weightedScore += modeScore * weights.mode;
-  }
-  if (cityApplicable) {
-    totalWeight += weights.city;
-    weightedScore += (cityMatch ? 1 : 0) * weights.city;
-  }
-  if (areaApplicable) {
-    totalWeight += weights.area;
-    weightedScore += (areaMatch ? 1 : 0) * weights.area;
+  // Gender preference hard filter
+  const prefGender = normalize(lead.preferredTutorGender);
+  if (prefGender && prefGender !== 'any') {
+    const tGender = normalize(tutorUserGender);
+    if (tGender && tGender !== prefGender) return false;
   }
 
-  if (totalWeight === 0) return 0;
-  
-  return Math.round((weightedScore / totalWeight) * 100);
+  return true;
 };
 
-const enrichTutorData = (tutors: any[], interestedTutorsRaw: any[], classLeadDoc?: any) => {
-  const tutorMap = new Map<string, any>();
-  tutors.forEach((t) => {
-    const approvalRatio = t.demosTaken ? (t.demosApproved / t.demosTaken) * 100 : 0;
-    const matchPercentage = classLeadDoc ? computeMatchPercentage(classLeadDoc, t) : 0;
-    const key = String((t.user as any)?._id || t.user);
-    tutorMap.set(key, {
-      id: String(t._id),
-      user: t.user,
-      experienceHours: t.experienceHours,
-      subjects: t.subjects,
-      ratings: t.ratings,
-      classesAssigned: t.classesAssigned,
-      demosTaken: t.demosTaken,
-      demosApproved: t.demosApproved,
-      approvalRatio,
-      verificationStatus: t.verificationStatus,
-      interestCount: t.interestCount,
-      teacherId: t.teacherId,
-      matchPercentage
-    });
-  });
+const sendPerfectMatchNotification = async (tutor: any, lead: any, announcementId: string) => {
+  try {
+    const userDoc = await User.findById(tutor.user?._id || tutor.user).select('expoPushToken _id');
+    if (!userDoc) return;
 
-  return interestedTutorsRaw.map((ti) => {
-    const key = String(((ti.tutor as any)?._id) || ti.tutor);
-    const merged = tutorMap.get(key);
-    return {
-      ...(merged || {}),
-      interestedAt: ti.interestedAt,
-      notes: ti.notes,
-    };
-  });
+    await Notification.create({
+      recipient: userDoc._id,
+      type: 'ANNOUNCEMENT',
+      title: '⭐ 100% Match with your profile!',
+      message: `A new class matches all your preferences. Apply now before someone else does!`,
+      relatedAnnouncement: new mongoose.Types.ObjectId(announcementId),
+      relatedClassLead: lead._id,
+    });
+
+    const token = (userDoc as any).expoPushToken;
+    if (typeof token === 'string' && token.length > 10) {
+      if (!admin.apps.length) {
+        admin.initializeApp({
+          credential: admin.credential.cert(require('../../firebase-service-account.json')),
+        });
+      }
+      admin.messaging().send({
+        token,
+        notification: {
+          title: '⭐ 100% Match with your profile!',
+          body: 'A new class matches all your preferences. Apply now!',
+        },
+        android: { priority: 'high', notification: { channelId: 'announcements', sound: 'default' } },
+        apns: { payload: { aps: { sound: 'default' } } },
+        data: {
+          type: 'ANNOUNCEMENT',
+          announcementId: String(announcementId),
+          classLeadId: String(lead._id),
+          deepLink: `yourshikshak://announcement/${announcementId}`,
+        },
+      }).catch(err => console.error('[PerfectMatch] FCM error:', err));
+    }
+  } catch (err) {
+    console.error('[PerfectMatch] Notification failed:', err);
+  }
+};
+
+const buildTutorResult = (t: any, lead: any, extra: Record<string, any> = {}) => {
+  const tutorUserGender = normalize((t.user as any)?.gender);
+  const matchPercentage = computeMatchPercentage(lead, t, tutorUserGender);
+  return {
+    id: String(t._id),
+    user: t.user,
+    teacherId: t.teacherId,
+    experienceHours: t.experienceHours,
+    subjects: t.subjects,
+    ratings: t.ratings,
+    classesAssigned: t.classesAssigned,
+    demosTaken: t.demosTaken,
+    demosApproved: t.demosApproved,
+    approvalRatio: t.demosTaken ? Math.round((t.demosApproved / t.demosTaken) * 100) : 0,
+    verificationStatus: t.verificationStatus,
+    interestCount: t.interestCount,
+    matchPercentage,
+    ...extra,
+  };
 };
 
 export const getInterestedTutors = async (announcementId: string) => {
   const announcement = await Announcement.findById(announcementId)
     .populate({
       path: 'classLead',
-      populate: {
-        path: 'subject',
-        select: '_id label value type',
-        populate: { path: 'parent', populate: { path: 'parent' } }
-      }
+      populate: { path: 'subject', select: '_id label value type', populate: { path: 'parent', populate: { path: 'parent' } } }
     })
-    .populate({
-      path: 'interestedTutors.tutor',
-      select: 'name email phone role',
-    });
+    .populate({ path: 'interestedTutors.tutor', select: 'name email phone role gender' });
   if (!announcement) throw new ErrorResponse('Announcement not found', 404);
 
   const tutorUserIds = announcement.interestedTutors
-    .map((ti) => {
-      const t: any = ti.tutor as any;
-      const id = t?._id ? String(t._id) : String(t);
-      try { return new mongoose.Types.ObjectId(id); } catch { return null; }
-    })
+    .map((ti) => { const t: any = ti.tutor; const id = t?._id ? String(t._id) : String(t); try { return new mongoose.Types.ObjectId(id); } catch { return null; } })
     .filter((x): x is mongoose.Types.ObjectId => !!x);
 
   const tutors = await Tutor.find({ user: { $in: tutorUserIds } })
-    .populate('user', 'name email phone')
-    .populate({
-      path: 'subjects',
-      populate: {
-        path: 'parent',
-        populate: {
-          path: 'parent'
-        }
-      }
-    });
-  const enriched = enrichTutorData(tutors, announcement.interestedTutors, announcement.classLead);
+    .populate('user', 'name email phone gender')
+    .populate({ path: 'subjects', populate: { path: 'parent', populate: { path: 'parent' } } });
+
+  const tutorMap = new Map<string, any>();
+  tutors.forEach(t => tutorMap.set(String((t.user as any)?._id || t.user), t));
+
+  const enriched = announcement.interestedTutors.map((ti) => {
+    const key = String((ti.tutor as any)?._id || ti.tutor);
+    const t = tutorMap.get(key);
+    if (!t) return { matchPercentage: 0, interestedAt: ti.interestedAt, notes: ti.notes };
+    return {
+      ...buildTutorResult(t, announcement.classLead),
+      interestedAt: ti.interestedAt,
+      notes: ti.notes,
+    };
+  });
+
   return enriched.sort((a, b) => (b.matchPercentage || 0) - (a.matchPercentage || 0));
 };
 
@@ -542,55 +620,33 @@ export const getRecommendedTutorsForLead = async (classLeadId: string) => {
   });
   if (!lead) throw new ErrorResponse('Class lead not found', 404);
 
-  const query: any = {
-    verificationStatus: 'VERIFIED',
-    isAvailable: true,
-  };
-
-  const tutors = await Tutor.find(query)
-    .limit(50)
-    .populate('user', 'name email phone')
-    .populate({
-      path: 'subjects',
-      populate: {
-        path: 'parent',
-        populate: {
-          path: 'parent'
-        }
-      }
-    });
-
-  // Exclude tutors who already expressed interest
   const announcement = await Announcement.findOne({ classLead: classLeadId });
-  const interestedTutorUserIds = announcement ? announcement.interestedTutors.map((ti) => String(ti.tutor)) : [];
+  const interestedUserIds = new Set((announcement?.interestedTutors ?? []).map(ti => String(ti.tutor)));
 
-  const filteredTutors = tutors.filter(t => !interestedTutorUserIds.includes(String(t.user?._id || t.user)));
+  const tutors = await Tutor.find({ verificationStatus: 'VERIFIED', isAvailable: true })
+    .limit(200)
+    .populate('user', 'name email phone gender')
+    .populate({ path: 'subjects', populate: { path: 'parent', populate: { path: 'parent' } } });
 
-  // Enrich using the same helper logic
-  const enriched = filteredTutors.map(t => {
-    const approvalRatio = t.demosTaken ? (t.demosApproved / t.demosTaken) * 100 : 0;
-    const matchPercentage = computeMatchPercentage(lead, t);
-    
-    return {
-      id: String(t._id),
-      user: t.user,
-      experienceHours: t.experienceHours,
-      subjects: t.subjects,
-      ratings: t.ratings,
-      classesAssigned: t.classesAssigned,
-      demosTaken: t.demosTaken,
-      demosApproved: t.demosApproved,
-      approvalRatio,
-      verificationStatus: t.verificationStatus,
-      interestCount: t.interestCount,
-      isRecommendation: true,
-      teacherId: t.teacherId,
-      matchPercentage
-    };
-  });
+  const results: any[] = [];
 
-  // Sort by match percentage descending
-  return enriched.sort((a, b) => (b.matchPercentage || 0) - (a.matchPercentage || 0));
+  for (const t of tutors) {
+    // Skip tutors who already expressed interest
+    if (interestedUserIds.has(String(t.user?._id || t.user))) continue;
+
+    const tutorUserGender = normalize((t.user as any)?.gender);
+    if (!passeHardFilters(t, lead, tutorUserGender)) continue;
+
+    const result = buildTutorResult(t, lead, { isRecommendation: true });
+    results.push(result);
+
+    // Send perfect match notification (fire-and-forget)
+    if (result.matchPercentage === 100 && announcement) {
+      sendPerfectMatchNotification(t, lead, String(announcement._id));
+    }
+  }
+
+  return results.sort((a, b) => b.matchPercentage - a.matchPercentage);
 };
 
 export const deactivateAnnouncement = async (announcementId: string, deactivatedBy?: string) => {
