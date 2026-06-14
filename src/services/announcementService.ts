@@ -227,7 +227,7 @@ export const getTutorAvailableAnnouncements = async (params: {
   sortBy?: string;
   sortOrder?: 'asc' | 'desc';
 }) => {
-  const { tutorUserId, page, limit, isActive, sortBy, sortOrder } = params;
+  const { tutorUserId, page, limit, isActive } = params;
 
   const query: any = {
     classLead: { $ne: null },
@@ -254,30 +254,24 @@ export const getTutorAvailableAnnouncements = async (params: {
     query.classLead = { $nin: convertedLeadIds };
   }
 
-  // Load tutor profile to apply OFFLINE area filtering and ONLINE subject filtering
-  // TODO: Use tutorDoc when implementing filtering logic
-  await Tutor.findOne({ user: tutorUserId }).select('subjects preferredLocations');
-
-  // NOTE: Tutor-specific subject/location matching is disabled for now so that
-  // all active announcements where the tutor has not already expressed interest
-  // are visible in the Class Opportunities feed.
+  // Load tutor profile for match scoring
+  const tutorDoc = await Tutor.findOne({ user: tutorUserId })
+    .populate('user', 'name email phone gender')
+    .populate({ path: 'subjects', populate: { path: 'parent', populate: { path: 'parent' } } });
 
   const skip = (page - 1) * limit;
-  const sort: any = {};
-  const sortField = sortBy || 'postedAt';
-  sort[sortField] = sortOrder === 'asc' ? 1 : -1;
-
+  // Always fetch by postedAt desc from DB; we re-sort by matchPercentage after scoring
   const myInterestQuery: any = {
     classLead: { $ne: null },
     'interestedTutors.tutor': new mongoose.Types.ObjectId(tutorUserId),
     postedAt: { $gte: startOfWeek },
   };
 
-  const [announcements, total, myInterestCount] = await Promise.all([
+  const [rawAnnouncements, total, myInterestCount] = await Promise.all([
     Announcement.find(query)
       .skip(skip)
       .limit(limit)
-      .sort(sort)
+      .sort({ postedAt: -1 })
       .populate({
         path: 'classLead',
         populate: {
@@ -290,6 +284,16 @@ export const getTutorAvailableAnnouncements = async (params: {
     Announcement.countDocuments(query),
     Announcement.countDocuments(myInterestQuery),
   ]);
+
+  // Attach matchPercentage to each announcement and sort highest first
+  const tutorUserGender = normalize((tutorDoc?.user as any)?.gender);
+  const announcements = rawAnnouncements
+    .map((ann: any) => {
+      const matchPercentage = tutorDoc ? computeMatchPercentage(ann.classLead, tutorDoc, tutorUserGender) : 0;
+      const plain = ann.toObject ? ann.toObject() : { ...ann };
+      return { ...plain, matchPercentage };
+    })
+    .sort((a: any, b: any) => b.matchPercentage - a.matchPercentage);
 
   return { announcements, total, page, limit, myInterestCount };
 };
@@ -396,17 +400,21 @@ export const expressInterest = async (announcementId: string, tutorUserId: strin
 
 // ─── Lead Match Scoring ──────────────────────────────────────────────────────
 //
-// ONLINE  (out of 90, normalised to 100):
-//   Subject 50% | Grade 30% | Timing 10%   (city/area skipped)
+// Subject match is hierarchical (board + grade + subject as one unit).
+// Each subject _id in the Option model is unique per board→grade→subject path,
+// so matching by _id implies a full board+grade+subject match — binary 0 or 1.
 //
-// OFFLINE (out of 100):
-//   City 35% | Subject 25% | Grade 20% | Area 15% | Timing 5%
+// ONLINE  (100%):
+//   Subject(board+grade+subject) 90% | Timing 10%
+//
+// OFFLINE (100%):
+//   Area 60% | Subject(board+grade+subject) 35% | Timing 5%
 //
 // Hard filters (tutor excluded before scoring):
 //   - isAvailable = false
 //   - verificationStatus ≠ VERIFIED
 //   - Subject overlap = 0
-//   - OFFLINE/HYBRID: tutor preferredLocations must include lead area
+//   - OFFLINE/HYBRID: tutor preferredCities must include lead city
 //   - preferredTutorGender is M/F and tutor gender doesn't match
 //
 // 100% score → "Recommend for you" push notification sent to tutor
@@ -423,7 +431,6 @@ const timingOverlapScore = (leadTiming: string, tutorSlots: string[]): number =>
   for (const slot of tutorSlots) {
     if (normalize(slot) === lead) return 1;
   }
-  // ±1 hour partial — simple hour extraction heuristic
   const hourOf = (t: string) => { const m = t.match(/(\d{1,2})/); return m ? parseInt(m[1], 10) : -1; };
   const lh = hourOf(lead);
   for (const slot of tutorSlots) {
@@ -437,49 +444,35 @@ export const computeMatchPercentage = (cl: any, tutor: any, _tutorUserGender?: s
 
   const isOffline = ['offline', 'hybrid'].includes(normalize(cl.mode));
 
-  // ── Subject ──────────────────────────────────────────────────────────────
+  // ── Subject (full hierarchy match: board+grade+subject via _id) ───────────
+  // Binary: all lead subjects must match tutor subjects by _id (0 or 1 per subject)
   const leadSubjectIds = subjectIds(Array.isArray(cl.subject) ? cl.subject : cl.subject ? [cl.subject] : []);
   const tutorSubjectIds = new Set<string>([
     ...subjectIds(Array.isArray(tutor.subjects) ? tutor.subjects : []),
     ...subjectIds(Array.isArray(tutor.settings?.preferredSubjects) ? tutor.settings.preferredSubjects : []),
   ]);
-  const subjectOverlap = leadSubjectIds.filter(id => tutorSubjectIds.has(id)).length;
-  const subjectScore = leadSubjectIds.length > 0 ? subjectOverlap / leadSubjectIds.length : 0;
-
-  // ── Grade ─────────────────────────────────────────────────────────────────
-  const leadGrade = normalize(cl.grade);
-  const tutorGrades = (Array.isArray(tutor.preferredGrades) ? tutor.preferredGrades : []).map(normalize);
-  const gradeScore = leadGrade && tutorGrades.length ? (tutorGrades.includes(leadGrade) ? 1 : 0) : 0;
+  // Full match only — partial overlap still scores proportionally but each subject
+  // is either a full board+grade+subject match (1) or not (0)
+  const matchedCount = leadSubjectIds.filter(id => tutorSubjectIds.has(id)).length;
+  const subjectScore = leadSubjectIds.length > 0 ? matchedCount / leadSubjectIds.length : 0;
 
   // ── Timing ────────────────────────────────────────────────────────────────
-  const tutorSlots: string[] = [
-    ...(Array.isArray(tutor.settings?.availabilityPreferences?.timeSlots) ? tutor.settings.availabilityPreferences.timeSlots : []),
-  ];
+  const tutorSlots: string[] = Array.isArray(tutor.settings?.availabilityPreferences?.timeSlots)
+    ? tutor.settings.availabilityPreferences.timeSlots : [];
   const timingScore = timingOverlapScore(cl.timing, tutorSlots);
 
   if (!isOffline) {
-    // ONLINE: subject 50 | grade 30 | timing 10  (total possible = 90 → normalise to 100)
-    const raw = subjectScore * 50 + gradeScore * 30 + timingScore * 10;
-    return Math.round((raw / 90) * 100);
+    // ONLINE: subject(board+grade+subject) 90 | timing 10
+    return Math.round(subjectScore * 90 + timingScore * 10);
   }
 
-  // OFFLINE: city 35 | subject 25 | grade 20 | area 15 | timing 5
-  const leadCity = normalize(cl.city);
-  const tutorCities = (Array.isArray(tutor.preferredCities) ? tutor.preferredCities : []).map(normalize);
-  const cityScore = leadCity && tutorCities.length ? (tutorCities.includes(leadCity) ? 1 : 0) : 0;
-
+  // ── Area (offline soft filter) ────────────────────────────────────────────
   const leadArea = normalize(cl.area || cl.location);
   const tutorAreas = (Array.isArray(tutor.preferredLocations) ? tutor.preferredLocations : []).map(normalize);
   const areaScore = leadArea && tutorAreas.length ? (tutorAreas.includes(leadArea) ? 1 : 0) : 0;
 
-  const raw =
-    cityScore    * 35 +
-    subjectScore * 25 +
-    gradeScore   * 20 +
-    areaScore    * 15 +
-    timingScore  *  5;
-
-  return Math.round(raw);
+  // OFFLINE: area 60 | subject(board+grade+subject) 35 | timing 5
+  return Math.round(areaScore * 60 + subjectScore * 35 + timingScore * 5);
 };
 
 // Returns true if tutor passes ALL hard filters for a given lead
@@ -496,13 +489,13 @@ const passeHardFilters = (tutor: any, lead: any, tutorUserGender?: string): bool
   ]);
   if (leadSubjectIds.length > 0 && !leadSubjectIds.some(id => tutorSubjectIds.has(id))) return false;
 
-  // OFFLINE/HYBRID: tutor must have lead area in preferredLocations
+  // OFFLINE/HYBRID: tutor must have lead city in preferredCities
   const isOffline = ['offline', 'hybrid'].includes(normalize(lead.mode));
   if (isOffline) {
-    const leadArea = normalize(lead.area || lead.location);
-    if (leadArea) {
-      const tutorAreas = (Array.isArray(tutor.preferredLocations) ? tutor.preferredLocations : []).map(normalize);
-      if (tutorAreas.length > 0 && !tutorAreas.includes(leadArea)) return false;
+    const leadCity = normalize(lead.city);
+    if (leadCity) {
+      const tutorCities = (Array.isArray(tutor.preferredCities) ? tutor.preferredCities : []).map(normalize);
+      if (tutorCities.length > 0 && !tutorCities.includes(leadCity)) return false;
     }
   }
 
