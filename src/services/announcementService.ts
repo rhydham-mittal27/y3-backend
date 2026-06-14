@@ -227,7 +227,7 @@ export const getTutorAvailableAnnouncements = async (params: {
   sortBy?: string;
   sortOrder?: 'asc' | 'desc';
 }) => {
-  const { tutorUserId, page, limit, isActive, sortBy, sortOrder } = params;
+  const { tutorUserId, page, limit, isActive } = params;
 
   const query: any = {
     classLead: { $ne: null },
@@ -254,30 +254,24 @@ export const getTutorAvailableAnnouncements = async (params: {
     query.classLead = { $nin: convertedLeadIds };
   }
 
-  // Load tutor profile to apply OFFLINE area filtering and ONLINE subject filtering
-  // TODO: Use tutorDoc when implementing filtering logic
-  await Tutor.findOne({ user: tutorUserId }).select('subjects preferredLocations');
-
-  // NOTE: Tutor-specific subject/location matching is disabled for now so that
-  // all active announcements where the tutor has not already expressed interest
-  // are visible in the Class Opportunities feed.
+  // Load tutor profile for match scoring
+  const tutorDoc = await Tutor.findOne({ user: tutorUserId })
+    .populate('user', 'name email phone gender')
+    .populate({ path: 'subjects', populate: { path: 'parent', populate: { path: 'parent' } } });
 
   const skip = (page - 1) * limit;
-  const sort: any = {};
-  const sortField = sortBy || 'postedAt';
-  sort[sortField] = sortOrder === 'asc' ? 1 : -1;
-
+  // Always fetch by postedAt desc from DB; we re-sort by matchPercentage after scoring
   const myInterestQuery: any = {
     classLead: { $ne: null },
     'interestedTutors.tutor': new mongoose.Types.ObjectId(tutorUserId),
     postedAt: { $gte: startOfWeek },
   };
 
-  const [announcements, total, myInterestCount] = await Promise.all([
+  const [rawAnnouncements, total, myInterestCount] = await Promise.all([
     Announcement.find(query)
       .skip(skip)
       .limit(limit)
-      .sort(sort)
+      .sort({ postedAt: -1 })
       .populate({
         path: 'classLead',
         populate: {
@@ -290,6 +284,16 @@ export const getTutorAvailableAnnouncements = async (params: {
     Announcement.countDocuments(query),
     Announcement.countDocuments(myInterestQuery),
   ]);
+
+  // Attach matchPercentage to each announcement and sort highest first
+  const tutorUserGender = normalize((tutorDoc?.user as any)?.gender);
+  const announcements = rawAnnouncements
+    .map((ann: any) => {
+      const matchPercentage = tutorDoc ? computeMatchPercentage(ann.classLead, tutorDoc, tutorUserGender) : 0;
+      const plain = ann.toObject ? ann.toObject() : { ...ann };
+      return { ...plain, matchPercentage };
+    })
+    .sort((a: any, b: any) => b.matchPercentage - a.matchPercentage);
 
   return { announcements, total, page, limit, myInterestCount };
 };
