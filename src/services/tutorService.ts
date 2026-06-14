@@ -33,7 +33,7 @@ const withResolvedTutorDocumentUrls = async (tutor: any) => {
   
   if (docs.length === 0) {
     // Still attempt to resolve verification fee proof if present
-    if (typeof copy?.verificationFeePaymentProof === 'string' && copy.verificationFeePaymentProof.length > 0 && !/^https?:\/\//i.test(copy.verificationFeePaymentProof)) {
+    if (typeof copy?.verificationFeePaymentProof === 'string' && copy.verificationFeePaymentProof.length > 0) {
       copy.verificationFeePaymentProof = await resolveS3DocumentUrl(copy.verificationFeePaymentProof);
     }
     return copy;
@@ -57,7 +57,7 @@ const withResolvedTutorDocumentUrls = async (tutor: any) => {
   );
 
   // Resolve payment proof URL if stored as key
-  if (typeof copy?.verificationFeePaymentProof === 'string' && copy.verificationFeePaymentProof.length > 0 && !/^https?:\/\//i.test(copy.verificationFeePaymentProof)) {
+  if (typeof copy?.verificationFeePaymentProof === 'string' && copy.verificationFeePaymentProof.length > 0) {
     copy.verificationFeePaymentProof = await resolveS3DocumentUrl(copy.verificationFeePaymentProof);
   }
 
@@ -864,7 +864,7 @@ export const updateVerificationStatus = async (
     tutor.verificationRejectionReason = undefined;
     tutor.verifiedAt = new Date();
     tutor.verifiedBy = new mongoose.Types.ObjectId(verifiedBy) as any;
-    
+
     // When tutor is verified, mark all existing documents as verified
     if (Array.isArray(tutor.documents)) {
       const now = tutor.verifiedAt || new Date();
@@ -873,6 +873,26 @@ export const updateVerificationStatus = async (
         if (!d.verifiedAt) d.verifiedAt = now;
         return d;
       }) as any;
+    }
+
+    // If tutor paid via screenshot (PENDING payment with proof), mark it as PAID now
+    const pendingFeePayment = await Payment.findOne({
+      tutor: tutor.user,
+      paymentType: PAYMENT_TYPE.TUTOR_VERIFICATION_FEES,
+      status: PAYMENT_STATUS.PENDING,
+    });
+    if (pendingFeePayment && pendingFeePayment.paymentProof) {
+      await Payment.updateOne(
+        { _id: pendingFeePayment._id },
+        {
+          $set: {
+            status: PAYMENT_STATUS.PAID,
+            paymentDate: new Date(),
+            notes: 'Payment confirmed on tutor verification',
+          },
+        }
+      );
+      tutor.verificationFeeStatus = 'PAID';
     }
   }
 
@@ -997,17 +1017,13 @@ export const updateVerificationFeeStatus = async (
   let verificationFeePaymentProof = tutor.verificationFeePaymentProof;
   let verificationFeePaymentDate = tutor.verificationFeePaymentDate;
 
-  if (feeStatus === 'PENDING' && paymentProofFile) {
-    // User uploaded a screenshot — upload it and create a PENDING payment awaiting admin review
-    const buffer = paymentProofFile.buffer;
-    const originalname = paymentProofFile.originalname;
-    const mimetype = paymentProofFile.mimetype;
-
+  // ── Step 1: Upload file to S3 if provided ────────────────────────────────
+  if (paymentProofFile) {
     try {
       const uploadResult = await uploadFileToS3Structured(
-        buffer,
-        originalname,
-        mimetype,
+        paymentProofFile.buffer,
+        paymentProofFile.originalname,
+        paymentProofFile.mimetype,
         { entityType: 'tutors', entityId: tutorId, folder: 'verification-fees' }
       );
       verificationFeePaymentProof = uploadResult.key;
@@ -1016,113 +1032,72 @@ export const updateVerificationFeeStatus = async (
       console.error('Failed to upload payment proof', err);
       throw new ErrorResponse('Failed to upload payment proof', 500);
     }
+  }
 
-    const existingPayment = await Payment.findOne({
-      tutor: tutor.user,
-      paymentType: PAYMENT_TYPE.TUTOR_VERIFICATION_FEES,
-    });
+  if (feeStatus === 'PAID' && !verificationFeePaymentProof) {
+    throw new ErrorResponse('Payment proof is required when status is PAID', 400);
+  }
 
-    if (!existingPayment) {
-      try {
+  // ── Step 2: Save tutor document immediately so proof URL is always persisted ──
+  tutor.verificationFeeStatus = feeStatus;
+  if (verificationFeePaymentProof) tutor.verificationFeePaymentProof = verificationFeePaymentProof;
+  if (verificationFeePaymentDate) tutor.verificationFeePaymentDate = verificationFeePaymentDate;
+  await tutor.save();
+
+  // ── Step 3: Sync Payment record (soft failure — tutor already saved above) ──
+  try {
+    const userId = new mongoose.Types.ObjectId(String(tutor.user));
+
+    if ((feeStatus === 'PENDING' || feeStatus === 'PAID') && verificationFeePaymentProof) {
+      const paymentStatus = feeStatus === 'PAID' ? PAYMENT_STATUS.PAID : PAYMENT_STATUS.PENDING;
+      const notes = feeStatus === 'PAID' ? 'Paid via screenshot' : 'Awaiting admin verification';
+      const existing = await Payment.findOne({ tutor: userId, paymentType: PAYMENT_TYPE.TUTOR_VERIFICATION_FEES });
+
+      if (!existing) {
         await Payment.create({
-          tutor: tutor.user,
+          tutor: userId,
           amount: VERIFICATION_FEE_AMOUNT,
           currency: 'INR',
-          status: PAYMENT_STATUS.PENDING,
+          status: paymentStatus,
           paymentType: PAYMENT_TYPE.TUTOR_VERIFICATION_FEES,
-          dueDate: verificationFeePaymentDate,
-          paymentProof: verificationFeePaymentProof,
-          notes: 'Awaiting admin verification',
-          createdBy: tutor.user,
-        } as any);
-      } catch (err: any) {
-        console.error('Failed to create verification fee payment record', err);
-      }
-    } else {
-      // Update existing record with new proof
-      await Payment.updateOne(
-        { _id: existingPayment._id },
-        { $set: { paymentProof: verificationFeePaymentProof, status: PAYMENT_STATUS.PENDING, notes: 'Awaiting admin verification' } }
-      );
-    }
-  } else if (feeStatus === 'PAID') {
-    if (!paymentProofFile) {
-      throw new ErrorResponse('Payment proof is required when status is PAID', 400);
-    }
-
-    const buffer = paymentProofFile.buffer;
-    const originalname = paymentProofFile.originalname;
-    const mimetype = paymentProofFile.mimetype;
-
-    try {
-      const uploadResult = await uploadFileToS3Structured(
-        buffer,
-        originalname,
-        mimetype,
-        { entityType: 'tutors', entityId: tutorId, folder: 'verification-fees' }
-      );
-      verificationFeePaymentProof = uploadResult.key;
-      verificationFeePaymentDate = new Date();
-    } catch (err: any) {
-      console.error('Failed to upload payment proof', err);
-      throw new ErrorResponse('Failed to upload payment proof', 500);
-    }
-
-    const existingPayment = await Payment.findOne({
-      tutor: tutor.user,
-      paymentType: PAYMENT_TYPE.TUTOR_VERIFICATION_FEES
-    });
-
-    if (!existingPayment) {
-      try {
-        const dueDate = verificationFeePaymentDate || new Date();
-        await Payment.create({
-          tutor: tutor.user,
-          amount: VERIFICATION_FEE_AMOUNT,
-          currency: 'INR',
-          status: PAYMENT_STATUS.PAID,
-          paymentType: PAYMENT_TYPE.TUTOR_VERIFICATION_FEES,
-          dueDate,
+          dueDate: verificationFeePaymentDate || new Date(),
           paymentDate: verificationFeePaymentDate,
           paymentProof: verificationFeePaymentProof,
-          createdBy: tutor.user,
-        } as any);
-      } catch (err: any) {
-        console.error('Failed to create verification fee payment record', err);
+          notes,
+          createdBy: userId,
+        });
+      } else {
+        await Payment.updateOne(
+          { _id: existing._id },
+          {
+            $set: {
+              amount: VERIFICATION_FEE_AMOUNT,
+              status: paymentStatus,
+              paymentProof: verificationFeePaymentProof,
+              paymentDate: verificationFeePaymentDate,
+              notes,
+            },
+          }
+        );
       }
-    }
-  } else if (feeStatus === 'DEDUCT_FROM_FIRST_MONTH') {
-    // Check for existing verification payment to prevent duplicates
-    const existingPayment = await Payment.findOne({
-      tutor: tutor.user,
-      paymentType: PAYMENT_TYPE.TUTOR_VERIFICATION_FEES
-    });
-
-    if (!existingPayment) {
-      // Create a pending verification fee record to be deducted from first payout (bookkeeping)
-      try {
-        const dueDate = new Date();
+    } else if (feeStatus === 'DEDUCT_FROM_FIRST_MONTH') {
+      const existing = await Payment.findOne({ tutor: userId, paymentType: PAYMENT_TYPE.TUTOR_VERIFICATION_FEES });
+      if (!existing) {
         await Payment.create({
-          tutor: tutor.user,
+          tutor: userId,
           amount: VERIFICATION_FEE_DEDUCT_AMOUNT,
           currency: 'INR',
           status: PAYMENT_STATUS.PENDING,
           paymentType: PAYMENT_TYPE.TUTOR_VERIFICATION_FEES,
-          dueDate,
+          dueDate: new Date(),
           notes: 'Deduct from first payout',
-          createdBy: tutor.user,
-        } as any);
-      } catch (err: any) {
-        console.error('Failed to create deduction verification fee record', err);
+          createdBy: userId,
+        });
       }
     }
+  } catch (err: any) {
+    console.error('[updateVerificationFeeStatus] Payment record sync failed:', err);
   }
-
-  tutor.verificationFeeStatus = feeStatus;
-  if (verificationFeePaymentProof) tutor.verificationFeePaymentProof = verificationFeePaymentProof;
-  if (verificationFeePaymentDate) tutor.verificationFeePaymentDate = verificationFeePaymentDate;
-
-  await tutor.save();
   await tutor.populate([
     { path: 'user', select: 'name email phone role gender city preferredMode' },
     { path: 'verifiedBy', select: 'name email phone role' },
