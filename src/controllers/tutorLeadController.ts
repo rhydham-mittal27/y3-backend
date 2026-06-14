@@ -53,6 +53,8 @@ export const createTutorLeadRegistrationController = asyncHandler(async (req: Re
     bio,
     languagesKnown,
     skills,
+    daysAvailable,
+    timeSlots,
   } = req.body as {
     fullName: string;
     gender?: string;
@@ -72,6 +74,8 @@ export const createTutorLeadRegistrationController = asyncHandler(async (req: Re
     bio?: string;
     languagesKnown?: string[];
     skills?: string[];
+    daysAvailable?: string[];
+    timeSlots?: string[];
   };
 
   // Basic validation
@@ -170,6 +174,14 @@ export const createTutorLeadRegistrationController = asyncHandler(async (req: Re
   };
   if (Array.isArray(extracurricularActivities) && extracurricularActivities.length) {
     tutorPayload.extracurricularActivities = extracurricularActivities.map(String);
+  }
+  if (Array.isArray(daysAvailable) || Array.isArray(timeSlots)) {
+    tutorPayload.settings = {
+      availabilityPreferences: {
+        daysAvailable: Array.isArray(daysAvailable) ? daysAvailable : [],
+        timeSlots: Array.isArray(timeSlots) ? timeSlots : [],
+      },
+    };
   }
   if (teacherIdToSave) tutorPayload.teacherId = teacherIdToSave;
 
