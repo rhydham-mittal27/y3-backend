@@ -5,7 +5,7 @@ import ErrorResponse from '../utils/errorResponse';
 import { successResponse } from '../utils/responseFormatter';
 import Banner from '../models/Banner';
 import FinalClass from '../models/FinalClass';
-import { uploadFileToS3Structured } from '../services/s3Service';
+import { uploadFileToS3Structured, getPresignedUrl } from '../services/s3Service';
 
 // POST /api/banners — admin or coordinator creates a banner
 export const createBanner = asyncHandler(async (req: AuthRequest, res: Response) => {
@@ -69,7 +69,18 @@ export const getActiveBannersForTutor = asyncHandler(async (req: AuthRequest, re
     .sort({ createdAt: -1 })
     .lean();
 
-  return res.json(successResponse(banners));
+  const bannersWithSignedUrls = await Promise.all(
+    banners.map(async (b) => {
+      try {
+        const signedUrl = await getPresignedUrl(b.s3Key, 3600);
+        return { ...b, imageUrl: signedUrl };
+      } catch {
+        return b;
+      }
+    })
+  );
+
+  return res.json(successResponse(bannersWithSignedUrls));
 });
 
 // GET /api/banners — admin/coordinator management list
