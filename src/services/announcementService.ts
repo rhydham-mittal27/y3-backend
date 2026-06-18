@@ -804,6 +804,36 @@ export const getCoordinatorAnnouncementStats = async (coordinatorUserId: string)
   return { totalAnnouncements, totalRecipients, breakdown };
 };
 
+export const sendAdminBroadcast = async (params: {
+  subject: string;
+  message: string;
+  recipientGroup: 'ALL_MANAGERS' | 'ALL_COORDINATORS' | 'ALL_TEACHERS';
+}) => {
+  const { subject, message, recipientGroup } = params;
+  const roleMap: Record<string, string> = {
+    ALL_MANAGERS: USER_ROLES.MANAGER,
+    ALL_COORDINATORS: USER_ROLES.COORDINATOR,
+    ALL_TEACHERS: USER_ROLES.TUTOR,
+  };
+  const role = roleMap[recipientGroup];
+  if (!role) throw new ErrorResponse('Invalid recipient group', 400);
+
+  const users = await User.find({ role, isActive: { $ne: false } }).select('_id').lean();
+  if (users.length === 0) throw new ErrorResponse('No recipients found', 400);
+
+  await Notification.insertMany(
+    users.map((u) => ({
+      recipient: u._id,
+      type: 'GENERAL',
+      title: subject,
+      message,
+      relatedAnnouncement: null,
+    }))
+  );
+
+  return { recipientCount: users.length, recipientGroup };
+};
+
 export default {
   createAnnouncement,
   getAllAnnouncements,
@@ -818,4 +848,5 @@ export default {
   getCoordinatorAnnouncements,
   getCoordinatorAnnouncementById,
   getCoordinatorAnnouncementStats,
+  sendAdminBroadcast,
 };

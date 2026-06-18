@@ -20,6 +20,7 @@ import {
   getCoordinatorAnnouncements,
   getCoordinatorAnnouncementById,
   getCoordinatorAnnouncementStats,
+  sendAdminBroadcast,
 } from '../services/announcementService';
 
 export const postAnnouncement = asyncHandler(async (req: AuthRequest, res) => {
@@ -170,4 +171,11 @@ export const getCoordinatorAnnouncementStatsController = asyncHandler(async (req
   const coordinatorUserId = req.user!.id;
   const stats = await getCoordinatorAnnouncementStats(coordinatorUserId);
   return res.status(200).json(successResponse(stats));
+});
+
+export const sendAdminBroadcastController = asyncHandler(async (req: AuthRequest, res) => {
+  const { subject, message, recipientGroup } = req.body as any;
+  if (!subject || !message || !recipientGroup) throw new ErrorResponse('subject, message, and recipientGroup are required', 400);
+  const result = await sendAdminBroadcast({ subject, message, recipientGroup });
+  return res.status(200).json(successResponse(result, `Notification sent to ${result.recipientCount} recipients`));
 });

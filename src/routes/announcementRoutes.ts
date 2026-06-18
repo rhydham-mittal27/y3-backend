@@ -16,6 +16,7 @@ import {
   getCoordinatorAnnouncementsController,
   getCoordinatorAnnouncementController,
   getCoordinatorAnnouncementStatsController,
+  sendAdminBroadcastController,
 } from '../controllers/announcementController';
 import {
   postAnnouncementValidation,
@@ -47,6 +48,9 @@ router.post('/:id/interest', authorize(USER_ROLES.TUTOR), expressInterestValidat
 router.get('/:id/interested-tutors', authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN), announcementIdValidation, getInterestedTutorsForAnnouncement);
 router.get('/:id/recommended-tutors', authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN), announcementIdValidation, getRecommendedTutorsForLeadController);
 router.patch('/:id/deactivate', authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN), announcementIdValidation, deactivateAnnouncementController);
+
+// Admin broadcast push notification
+router.post('/admin/broadcast', authorize(USER_ROLES.ADMIN), sendAdminBroadcastController);
 
 // Coordinator announcement routes
 router.post(
