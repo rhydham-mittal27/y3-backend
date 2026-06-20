@@ -8,6 +8,7 @@ import Notification from '../models/Notification';
 import CoordinatorAnnouncement from '../models/CoordinatorAnnouncement';
 import FinalClass from '../models/FinalClass';
 import Coordinator from '../models/Coordinator';
+import BroadcastLog from '../models/BroadcastLog';
 import ErrorResponse from '../utils/errorResponse';
 import { sendPushNotification } from '../utils/sendPushNotification';
 import { USER_ROLES, CLASS_LEAD_STATUS, MANAGER_ACTION_TYPE, CHANGE_ACTION } from '../config/constants';
@@ -809,8 +810,10 @@ export const sendAdminBroadcast = async (params: {
   subject: string;
   message: string;
   recipientGroup: 'ALL_MANAGERS' | 'ALL_COORDINATORS' | 'ALL_TEACHERS' | 'ALL_PARENTS';
+  sentBy: string;
+  sentByName: string;
 }) => {
-  const { subject, message, recipientGroup } = params;
+  const { subject, message, recipientGroup, sentBy, sentByName } = params;
   const roleMap: Record<string, string> = {
     ALL_MANAGERS: USER_ROLES.MANAGER,
     ALL_COORDINATORS: USER_ROLES.COORDINATOR,
@@ -844,7 +847,25 @@ export const sendAdminBroadcast = async (params: {
     );
   }
 
+  // Save to broadcast history
+  await BroadcastLog.create({ subject, message, recipientGroup, recipientCount: users.length, sentBy, sentByName });
+
   return { recipientCount: users.length, recipientGroup };
+};
+
+export const getBroadcastHistory = async (page = 1, limit = 20) => {
+  const skip = (page - 1) * limit;
+  const [logs, total] = await Promise.all([
+    BroadcastLog.find().sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
+    BroadcastLog.countDocuments(),
+  ]);
+  return { logs, total, page, limit };
+};
+
+export const deleteBroadcastLog = async (logId: string) => {
+  const deleted = await BroadcastLog.findByIdAndDelete(logId);
+  if (!deleted) throw new ErrorResponse('Broadcast log not found', 404);
+  return deleted;
 };
 
 export default {

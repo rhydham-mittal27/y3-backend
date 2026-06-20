@@ -17,6 +17,8 @@ import {
   getCoordinatorAnnouncementController,
   getCoordinatorAnnouncementStatsController,
   sendAdminBroadcastController,
+  getBroadcastHistoryController,
+  deleteBroadcastLogController,
 } from '../controllers/announcementController';
 import {
   postAnnouncementValidation,
@@ -51,6 +53,8 @@ router.patch('/:id/deactivate', authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN),
 
 // Admin broadcast push notification
 router.post('/admin/broadcast', authorize(USER_ROLES.ADMIN), sendAdminBroadcastController);
+router.get('/admin/broadcast/history', authorize(USER_ROLES.ADMIN), getBroadcastHistoryController);
+router.delete('/admin/broadcast/:logId', authorize(USER_ROLES.ADMIN), deleteBroadcastLogController);
 
 // Coordinator announcement routes
 router.post(

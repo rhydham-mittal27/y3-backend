@@ -21,6 +21,8 @@ import {
   getCoordinatorAnnouncementById,
   getCoordinatorAnnouncementStats,
   sendAdminBroadcast,
+  getBroadcastHistory,
+  deleteBroadcastLog,
 } from '../services/announcementService';
 
 export const postAnnouncement = asyncHandler(async (req: AuthRequest, res) => {
@@ -176,6 +178,25 @@ export const getCoordinatorAnnouncementStatsController = asyncHandler(async (req
 export const sendAdminBroadcastController = asyncHandler(async (req: AuthRequest, res) => {
   const { subject, message, recipientGroup } = req.body as any;
   if (!subject || !message || !recipientGroup) throw new ErrorResponse('subject, message, and recipientGroup are required', 400);
-  const result = await sendAdminBroadcast({ subject, message, recipientGroup });
+  const result = await sendAdminBroadcast({
+    subject,
+    message,
+    recipientGroup,
+    sentBy: req.user!.id,
+    sentByName: (req.user as any)?.name || 'Admin',
+  });
   return res.status(200).json(successResponse(result, `Notification sent to ${result.recipientCount} recipients`));
+});
+
+export const getBroadcastHistoryController = asyncHandler(async (req: AuthRequest, res) => {
+  const page = parseInt(String(req.query.page ?? '1'), 10);
+  const limit = parseInt(String(req.query.limit ?? '20'), 10);
+  const result = await getBroadcastHistory(page, limit);
+  return res.status(200).json(successResponse(result));
+});
+
+export const deleteBroadcastLogController = asyncHandler(async (req: AuthRequest, res) => {
+  const { logId } = req.params;
+  await deleteBroadcastLog(logId);
+  return res.status(200).json(successResponse(null, 'Broadcast log deleted'));
 });
