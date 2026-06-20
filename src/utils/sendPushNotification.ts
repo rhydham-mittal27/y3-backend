@@ -1,91 +1,72 @@
+import admin from '../config/firebase';
 import logger from './logger';
 
-const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
-const EXPO_BATCH_SIZE = 100;
+const CHUNK_SIZE = 500; // FCM multicast limit
 
-const isValidExpoToken = (token: string | null | undefined): token is string =>
-  typeof token === 'string' &&
-  (token.startsWith('ExponentPushToken[') || token.startsWith('ExpoPushToken['));
-
-/** Send a single Expo push notification. Never throws. */
+/** Send a push notification to a single FCM token. Never throws. */
 export const sendPushNotification = async (
-  expoPushToken: string | null | undefined,
+  fcmToken: string | null | undefined,
   title: string,
   body: string,
-  data: Record<string, unknown> = {},
+  data: Record<string, string> = {},
 ): Promise<void> => {
-  if (!isValidExpoToken(expoPushToken)) {
-    logger.warn('[Push] Skipped — invalid or missing token', { expoPushToken });
+  if (!fcmToken) {
+    logger.warn('[Push] Skipped — no FCM token');
     return;
   }
-
+  if (!admin.apps.length) {
+    logger.warn('[Push] Skipped — Firebase not initialized');
+    return;
+  }
   try {
-    const res = await fetch(EXPO_PUSH_URL, {
-      method: 'POST',
-      headers: {
-        Accept: 'application/json',
-        'Accept-Encoding': 'gzip, deflate',
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ to: expoPushToken, title, body, data, sound: 'default' }),
-    });
-    const json = await res.json() as any;
-    const ticket = json?.data;
-    if (ticket?.status === 'error') {
-      logger.error('[Push] Expo rejected ticket', { error: ticket.message, details: ticket.details, token: expoPushToken });
-    } else {
-      logger.info('[Push] Sent', { token: expoPushToken, title });
-    }
-  } catch (err) {
-    logger.error('[Push] Network error sending to Expo', { err, token: expoPushToken });
+    await admin.messaging().send({ token: fcmToken, notification: { title, body }, data, android: { priority: 'high' }, apns: { payload: { aps: { sound: 'default' } } } });
+    logger.info('[Push] Sent to single device');
+  } catch (err: any) {
+    logger.error('[Push] Failed to send', { error: err?.message, code: err?.code });
   }
 };
 
 /**
- * Send push notifications to many users at once using Expo's batch API.
- * Splits into chunks of 100. Never throws — logs failures per chunk.
+ * Send push notifications to many FCM tokens using Firebase Admin multicast.
+ * Chunks into batches of 500. Never throws.
  */
 export const sendPushToMany = async (
   tokens: (string | null | undefined)[],
   title: string,
   body: string,
-  data: Record<string, unknown> = {},
+  data: Record<string, string> = {},
 ): Promise<void> => {
-  const valid = tokens.filter(isValidExpoToken) as string[];
+  if (!admin.apps.length) {
+    logger.warn('[Push] sendPushToMany skipped — Firebase not initialized. Is firebase-service-account.json present on the server?');
+    return;
+  }
+
+  const valid = tokens.filter((t): t is string => typeof t === 'string' && t.length > 10);
   if (valid.length === 0) {
-    logger.warn('[Push] sendPushToMany — no valid tokens', { total: tokens.length });
+    logger.warn('[Push] sendPushToMany — no valid FCM tokens', { total: tokens.length });
     return;
   }
 
   logger.info(`[Push] Sending to ${valid.length} devices (${tokens.length - valid.length} skipped — no token)`);
 
-  // Chunk into batches of 100
-  for (let i = 0; i < valid.length; i += EXPO_BATCH_SIZE) {
-    const chunk = valid.slice(i, i + EXPO_BATCH_SIZE);
-    const messages = chunk.map((to) => ({ to, title, body, data, sound: 'default' }));
-
+  for (let i = 0; i < valid.length; i += CHUNK_SIZE) {
+    const chunk = valid.slice(i, i + CHUNK_SIZE);
     try {
-      const res = await fetch(EXPO_PUSH_URL, {
-        method: 'POST',
-        headers: {
-          Accept: 'application/json',
-          'Accept-Encoding': 'gzip, deflate',
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(messages),
+      const result = await admin.messaging().sendEachForMulticast({
+        tokens: chunk,
+        notification: { title, body },
+        data,
+        android: { priority: 'high' },
+        apns: { payload: { aps: { sound: 'default' } } },
       });
-      const json = await res.json() as any;
-      const tickets: any[] = json?.data ?? [];
-      const errors = tickets.filter((t) => t.status === 'error');
-      if (errors.length) {
-        errors.forEach((t, i) => {
-          logger.error(`[Push] Ticket error #${i + 1}: ${t.message} | code: ${t.details?.error ?? 'unknown'} | fault: ${t.details?.fault ?? '-'}`);
-        });
-      } else {
-        logger.info(`[Push] Batch of ${chunk.length} delivered successfully`);
+
+      const failures = result.responses.filter((r) => !r.success);
+      if (failures.length) {
+        failures.forEach((r) => logger.error(`[Push] FCM error: ${r.error?.message} | code: ${r.error?.code}`));
       }
-    } catch (err) {
-      logger.error('[Push] Network error on batch', { batchStart: i, err });
+      logger.info(`[Push] Batch result: ${result.successCount} sent, ${result.failureCount} failed`);
+    } catch (err: any) {
+      logger.error('[Push] Batch send error', { error: err?.message, code: err?.code });
     }
   }
 };
