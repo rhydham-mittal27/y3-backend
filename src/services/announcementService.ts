@@ -10,7 +10,7 @@ import FinalClass from '../models/FinalClass';
 import Coordinator from '../models/Coordinator';
 import BroadcastLog from '../models/BroadcastLog';
 import ErrorResponse from '../utils/errorResponse';
-import { sendPushNotification } from '../utils/sendPushNotification';
+import { sendPushToMany } from '../utils/sendPushNotification';
 import { USER_ROLES, CLASS_LEAD_STATUS, MANAGER_ACTION_TYPE, CHANGE_ACTION } from '../config/constants';
 import { logManagerActivity } from './managerService';
 import { logChange } from './changeService';
@@ -842,9 +842,8 @@ export const sendAdminBroadcast = async (params: {
 
   // Expo push for tutors and parents only (fire-and-forget, never blocks)
   if (sendPush) {
-    Promise.allSettled(
-      users.map((u: any) => sendPushNotification(u.expoPushToken, subject, message))
-    );
+    const tokens = users.map((u: any) => u.expoPushToken);
+    sendPushToMany(tokens, subject, message).catch(() => {});
   }
 
   // Save to broadcast history
