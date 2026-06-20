@@ -9,6 +9,7 @@ import CoordinatorAnnouncement from '../models/CoordinatorAnnouncement';
 import FinalClass from '../models/FinalClass';
 import Coordinator from '../models/Coordinator';
 import ErrorResponse from '../utils/errorResponse';
+import { sendPushNotification } from '../utils/sendPushNotification';
 import { USER_ROLES, CLASS_LEAD_STATUS, MANAGER_ACTION_TYPE, CHANGE_ACTION } from '../config/constants';
 import { logManagerActivity } from './managerService';
 import { logChange } from './changeService';
@@ -807,18 +808,23 @@ export const getCoordinatorAnnouncementStats = async (coordinatorUserId: string)
 export const sendAdminBroadcast = async (params: {
   subject: string;
   message: string;
-  recipientGroup: 'ALL_MANAGERS' | 'ALL_COORDINATORS' | 'ALL_TEACHERS';
+  recipientGroup: 'ALL_MANAGERS' | 'ALL_COORDINATORS' | 'ALL_TEACHERS' | 'ALL_PARENTS';
 }) => {
   const { subject, message, recipientGroup } = params;
   const roleMap: Record<string, string> = {
     ALL_MANAGERS: USER_ROLES.MANAGER,
     ALL_COORDINATORS: USER_ROLES.COORDINATOR,
     ALL_TEACHERS: USER_ROLES.TUTOR,
+    ALL_PARENTS: USER_ROLES.PARENT,
   };
   const role = roleMap[recipientGroup];
   if (!role) throw new ErrorResponse('Invalid recipient group', 400);
 
-  const users = await User.find({ role, isActive: { $ne: false } }).select('_id').lean();
+  const sendPush = role === USER_ROLES.TUTOR || role === USER_ROLES.PARENT;
+
+  const users = await User.find({ role, isActive: { $ne: false } })
+    .select(sendPush ? '_id expoPushToken' : '_id')
+    .lean();
   if (users.length === 0) throw new ErrorResponse('No recipients found', 400);
 
   await Notification.insertMany(
@@ -830,6 +836,13 @@ export const sendAdminBroadcast = async (params: {
       relatedAnnouncement: null,
     }))
   );
+
+  // Expo push for tutors and parents only (fire-and-forget, never blocks)
+  if (sendPush) {
+    Promise.allSettled(
+      users.map((u: any) => sendPushNotification(u.expoPushToken, subject, message))
+    );
+  }
 
   return { recipientCount: users.length, recipientGroup };
 };
