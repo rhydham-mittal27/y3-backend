@@ -415,7 +415,7 @@ export const expressInterest = async (announcementId: string, tutorUserId: strin
 //   - verificationStatus ≠ VERIFIED
 //   - Subject overlap = 0
 //   - OFFLINE/HYBRID: tutor preferredCities must include lead city
-//   - preferredTutorGender is M/F and tutor gender doesn't match
+//   - preferredTutorGender is M/F (not ANY / NO_PREFERENCE) and tutor gender doesn't match
 //
 // 100% score → "Recommend for you" push notification sent to tutor
 // ─────────────────────────────────────────────────────────────────────────────
@@ -501,7 +501,7 @@ const passeHardFilters = (tutor: any, lead: any, tutorUserGender?: string): bool
 
   // Gender preference hard filter
   const prefGender = normalize(lead.preferredTutorGender);
-  if (prefGender && prefGender !== 'any') {
+  if (prefGender && prefGender !== 'any' && prefGender !== 'no_preference') {
     const tGender = normalize(tutorUserGender);
     if (tGender && tGender !== prefGender) return false;
   }
