@@ -78,7 +78,9 @@ export const sendPushToMany = async (
       const tickets: any[] = json?.data ?? [];
       const errors = tickets.filter((t) => t.status === 'error');
       if (errors.length) {
-        logger.error(`[Push] ${errors.length}/${chunk.length} tickets errored in batch`, { errors });
+        errors.forEach((t, i) => {
+          logger.error(`[Push] Ticket error #${i + 1}: ${t.message} | code: ${t.details?.error ?? 'unknown'} | fault: ${t.details?.fault ?? '-'}`);
+        });
       } else {
         logger.info(`[Push] Batch of ${chunk.length} delivered successfully`);
       }
