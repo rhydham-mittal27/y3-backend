@@ -905,7 +905,7 @@ export const forgotPassword = async (email: string) => {
     passwordResetExpires: expiresAt,
   });
 
-  const deepLink = `yourshikshak://reset-password?token=${plainToken}`;
+  const redirectUrl = `https://api.yourshikshak.in/api/auth/reset-password-redirect?token=${encodeURIComponent(plainToken)}`;
 
   await sendEmail(
     user.email,
@@ -922,7 +922,6 @@ export const forgotPassword = async (email: string) => {
         h2 { color: #0f172a; font-size: 22px; margin: 0 0 12px; }
         p { color: #475569; font-size: 15px; line-height: 1.6; margin: 0 0 20px; }
         .btn { display: block; background: linear-gradient(135deg, #1d4ed8, #3b82f6); color: #fff !important; text-decoration: none; text-align: center; padding: 16px 32px; border-radius: 12px; font-size: 16px; font-weight: 700; margin: 28px 0; }
-        .fallback { background: #f8fafc; border: 1.5px dashed #cbd5e1; border-radius: 10px; padding: 14px 18px; font-size: 13px; font-family: monospace; color: #475569; word-break: break-all; margin: 16px 0; }
         .note { font-size: 13px; color: #94a3b8; }
         .footer { margin-top: 32px; font-size: 12px; color: #94a3b8; text-align: center; border-top: 1px solid #e2e8f0; padding-top: 20px; }
       </style>
@@ -933,9 +932,7 @@ export const forgotPassword = async (email: string) => {
         <h2>Reset Your Password</h2>
         <p>Hi ${user.name},</p>
         <p>Tap the button below to open the YourShikshak app and reset your password instantly.</p>
-        <a href="${deepLink}" class="btn">Reset My Password</a>
-        <p class="note">Button not working? Copy and open this link manually:</p>
-        <div class="fallback">${deepLink}</div>
+        <a href="${redirectUrl}" class="btn">Reset My Password</a>
         <p class="note">⏱ This link expires in <strong>1 hour</strong>. If you did not request a password reset, you can safely ignore this email.</p>
         <div class="footer">YourShikshak · Empowering Education</div>
       </div>
