@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { register, login, refreshToken, logout, getMe, changePasswordHandler, sendLoginOtpHandler, resendLoginOtpHandler, verifyLoginOtpHandler, parentLoginLookupHandler, acceptTermsHandler, sendChangePasswordOtpHandler, resendChangePasswordOtpHandler, verifyChangePasswordOtpHandler, savePushTokenHandler, deleteAccountHandler, restoreAccountHandler, sendRegistrationOtpHandler, verifyRegistrationOtpHandler, debugPushTokenHandler, forgotPasswordHandler, resetPasswordHandler } from '../controllers/authController';
+import { register, login, refreshToken, logout, getMe, changePasswordHandler, sendLoginOtpHandler, resendLoginOtpHandler, verifyLoginOtpHandler, parentLoginLookupHandler, acceptTermsHandler, sendChangePasswordOtpHandler, resendChangePasswordOtpHandler, verifyChangePasswordOtpHandler, savePushTokenHandler, deleteAccountHandler, restoreAccountHandler, sendRegistrationOtpHandler, verifyRegistrationOtpHandler, debugPushTokenHandler, forgotPasswordHandler, resetPasswordHandler, resetPasswordRedirectHandler } from '../controllers/authController';
 import { registerValidation, loginValidation, refreshTokenValidation, sendLoginOtpValidation, verifyLoginOtpValidation, parentLoginLookupValidation, verifyChangePasswordOtpValidation } from '../validators/authValidator';
 import { changePasswordValidation } from '../validators/settingsValidator';
 import protect from '../middlewares/auth';
@@ -34,5 +34,6 @@ router.post('/email-otp/verify', verifyRegistrationOtpHandler);
 
 router.post('/forgot-password', forgotPasswordHandler);
 router.post('/reset-password', resetPasswordHandler);
+router.get('/reset-password-redirect', resetPasswordRedirectHandler);
 
 export default router;

@@ -342,6 +342,45 @@ export const verifyRegistrationOtpHandler = asyncHandler(async (req, res) => {
   return res.status(200).json(successResponse(null, 'Email verified successfully'));
 });
 
+export const resetPasswordRedirectHandler = asyncHandler(async (req, res) => {
+  const token = req.query.token as string;
+  if (!token) {
+    return res.status(400).send('Missing token.');
+  }
+  const deepLink = `yourshikshak://reset-password?token=${encodeURIComponent(token)}`;
+  return res.send(`<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Opening YourShikshak…</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', sans-serif; background: #f1f5f9; display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 24px; }
+    .card { background: #fff; border-radius: 20px; padding: 40px 32px; max-width: 400px; width: 100%; text-align: center; box-shadow: 0 8px 32px rgba(0,0,0,0.08); }
+    .logo { font-size: 20px; font-weight: 800; color: #1d4ed8; margin-bottom: 28px; }
+    .spinner { width: 48px; height: 48px; border: 4px solid #e2e8f0; border-top-color: #1d4ed8; border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 24px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    h2 { color: #0f172a; font-size: 20px; margin-bottom: 10px; }
+    p { color: #64748b; font-size: 14px; line-height: 1.6; margin-bottom: 24px; }
+    .btn { display: inline-block; background: #1d4ed8; color: #fff; text-decoration: none; padding: 14px 28px; border-radius: 12px; font-size: 15px; font-weight: 700; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="logo">✓ YourShikshak</div>
+    <div class="spinner"></div>
+    <h2>Opening the app…</h2>
+    <p>If the app doesn't open automatically, tap the button below.</p>
+    <a href="${deepLink}" class="btn">Open YourShikshak</a>
+  </div>
+  <script>
+    window.location.href = "${deepLink}";
+  </script>
+</body>
+</html>`);
+});
+
 export const forgotPasswordHandler = asyncHandler(async (req, res) => {
   const { email } = req.body;
   if (!email) throw new ErrorResponse('Email is required', 400);
