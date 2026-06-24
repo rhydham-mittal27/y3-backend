@@ -37,6 +37,8 @@ export interface IUserDocument extends SoftDeleteDocument {
   expoPushToken?: string;
   lastLoginAt?: Date;
   lastLoginDevice?: string;
+  passwordResetToken?: string | null;
+  passwordResetExpires?: Date | null;
   createdAt: Date;
   updatedAt: Date;
   comparePassword(enteredPassword: string): Promise<boolean>;
@@ -102,6 +104,8 @@ const UserSchema: Schema<IUserDocument> = new Schema<IUserDocument>(
     expoPushToken: { type: String, default: null },
     lastLoginAt: { type: Date },
     lastLoginDevice: { type: String },
+    passwordResetToken: { type: String, default: null, select: false },
+    passwordResetExpires: { type: Date, default: null, select: false },
   },
   { timestamps: true, toJSON: { virtuals: true }, toObject: { virtuals: true } }
 );

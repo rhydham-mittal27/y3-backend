@@ -2,7 +2,7 @@ import { validationResult } from 'express-validator';
 import asyncHandler from '../utils/asyncHandler';
 import { successResponse } from '../utils/responseFormatter';
 import ErrorResponse from '../utils/errorResponse';
-import { registerUser, loginUser, refreshAccessToken, logoutUser, changePassword, sendLoginOtp, resendLoginOtp, verifyLoginOtp, getParentEmailByClassName, acceptTerms, sendChangePasswordOtp, resendChangePasswordOtp, verifyChangePasswordWithOtp, restoreAndLoginUser, sendRegistrationOtp, verifyRegistrationOtp } from '../services/authService';
+import { registerUser, loginUser, refreshAccessToken, logoutUser, changePassword, sendLoginOtp, resendLoginOtp, verifyLoginOtp, getParentEmailByClassName, acceptTerms, sendChangePasswordOtp, resendChangePasswordOtp, verifyChangePasswordWithOtp, restoreAndLoginUser, sendRegistrationOtp, verifyRegistrationOtp, forgotPassword, resetPassword } from '../services/authService';
 import { createManagerProfile } from '../services/managerService';
 import { createCoordinator } from '../services/coordinatorService';
 import { USER_ROLES } from '../config/constants';
@@ -298,6 +298,12 @@ export const savePushTokenHandler = asyncHandler(async (req: AuthRequest, res) =
   return res.status(200).json(successResponse(null, 'Push token saved'));
 });
 
+export const debugPushTokenHandler = asyncHandler(async (req: AuthRequest, res) => {
+  if (!req.user) throw new ErrorResponse('Not authenticated', 401);
+  const user = await User.findById(req.user.id).select('name role expoPushToken').lean();
+  return res.status(200).json(successResponse({ name: (user as any)?.name, role: (user as any)?.role, expoPushToken: (user as any)?.expoPushToken ?? null }));
+});
+
 export const restoreAccountHandler = asyncHandler(async (req, res) => {
   const { email, password } = req.body as { email: string; password: string };
   if (!email || !password) throw new ErrorResponse('email and password are required', 400);
@@ -334,4 +340,18 @@ export const verifyRegistrationOtpHandler = asyncHandler(async (req, res) => {
   if (!email || !otp) throw new ErrorResponse('Email and OTP are required', 400);
   verifyRegistrationOtp(email, otp);
   return res.status(200).json(successResponse(null, 'Email verified successfully'));
+});
+
+export const forgotPasswordHandler = asyncHandler(async (req, res) => {
+  const { email } = req.body;
+  if (!email) throw new ErrorResponse('Email is required', 400);
+  await forgotPassword(email);
+  return res.status(200).json(successResponse(null, 'If that email is registered, a reset token has been sent.'));
+});
+
+export const resetPasswordHandler = asyncHandler(async (req, res) => {
+  const { token, newPassword } = req.body;
+  if (!token || !newPassword) throw new ErrorResponse('Token and new password are required', 400);
+  await resetPassword(token, newPassword);
+  return res.status(200).json(successResponse(null, 'Password reset successfully. You can now sign in.'));
 });
