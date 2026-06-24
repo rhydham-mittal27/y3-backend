@@ -888,3 +888,71 @@ export const restoreAndLoginUser = async (email: string, password: string) => {
   // Complete login via the standard flow now that the user is active again
   return loginUser(email, password);
 };
+
+export const forgotPassword = async (email: string) => {
+  const user = await findUserByEmailCandidates(email);
+  if (!user) {
+    // Don't reveal whether the email exists
+    return;
+  }
+
+  const plainToken = crypto.randomBytes(32).toString('hex');
+  const hashedToken = crypto.createHash('sha256').update(plainToken).digest('hex');
+  const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+  await User.findByIdAndUpdate(user._id, {
+    passwordResetToken: hashedToken,
+    passwordResetExpires: expiresAt,
+  });
+
+  await sendEmail(
+    user.email,
+    'YourShikshak — Reset Your Password',
+    `<!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <style>
+        body { font-family: 'Segoe UI', sans-serif; background: #f1f5f9; margin: 0; padding: 20px; }
+        .container { max-width: 520px; margin: 0 auto; background: #fff; border-radius: 16px; padding: 40px; box-shadow: 0 4px 24px rgba(0,0,0,0.08); }
+        .logo { font-size: 22px; font-weight: 800; color: #1d4ed8; margin-bottom: 24px; }
+        h2 { color: #0f172a; font-size: 22px; margin: 0 0 12px; }
+        p { color: #475569; font-size: 15px; line-height: 1.6; margin: 0 0 20px; }
+        .token-box { background: #f8fafc; border: 1.5px dashed #cbd5e1; border-radius: 10px; padding: 18px 24px; text-align: center; font-size: 22px; font-family: monospace; letter-spacing: 3px; color: #1d4ed8; font-weight: 700; margin: 24px 0; word-break: break-all; }
+        .note { font-size: 13px; color: #94a3b8; }
+        .footer { margin-top: 32px; font-size: 12px; color: #94a3b8; text-align: center; border-top: 1px solid #e2e8f0; padding-top: 20px; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <div class="logo">✓ YourShikshak</div>
+        <h2>Reset Your Password</h2>
+        <p>Hi ${user.name},</p>
+        <p>We received a request to reset your password. Copy the token below and paste it into the app to set a new password.</p>
+        <div class="token-box">${plainToken}</div>
+        <p class="note">⏱ This token expires in <strong>1 hour</strong>. If you did not request a password reset, you can safely ignore this email.</p>
+        <div class="footer">YourShikshak · Empowering Education</div>
+      </div>
+    </body>
+    </html>`,
+  );
+};
+
+export const resetPassword = async (token: string, newPassword: string) => {
+  const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
+
+  const user = await User.findOne({
+    passwordResetToken: hashedToken,
+    passwordResetExpires: { $gt: new Date() },
+  }).select('+password');
+
+  if (!user) throw new ErrorResponse('Invalid or expired reset token', 400);
+
+  if (newPassword.length < 6) throw new ErrorResponse('Password must be at least 6 characters', 400);
+
+  user.password = newPassword;
+  (user as any).passwordResetToken = null;
+  (user as any).passwordResetExpires = null;
+  await user.save();
+};
