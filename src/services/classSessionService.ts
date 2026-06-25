@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import ErrorResponse from '../utils/errorResponse';
 import FinalClass from '../models/FinalClass';
 import ClassSession, { IClassSessionDocument } from '../models/ClassSession';
+import Attendance from '../models/Attendance';
 
 const DAYS_ORDER = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY'];
 
@@ -107,6 +108,24 @@ export const generateClassSessionsForCycle = async (params: {
     sessionDocs.push(doc as any);
   }
 
+  // Back-fill status for sessions that already have an Attendance record.
+  // This handles the case where attendance was submitted before ClassSession records existed.
+  await Promise.all(
+    sessionDocs.map(async (session: any) => {
+      if (session.status !== 'PLANNED') return; // already COMPLETED or CANCELLED
+      const sessionDayStart = startOfDay(new Date(session.sessionDate));
+      const sessionDayEnd   = new Date(sessionDayStart.getTime() + 24 * 60 * 60 * 1000 - 1);
+      const attendance = await Attendance.findOne({
+        finalClass: cls._id,
+        sessionDate: { $gte: sessionDayStart, $lte: sessionDayEnd },
+      }).select('_id');
+      if (attendance) {
+        await ClassSession.findByIdAndUpdate(session._id, { $set: { status: 'COMPLETED' } });
+        session.status = 'COMPLETED';
+      }
+    })
+  );
+
   return sessionDocs;
 };
 
@@ -167,6 +186,23 @@ export const generateSessionsFromStartDate = async (params: {
     );
     sessionDocs.push(doc as any);
   }
+
+  // Back-fill COMPLETED status from existing attendance records
+  await Promise.all(
+    sessionDocs.map(async (session: any) => {
+      if (session.status !== 'PLANNED') return;
+      const sessionDayStart = startOfDay(new Date(session.sessionDate));
+      const sessionDayEnd   = new Date(sessionDayStart.getTime() + 24 * 60 * 60 * 1000 - 1);
+      const attendance = await Attendance.findOne({
+        finalClass: cls._id,
+        sessionDate: { $gte: sessionDayStart, $lte: sessionDayEnd },
+      }).select('_id');
+      if (attendance) {
+        await ClassSession.findByIdAndUpdate(session._id, { $set: { status: 'COMPLETED' } });
+        session.status = 'COMPLETED';
+      }
+    })
+  );
 
   return sessionDocs;
 };
@@ -242,10 +278,14 @@ export const getTutorSessionsForCycle = async (params: {
   const { tutorUserId, cycleMonth, cycleYear } = params;
   if (!cycleMonth || !cycleYear) throw new ErrorResponse('cycleMonth and cycleYear are required', 400);
 
+  // Query by sessionDate range to catch sessions whose cycleMonth/cycleYear
+  // may have been set from a different cycle window (e.g. spill-overs from prior month seed).
+  const monthStart = new Date(Date.UTC(cycleYear, cycleMonth - 1, 1));
+  const monthEnd   = new Date(Date.UTC(cycleYear, cycleMonth, 0, 23, 59, 59, 999));
+
   const sessions = await ClassSession.find({
     tutor: new mongoose.Types.ObjectId(tutorUserId),
-    cycleMonth,
-    cycleYear,
+    sessionDate: { $gte: monthStart, $lte: monthEnd },
     status: { $ne: 'CANCELLED' },
   })
     .populate({
@@ -265,10 +305,12 @@ export const getCoordinatorSessionsForCycle = async (params: {
   const { coordinatorUserId, cycleMonth, cycleYear } = params;
   if (!cycleMonth || !cycleYear) throw new ErrorResponse('cycleMonth and year are required', 400);
 
+  const monthStart = new Date(Date.UTC(cycleYear, cycleMonth - 1, 1));
+  const monthEnd   = new Date(Date.UTC(cycleYear, cycleMonth, 0, 23, 59, 59, 999));
+
   const sessions = await ClassSession.find({
     coordinator: new mongoose.Types.ObjectId(coordinatorUserId),
-    cycleMonth,
-    cycleYear,
+    sessionDate: { $gte: monthStart, $lte: monthEnd },
   })
     .populate({
       path: 'finalClass',
@@ -291,13 +333,15 @@ export const getClassSessionsForCycle = async (params: {
   const { classId, cycleMonth, cycleYear } = params;
   if (!cycleMonth || !cycleYear) throw new ErrorResponse('cycleMonth and year are required', 400);
 
+  const monthStart = new Date(Date.UTC(cycleYear, cycleMonth - 1, 1));
+  const monthEnd   = new Date(Date.UTC(cycleYear, cycleMonth, 0, 23, 59, 59, 999));
+
   const sessions = await ClassSession.find({
     $or: [
       { finalClass: new mongoose.Types.ObjectId(classId) },
       { groupClass: new mongoose.Types.ObjectId(classId) },
     ],
-    cycleMonth,
-    cycleYear,
+    sessionDate: { $gte: monthStart, $lte: monthEnd },
   })
     .populate({
       path: 'finalClass',

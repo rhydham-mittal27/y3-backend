@@ -15,6 +15,7 @@ import 'dotenv/config';
 import mongoose from 'mongoose';
 import FinalClass from '../models/FinalClass';
 import ClassSession from '../models/ClassSession';
+import Attendance from '../models/Attendance';
 import { generateClassSessionsForCycle } from '../services/classSessionService';
 
 const MONTHS_BACK   = 3;
@@ -105,8 +106,15 @@ async function run() {
         console.log(`  ${label} — ✓ generated ${docs.length} sessions`);
         totalGenerated += docs.length;
       } catch (err: any) {
-        console.error(`  ${label} — ✗ FAILED: ${err.message}`);
-        totalFailed++;
+        // E11000 = duplicate key — sessions for these dates already exist
+        // under a different cycleMonth key. Data is present; treat as skipped.
+        if (err.message?.includes('E11000') || err.code === 11000) {
+          console.log(`  ${label} — skipped (sessions already exist for these dates)`);
+          totalSkipped++;
+        } else {
+          console.error(`  ${label} — ✗ FAILED: ${err.message}`);
+          totalFailed++;
+        }
       }
     }
   }
@@ -117,6 +125,31 @@ async function run() {
   console.log(`Cycles skipped    : ${totalSkipped} (already had data)`);
   console.log(`Failures          : ${totalFailed}`);
   if (dryRun) console.log('\nRe-run with DRY_RUN=false to apply.');
+
+  // ── Status back-fill ────────────────────────────────────────────────────
+  // Mark PLANNED sessions as COMPLETED where an Attendance record already exists.
+  // This covers sessions that were seeded/skipped before attendance was recorded,
+  // or sessions whose cycleMonth mismatch caused them to be newly created despite
+  // matching attendance existing in the DB.
+  if (!dryRun) {
+    console.log('\n► Back-filling COMPLETED status from attendance records…');
+    const plannedSessions = await ClassSession.find({ status: 'PLANNED' }).select('_id finalClass sessionDate');
+    let statusFixed = 0;
+    for (const session of plannedSessions) {
+      const dayStart = new Date(session.sessionDate);
+      dayStart.setUTCHours(0, 0, 0, 0);
+      const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000 - 1);
+      const hasAttendance = await Attendance.exists({
+        finalClass: session.finalClass,
+        sessionDate: { $gte: dayStart, $lte: dayEnd },
+      });
+      if (hasAttendance) {
+        await ClassSession.findByIdAndUpdate(session._id, { $set: { status: 'COMPLETED' } });
+        statusFixed++;
+      }
+    }
+    console.log(`  Status fixed: ${statusFixed} sessions → COMPLETED`);
+  }
 }
 
 connect()
