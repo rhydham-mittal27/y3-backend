@@ -10,69 +10,9 @@ import { AuthRequest } from '../types';
 export const getMyTutorSessionsForCycleController = asyncHandler(async (req: AuthRequest, res) => {
   const month = Number(req.query.month);
   const year = Number(req.query.year);
-  const ensure = String(req.query.ensure || '').toLowerCase() === 'true';
   if (!month || !year) throw new ErrorResponse('month and year are required', 400);
-
-  if (ensure) {
-    const classes = await FinalClass.find({ tutor: req.user!.id, status: 'ACTIVE' }).select(
-      '_id schedule classesPerMonth tutor coordinator cycleStartPending currentCycleNumber'
-    );
-
-    let attempted = 0;
-    let generated = 0;
-    let skipped = 0;
-    let failed = 0;
-
-    for (const cls of classes) {
-      const classId = String((cls as any)._id);
-      try {
-        // Skip classes waiting for tutor to choose a start date
-        if ((cls as any).cycleStartPending) {
-          skipped += 1;
-          continue;
-        }
-
-        const sched: any = (cls as any).schedule || {};
-        const hasSchedule =
-          sched &&
-          Array.isArray(sched.daysOfWeek) &&
-          sched.daysOfWeek.length > 0 &&
-          Boolean(String(sched.timeSlot || '').trim());
-
-        const n = Number((cls as any).classesPerMonth || 0);
-        const hasMonthlyCount = Number.isFinite(n) && n > 0;
-
-        if (!hasSchedule || !hasMonthlyCount) {
-          skipped += 1;
-          continue;
-        }
-
-        attempted += 1;
-        await generateClassSessionsForCycle({
-          classId,
-          cycleMonth: month,
-          cycleYear: year,
-          actorUserId: req.user!.id,
-        });
-        generated += 1;
-      } catch (err: any) {
-        failed += 1;
-        const message = err?.message || String(err);
-        console.warn('[class-sessions][ensure] generation failed', { classId, month, year, message });
-      }
-    }
-
-    console.log('[class-sessions][ensure] summary', {
-      tutorId: req.user!.id,
-      month,
-      year,
-      totalClasses: classes.length,
-      skipped,
-      attempted,
-      generated,
-      failed,
-    });
-  }
+  // `ensure` param is intentionally ignored — sessions are generated on first attendance,
+  // not on every timetable fetch.
 
   const sessions = await getTutorSessionsForCycle({
     tutorUserId: req.user!.id,
@@ -121,42 +61,8 @@ export const generateSessionsForClassCycleController = asyncHandler(async (req: 
 export const getMyCoordinatorSessionsForCycleController = asyncHandler(async (req: AuthRequest, res) => {
   const month = Number(req.query.month);
   const year = Number(req.query.year);
-  const ensure = String(req.query.ensure || '').toLowerCase() === 'true';
   if (!month || !year) throw new ErrorResponse('month and year are required', 400);
-
-  if (ensure) {
-    const classes = await FinalClass.find({ coordinator: req.user!.id, status: 'ACTIVE' }).select(
-      '_id schedule classesPerMonth tutor coordinator cycleStartPending'
-    );
-
-    for (const cls of classes) {
-      const classId = String((cls as any)._id);
-      try {
-        if ((cls as any).cycleStartPending) continue;
-
-        const sched: any = (cls as any).schedule || {};
-        const hasSchedule =
-          sched &&
-          Array.isArray(sched.daysOfWeek) &&
-          sched.daysOfWeek.length > 0 &&
-          Boolean(String(sched.timeSlot || '').trim());
-
-        const n = Number((cls as any).classesPerMonth || 0);
-        const hasMonthlyCount = Number.isFinite(n) && n > 0;
-
-        if (!hasSchedule || !hasMonthlyCount) continue;
-
-        await generateClassSessionsForCycle({
-          classId,
-          cycleMonth: month,
-          cycleYear: year,
-          actorUserId: req.user!.id,
-        });
-      } catch (err: any) {
-        console.warn('[class-sessions][coordinator-ensure] generation failed', { classId, month, year });
-      }
-    }
-  }
+  // `ensure` param ignored — sessions generated on tutor cycle-start, not on fetch.
 
   const sessions = await getCoordinatorSessionsForCycle({
     coordinatorUserId: req.user!.id,
@@ -171,21 +77,17 @@ export const getClassSessionsController = asyncHandler(async (req: AuthRequest, 
   const classId = req.params.classId;
   const month = Number(req.query.month);
   const year = Number(req.query.year);
-  const ensure = String(req.query.ensure || '').toLowerCase() === 'true';
 
   if (!classId || !month || !year) {
     throw new ErrorResponse('classId, month and year are required', 400);
   }
 
-  // 1. Authorization check
-  const cls = await FinalClass.findById(classId).select('tutor coordinator status schedule classesPerMonth cycleStartPending');
-  // Handle group class fallback if not found in FinalClass
+  const cls = await FinalClass.findById(classId).select('tutor coordinator status');
   let classEntity = cls;
   if (!classEntity) {
     const GroupClass = (await import('../models/GroupClass')).default;
     classEntity = await GroupClass.findById(classId) as any;
   }
-  
   if (!classEntity) throw new ErrorResponse('Class not found', 404);
 
   const isAdmin = req.user?.role === USER_ROLES.ADMIN;
@@ -197,32 +99,6 @@ export const getClassSessionsController = asyncHandler(async (req: AuthRequest, 
     throw new ErrorResponse('Not authorized to view sessions for this class', 403);
   }
 
-  // 2. Optional session generation — skip for classes waiting on tutor start date
-  if (ensure && classEntity.status === 'ACTIVE' && !(classEntity as any).cycleStartPending) {
-    try {
-      const sched: any = (classEntity as any).schedule || {};
-      const hasSchedule =
-        sched &&
-        Array.isArray(sched.daysOfWeek) &&
-        sched.daysOfWeek.length > 0 &&
-        Boolean(String(sched.timeSlot || '').trim());
-
-      const n = Number((classEntity as any).classesPerMonth || (classEntity as any).sessionsPerMonth || 0);
-      
-      if (hasSchedule && n > 0) {
-        await generateClassSessionsForCycle({
-          classId,
-          cycleMonth: month,
-          cycleYear: year,
-          actorUserId: req.user!.id,
-        });
-      }
-    } catch (err: any) {
-      console.warn('[class-sessions][getClassSessionsController] generation failed', { classId, month, year });
-    }
-  }
-
-  // 3. Fetch
   const sessions = await import('../services/classSessionService').then(s => s.getClassSessionsForCycle({
     classId,
     cycleMonth: month,
