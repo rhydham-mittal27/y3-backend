@@ -349,6 +349,210 @@ export const submitParentTutorRequest = async (
   };
 };
 
+// ─── Parent Sessions (Classes tab) ────────────────────────────────────────────
+
+import Payment from '../models/Payment';
+import { ATTENDANCE_STATUS, PAYMENT_STATUS, PAYMENT_TYPE } from '../config/constants';
+
+export const getParentSessionsData = async (userId: string, month?: string) => {
+  const activeClass = await FinalClass.findOne({ parent: userId, status: 'ACTIVE' });
+  if (!activeClass) throw new ErrorResponse('No active class found', 404);
+
+  let year: number, mon: number;
+  if (month) {
+    const [y, m] = month.split('-').map(Number);
+    year = y; mon = m;
+  } else {
+    const now = new Date();
+    year = now.getFullYear(); mon = now.getMonth() + 1;
+  }
+
+  const monthStart = new Date(year, mon - 1, 1);
+  const monthEnd   = new Date(year, mon, 1);
+
+  const [sessions, attendanceRecords] = await Promise.all([
+    ClassSession.find({
+      finalClass: activeClass._id,
+      sessionDate: { $gte: monthStart, $lt: monthEnd },
+    }).sort({ sessionDate: 1 }).select('sessionDate timeSlot sessionNumber status'),
+
+    Attendance.find({
+      finalClass: activeClass._id,
+      sessionDate: { $gte: monthStart, $lt: monthEnd },
+    }).select('sessionDate status studentAttendanceStatus topicCovered notes parentApprovedBy parentApprovedAt swotAnalysis resources'),
+  ]);
+
+  // Index attendance by date string for O(1) lookup
+  const attByDate = new Map<string, typeof attendanceRecords[0]>();
+  for (const a of attendanceRecords) {
+    attByDate.set((a.sessionDate as Date).toISOString().slice(0, 10), a);
+  }
+
+  const presentCount = attendanceRecords.filter(
+    (a) => a.studentAttendanceStatus === 'PRESENT' || a.studentAttendanceStatus === 'LATE',
+  ).length;
+  const totalDone = attendanceRecords.length;
+
+  const mappedSessions = sessions.map((s) => {
+    const dateKey = (s.sessionDate as Date).toISOString().slice(0, 10);
+    const att = attByDate.get(dateKey);
+    const parentVerified = att ? !!(att.parentApprovedBy) : false;
+    const attStatus: 'PENDING' | 'VERIFIED' | 'ABSENT' | 'PLANNED' = att
+      ? (parentVerified ? 'VERIFIED' : att.studentAttendanceStatus === 'ABSENT' ? 'ABSENT' : 'PENDING')
+      : (s.status === 'PLANNED' ? 'PLANNED' : 'PENDING');
+
+    return {
+      _id:           s._id,
+      sessionDate:   (s.sessionDate as Date).toISOString(),
+      timeSlot:      s.timeSlot,
+      sessionNumber: s.sessionNumber,
+      sessionStatus: s.status,
+      attendanceStatus: attStatus,
+      attendanceId:  att?._id ?? null,
+      topicCovered:  att?.topicCovered ?? null,
+      tutorNote:     att?.notes ?? null,
+      resources:     att?.resources ?? [],
+      swot:          att?.swotAnalysis ?? null,
+      parentVerified,
+      parentVerifiedAt: att?.parentApprovedAt?.toISOString() ?? null,
+    };
+  });
+
+  return {
+    month: `${year}-${String(mon).padStart(2, '0')}`,
+    classId: activeClass._id,
+    studentName: activeClass.studentName,
+    attendancePercentage: totalDone > 0 ? Math.round((presentCount / totalDone) * 100) : null,
+    presentCount,
+    totalDone,
+    sessions: mappedSessions,
+  };
+};
+
+export const verifyParentAttendanceRecord = async (
+  userId: string,
+  attendanceId: string,
+  verified: boolean,
+) => {
+  const att = await Attendance.findById(attendanceId);
+  if (!att) throw new ErrorResponse('Attendance record not found', 404);
+
+  // Ensure this attendance belongs to a class the parent owns
+  const cls = await FinalClass.findOne({ _id: att.finalClass, parent: userId });
+  if (!cls) throw new ErrorResponse('Not authorised', 403);
+
+  if (att.parentApprovedBy) throw new ErrorResponse('Already verified', 409);
+
+  if (verified) {
+    att.parentApprovedBy = userId as any;
+    att.parentApprovedAt = new Date();
+    // Escalate status if coordinator already approved
+    if (att.status === ATTENDANCE_STATUS.COORDINATOR_APPROVED) {
+      att.status = ATTENDANCE_STATUS.APPROVED;
+    } else {
+      att.status = ATTENDANCE_STATUS.PARENT_APPROVED;
+    }
+  }
+  await att.save();
+
+  return { verified, attendanceId: att._id, status: att.status };
+};
+
+export const requestParentReschedule = async (
+  userId: string,
+  payload: { sessionId: string; requestedDate: string; requestedTime: string; reason?: string },
+) => {
+  const session = await ClassSession.findById(payload.sessionId);
+  if (!session) throw new ErrorResponse('Session not found', 404);
+
+  const cls = await FinalClass.findOne({ _id: session.finalClass, parent: userId });
+  if (!cls) throw new ErrorResponse('Not authorised', 403);
+
+  // Store as a oneTimeReschedule on the FinalClass (coordinator processes it)
+  const entry = {
+    fromDate:  session.sessionDate as Date,
+    toDate:    new Date(payload.requestedDate),
+    timeSlot:  payload.requestedTime,
+  };
+
+  await FinalClass.findByIdAndUpdate(cls._id, {
+    $push: { oneTimeReschedules: entry },
+  });
+
+  // Notify coordinator if exists
+  if (cls.coordinator) {
+    const parentUser = await User.findById(userId).select('name');
+    await Notification.create({
+      recipient: cls.coordinator,
+      type:      'GENERAL',
+      title:     `Reschedule Request — ${cls.studentName}`,
+      message:   `${parentUser?.name ?? 'Parent'} requested to reschedule session on ${entry.fromDate.toDateString()} to ${entry.toDate.toDateString()} at ${entry.timeSlot}. ${payload.reason ?? ''}`.trim(),
+    });
+  }
+
+  return { requested: true, fromDate: entry.fromDate, toDate: entry.toDate, timeSlot: entry.timeSlot };
+};
+
+// ─── Parent Payments ──────────────────────────────────────────────────────────
+
+export const getParentPaymentsData = async (userId: string) => {
+  const activeClass = await FinalClass.findOne({ parent: userId, status: 'ACTIVE' });
+  if (!activeClass) throw new ErrorResponse('No active class found', 404);
+
+  const payments = await Payment.find({
+    finalClass: activeClass._id,
+    paymentType: PAYMENT_TYPE.FEES_COLLECTED,
+  })
+    .sort({ dueDate: -1 })
+    .select('amount currency status paymentMethod paymentDate dueDate cycleMonth cycleYear notes transactionId');
+
+  const nextPayment = payments.find(
+    (p) => p.status === PAYMENT_STATUS.PENDING || p.status === PAYMENT_STATUS.OVERDUE,
+  ) ?? null;
+
+  const subjectLabel = (activeClass.subject as any[])
+    .map((s: any) => s?.label ?? String(s))
+    .filter(Boolean)
+    .join(', ');
+
+  // Value summary: classes done, subjects, fees paid
+  const paidPayments = payments.filter((p) => p.status === PAYMENT_STATUS.PAID);
+  const totalPaid    = paidPayments.reduce((sum, p) => sum + p.amount, 0);
+
+  return {
+    valueSummary: {
+      completedSessions: activeClass.completedSessions ?? 0,
+      subjectsActive:    (activeClass.subject as any[]).length,
+      amountInvested:    totalPaid,
+      currency:          'INR',
+    },
+    nextPayment: nextPayment
+      ? {
+          _id:       nextPayment._id,
+          amount:    nextPayment.amount,
+          currency:  nextPayment.currency,
+          status:    nextPayment.status,
+          dueDate:   (nextPayment.dueDate as Date).toISOString(),
+          cycleMonth: nextPayment.cycleMonth,
+          cycleYear:  nextPayment.cycleYear,
+          label:     subjectLabel,
+        }
+      : null,
+    history: payments.map((p) => ({
+      _id:           p._id,
+      amount:        p.amount,
+      currency:      p.currency,
+      status:        p.status,
+      paymentMethod: p.paymentMethod ?? null,
+      paymentDate:   p.paymentDate ? (p.paymentDate as Date).toISOString() : null,
+      dueDate:       (p.dueDate as Date).toISOString(),
+      cycleMonth:    p.cycleMonth,
+      cycleYear:     p.cycleYear,
+      label:         subjectLabel,
+    })),
+  };
+};
+
 export const raiseParentConcern = async (
   userId: string,
   finalClassId: string,

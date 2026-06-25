@@ -9,6 +9,10 @@ import {
   getParentDashboardData,
   submitParentTutorRequest,
   raiseParentConcern,
+  getParentSessionsData,
+  verifyParentAttendanceRecord,
+  requestParentReschedule,
+  getParentPaymentsData,
 } from "../services/parentService";
 import { AuthRequest } from "../types";
 
@@ -172,6 +176,44 @@ export const raiseParentConcernController = asyncHandler(
   },
 );
 
+/** GET /api/v1/parents/sessions?month=YYYY-MM */
+export const getParentSessions = asyncHandler(async (req: AuthRequest, res) => {
+  const userId = req.user?.id;
+  if (!userId) throw new ErrorResponse("Not authenticated", 401);
+  const month = typeof req.query.month === "string" ? req.query.month : undefined;
+  const data = await getParentSessionsData(userId, month);
+  return res.status(200).json(successResponse(data, "Sessions loaded."));
+});
+
+/** POST /api/v1/parents/attendance/verify */
+export const verifyAttendance = asyncHandler(async (req: AuthRequest, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) throw new ErrorResponse(errors.array()[0].msg, 400);
+  const userId = req.user?.id;
+  if (!userId) throw new ErrorResponse("Not authenticated", 401);
+  const { attendanceId, verified } = req.body;
+  const result = await verifyParentAttendanceRecord(userId, attendanceId, verified ?? true);
+  return res.status(200).json(successResponse(result, "Attendance verified."));
+});
+
+/** POST /api/v1/parents/reschedule */
+export const requestReschedule = asyncHandler(async (req: AuthRequest, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) throw new ErrorResponse(errors.array()[0].msg, 400);
+  const userId = req.user?.id;
+  if (!userId) throw new ErrorResponse("Not authenticated", 401);
+  const result = await requestParentReschedule(userId, req.body);
+  return res.status(201).json(successResponse(result, "Reschedule request submitted."));
+});
+
+/** GET /api/v1/parents/payments */
+export const getParentPayments = asyncHandler(async (req: AuthRequest, res) => {
+  const userId = req.user?.id;
+  if (!userId) throw new ErrorResponse("Not authenticated", 401);
+  const data = await getParentPaymentsData(userId);
+  return res.status(200).json(successResponse(data, "Payments loaded."));
+});
+
 export default {
   registerParentLead,
   registerParent,
@@ -179,4 +221,8 @@ export default {
   getParentDashboard,
   submitTutorRequest,
   raiseParentConcernController,
+  getParentSessions,
+  verifyAttendance,
+  requestReschedule,
+  getParentPayments,
 };
