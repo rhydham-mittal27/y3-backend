@@ -6,6 +6,10 @@ import {
   getParentDashboard,
   submitTutorRequest,
   raiseParentConcernController,
+  getParentSessions,
+  verifyAttendance,
+  requestReschedule,
+  getParentPayments,
 } from '../controllers/parentLeadController';
 import { registerParentValidation } from '../validators/parentValidator';
 import protect from '../middlewares/auth';
@@ -52,5 +56,35 @@ router.post(
   ],
   raiseParentConcernController,
 );
+
+// GET /api/v1/parents/sessions?month=YYYY-MM
+router.get('/sessions', ...parentOnly, getParentSessions);
+
+// POST /api/v1/parents/attendance/verify
+router.post(
+  '/attendance/verify',
+  ...parentOnly,
+  [
+    body('attendanceId').notEmpty().isMongoId().withMessage('Valid attendanceId required'),
+    body('verified').optional().isBoolean(),
+  ],
+  verifyAttendance,
+);
+
+// POST /api/v1/parents/reschedule
+router.post(
+  '/reschedule',
+  ...parentOnly,
+  [
+    body('sessionId').notEmpty().isMongoId().withMessage('Valid sessionId required'),
+    body('requestedDate').notEmpty().isISO8601().withMessage('Valid requestedDate (ISO) required'),
+    body('requestedTime').notEmpty().trim().withMessage('requestedTime is required'),
+    body('reason').optional().trim().isLength({ max: 500 }),
+  ],
+  requestReschedule,
+);
+
+// GET /api/v1/parents/payments
+router.get('/payments', ...parentOnly, getParentPayments);
 
 export default router;
