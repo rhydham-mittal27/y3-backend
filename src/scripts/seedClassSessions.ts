@@ -1,10 +1,14 @@
 /**
  * seedClassSessions.ts
  *
- * One-time backfill: ensures every eligible ACTIVE FinalClass has ClassSession
- * records in MongoDB for the rolling window: 3 months back → 2 months ahead.
+ * Backfill: for each ACTIVE FinalClass that has Attendance records but no
+ * ClassSession records, generates sessions using the first attendance date as
+ * the anchor (matching how the CycleStartDialog works for new classes).
  *
- * Safe to re-run — generation is idempotent (upsert on finalClass+cycle+sessionNumber).
+ * Also back-fills COMPLETED status on any PLANNED session that already has an
+ * Attendance record for the same date.
+ *
+ * Safe to re-run — skips classes that already have ClassSession records.
  *
  * Usage:
  *   DRY_RUN=true  npx ts-node -r tsconfig-paths/register src/scripts/seedClassSessions.ts
@@ -16,10 +20,7 @@ import mongoose from 'mongoose';
 import FinalClass from '../models/FinalClass';
 import ClassSession from '../models/ClassSession';
 import Attendance from '../models/Attendance';
-import { generateClassSessionsForCycle } from '../services/classSessionService';
-
-const MONTHS_BACK   = 3;
-const MONTHS_AHEAD  = 2;
+import { generateSessionsFromStartDate } from '../services/classSessionService';
 
 async function connect() {
   const uri = process.env.MONGODB_URI || process.env.DATABASE_URL || '';
@@ -28,30 +29,11 @@ async function connect() {
   console.log('✓ Connected to MongoDB');
 }
 
-function monthsInWindow(): Array<{ month: number; year: number }> {
-  const now   = new Date();
-  const cur   = { month: now.getMonth() + 1, year: now.getFullYear() };
-  const result: Array<{ month: number; year: number }> = [];
-
-  for (let delta = -MONTHS_BACK; delta <= MONTHS_AHEAD; delta++) {
-    let m = cur.month + delta;
-    let y = cur.year;
-    while (m < 1)  { m += 12; y -= 1; }
-    while (m > 12) { m -= 12; y += 1; }
-    result.push({ month: m, year: y });
-  }
-  return result;
-}
-
 async function run() {
   const dryRun = String(process.env.DRY_RUN ?? 'true').toLowerCase() !== 'false';
-  console.log(`\n[seedClassSessions] DRY_RUN=${dryRun}`);
-  console.log(`Window: ${MONTHS_BACK} months back → ${MONTHS_AHEAD} months ahead\n`);
+  console.log(`\n[seedClassSessions] DRY_RUN=${dryRun}\n`);
 
-  const window = monthsInWindow();
-  console.log('Months to process:', window.map(w => `${w.year}-${String(w.month).padStart(2,'0')}`).join(', '));
-
-  // Eligible: ACTIVE, has schedule, has daysOfWeek + timeSlot, has classesPerMonth, NOT cycleStartPending
+  // All eligible ACTIVE classes (has schedule + classesPerMonth, not cycleStartPending)
   const classes = await FinalClass.find({
     status: 'ACTIVE',
     'schedule.daysOfWeek': { $exists: true, $not: { $size: 0 } },
@@ -61,9 +43,9 @@ async function run() {
       { cycleStartPending: { $exists: false } },
       { cycleStartPending: false },
     ],
-  }).select('_id className studentName schedule classesPerMonth cycleStartPending');
+  }).select('_id className studentName schedule classesPerMonth currentCycleNumber');
 
-  console.log(`\nFound ${classes.length} eligible ACTIVE classes\n`);
+  console.log(`Found ${classes.length} eligible ACTIVE classes\n`);
 
   let totalGenerated = 0;
   let totalSkipped   = 0;
@@ -71,66 +53,67 @@ async function run() {
 
   for (const cls of classes) {
     const schedule: any = cls.schedule || {};
-    const days    = (schedule.daysOfWeek || []).join(', ');
-    const slot    = schedule.timeSlot || '—';
-    console.log(`\n► ${cls.className} (${cls.studentName}) | ${days} @ ${slot} | ${cls.classesPerMonth}x/mo`);
+    const days = (schedule.daysOfWeek || []).join(', ');
+    const slot = schedule.timeSlot || '—';
+    console.log(`► ${cls.className} (${cls.studentName}) | ${days} @ ${slot} | ${cls.classesPerMonth}x/mo`);
 
-    for (const { month, year } of window) {
-      const label = `${year}-${String(month).padStart(2,'0')}`;
+    // Check if sessions already exist for this class
+    const existingCount = await ClassSession.countDocuments({ finalClass: cls._id });
+    if (existingCount > 0) {
+      console.log(`  → already has ${existingCount} sessions, skipping\n`);
+      totalSkipped++;
+      continue;
+    }
 
-      // Check if sessions already exist for this cycle
-      const existing = await ClassSession.countDocuments({
-        finalClass: cls._id,
-        cycleYear:  year,
-        cycleMonth: month,
+    // Find the first attendance record for this class
+    const firstAttendance = await Attendance.findOne({ finalClass: cls._id })
+      .sort({ sessionDate: 1 })
+      .select('sessionDate');
+
+    if (!firstAttendance) {
+      console.log(`  → no attendance records found, skipping (will generate when first class happens)\n`);
+      totalSkipped++;
+      continue;
+    }
+
+    const startDate = firstAttendance.sessionDate;
+    console.log(`  → first attendance: ${startDate.toISOString().split('T')[0]}`);
+
+    if (dryRun) {
+      console.log(`  → [DRY RUN] would generate ${cls.classesPerMonth} sessions from ${startDate.toISOString().split('T')[0]}\n`);
+      totalGenerated++;
+      continue;
+    }
+
+    try {
+      const cycleNumber = (cls as any).currentCycleNumber || 1;
+      const docs = await generateSessionsFromStartDate({
+        classId:     String(cls._id),
+        startDate,
+        cycleNumber,
       });
-
-      if (existing > 0) {
-        console.log(`  ${label} — already has ${existing} sessions, skipping`);
+      console.log(`  → ✓ generated ${docs.length} sessions\n`);
+      totalGenerated += docs.length;
+    } catch (err: any) {
+      if (err.message?.includes('E11000') || err.code === 11000) {
+        console.log(`  → skipped (sessions already exist for these dates)\n`);
         totalSkipped++;
-        continue;
-      }
-
-      if (dryRun) {
-        console.log(`  ${label} — [DRY RUN] would generate ${cls.classesPerMonth} sessions`);
-        totalGenerated++;
-        continue;
-      }
-
-      try {
-        const docs = await generateClassSessionsForCycle({
-          classId:    String(cls._id),
-          cycleMonth: month,
-          cycleYear:  year,
-        });
-        console.log(`  ${label} — ✓ generated ${docs.length} sessions`);
-        totalGenerated += docs.length;
-      } catch (err: any) {
-        // E11000 = duplicate key — sessions for these dates already exist
-        // under a different cycleMonth key. Data is present; treat as skipped.
-        if (err.message?.includes('E11000') || err.code === 11000) {
-          console.log(`  ${label} — skipped (sessions already exist for these dates)`);
-          totalSkipped++;
-        } else {
-          console.error(`  ${label} — ✗ FAILED: ${err.message}`);
-          totalFailed++;
-        }
+      } else {
+        console.error(`  → ✗ FAILED: ${err.message}\n`);
+        totalFailed++;
       }
     }
   }
 
-  console.log('\n─────────────────────────────────');
+  console.log('─────────────────────────────────');
   console.log(`Classes processed : ${classes.length}`);
   console.log(`Sessions generated: ${totalGenerated}${dryRun ? ' (dry run)' : ''}`);
-  console.log(`Cycles skipped    : ${totalSkipped} (already had data)`);
+  console.log(`Skipped           : ${totalSkipped}`);
   console.log(`Failures          : ${totalFailed}`);
   if (dryRun) console.log('\nRe-run with DRY_RUN=false to apply.');
 
-  // ── Status back-fill ────────────────────────────────────────────────────
+  // ── Status back-fill ──────────────────────────────────────────────────────
   // Mark PLANNED sessions as COMPLETED where an Attendance record already exists.
-  // This covers sessions that were seeded/skipped before attendance was recorded,
-  // or sessions whose cycleMonth mismatch caused them to be newly created despite
-  // matching attendance existing in the DB.
   if (!dryRun) {
     console.log('\n► Back-filling COMPLETED status from attendance records…');
     const plannedSessions = await ClassSession.find({ status: 'PLANNED' }).select('_id finalClass sessionDate');
