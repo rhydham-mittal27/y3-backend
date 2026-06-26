@@ -354,6 +354,12 @@ export const submitParentTutorRequest = async (
 import Payment from '../models/Payment';
 import { ATTENDANCE_STATUS, PAYMENT_STATUS, PAYMENT_TYPE } from '../config/constants';
 
+/** Returns date as IST YYYY-MM-DD, avoiding UTC-shift timezone bugs */
+const toLocalDateString = (d: Date): string => {
+  const ist = new Date(d.getTime() + 5.5 * 60 * 60 * 1000);
+  return ist.toISOString().slice(0, 10);
+};
+
 export const getParentSessionsData = async (userId: string, month?: string) => {
   const activeClass = await FinalClass.findOne({ parent: userId, status: 'ACTIVE' });
   if (!activeClass) throw new ErrorResponse('No active class found', 404);
@@ -385,7 +391,7 @@ export const getParentSessionsData = async (userId: string, month?: string) => {
   // Index attendance by date string for O(1) lookup
   const attByDate = new Map<string, typeof attendanceRecords[0]>();
   for (const a of attendanceRecords) {
-    attByDate.set((a.sessionDate as Date).toISOString().slice(0, 10), a);
+    attByDate.set(toLocalDateString(a.sessionDate as Date), a);
   }
 
   const presentCount = attendanceRecords.filter(
@@ -394,7 +400,7 @@ export const getParentSessionsData = async (userId: string, month?: string) => {
   const totalDone = attendanceRecords.length;
 
   const mappedSessions = sessions.map((s) => {
-    const dateKey = (s.sessionDate as Date).toISOString().slice(0, 10);
+    const dateKey = toLocalDateString(s.sessionDate as Date);
     const att = attByDate.get(dateKey);
     const parentVerified = att ? !!(att.parentApprovedBy) : false;
     const attStatus: 'PENDING' | 'VERIFIED' | 'ABSENT' | 'PLANNED' = att
@@ -402,17 +408,17 @@ export const getParentSessionsData = async (userId: string, month?: string) => {
       : (s.status === 'PLANNED' ? 'PLANNED' : 'PENDING');
 
     return {
-      _id:           s._id,
-      sessionDate:   (s.sessionDate as Date).toISOString(),
-      timeSlot:      s.timeSlot,
-      sessionNumber: s.sessionNumber,
-      sessionStatus: s.status,
+      _id:             s._id,
+      sessionDate:     toLocalDateString(s.sessionDate as Date),
+      timeSlot:        s.timeSlot,
+      sessionNumber:   s.sessionNumber,
+      status:          s.status === 'PLANNED' ? 'SCHEDULED' : s.status,
       attendanceStatus: attStatus,
-      attendanceId:  att?._id ?? null,
-      topicCovered:  att?.topicCovered ?? null,
-      tutorNote:     att?.notes ?? null,
-      resources:     att?.resources ?? [],
-      swot:          att?.swotAnalysis ?? null,
+      attendanceId:    att?._id ?? null,
+      topicsCovered:   att?.topicCovered ? [att.topicCovered] : [],
+      tutorNote:       att?.notes ?? null,
+      resources:       att?.resources ?? [],
+      swot:            att?.swotAnalysis ?? null,
       parentVerified,
       parentVerifiedAt: att?.parentApprovedAt?.toISOString() ?? null,
     };
@@ -496,7 +502,7 @@ export const requestParentReschedule = async (
 // ─── Parent Payments ──────────────────────────────────────────────────────────
 
 export const getParentPaymentsData = async (userId: string) => {
-  const activeClass = await FinalClass.findOne({ parent: userId, status: 'ACTIVE' });
+  const activeClass = await FinalClass.findOne({ parent: userId, status: 'ACTIVE' }).populate('subject', 'label value');
   if (!activeClass) throw new ErrorResponse('No active class found', 404);
 
   const payments = await Payment.find({
@@ -504,51 +510,52 @@ export const getParentPaymentsData = async (userId: string) => {
     paymentType: PAYMENT_TYPE.FEES_COLLECTED,
   })
     .sort({ dueDate: -1 })
-    .select('amount currency status paymentMethod paymentDate dueDate cycleMonth cycleYear notes transactionId');
+    .select('paymentId amount currency status paymentMethod paymentDate dueDate cycleMonth cycleYear notes transactionId');
 
   const nextPayment = payments.find(
     (p) => p.status === PAYMENT_STATUS.PENDING || p.status === PAYMENT_STATUS.OVERDUE,
   ) ?? null;
 
-  const subjectLabel = (activeClass.subject as any[])
-    .map((s: any) => s?.label ?? String(s))
-    .filter(Boolean)
-    .join(', ');
+  const rawSubjects = (activeClass.subject as any[]) ?? [];
+  const subjectLabel =
+    rawSubjects
+      .map((s: any) => s?.label ?? s?.value ?? null)
+      .filter(Boolean)
+      .join(', ') || (activeClass as any).className || 'Class Fee';
 
   // Value summary: classes done, subjects, fees paid
   const paidPayments = payments.filter((p) => p.status === PAYMENT_STATUS.PAID);
   const totalPaid    = paidPayments.reduce((sum, p) => sum + p.amount, 0);
 
+  const monthLabel = (p: any) =>
+    p.cycleMonth != null && p.cycleYear != null
+      ? `${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][p.cycleMonth - 1] ?? ''} ${p.cycleYear}`
+      : subjectLabel;
+
   return {
     valueSummary: {
-      completedSessions: activeClass.completedSessions ?? 0,
-      subjectsActive:    (activeClass.subject as any[]).length,
-      amountInvested:    totalPaid,
-      currency:          'INR',
+      classesCompleted: activeClass.completedSessions ?? 0,
+      subjectsActive:   (activeClass.subject as any[]).length,
+      amountSpent:      totalPaid,
     },
     nextPayment: nextPayment
       ? {
           _id:       nextPayment._id,
+          paymentId: (nextPayment as any).paymentId ?? null,
           amount:    nextPayment.amount,
-          currency:  nextPayment.currency,
           status:    nextPayment.status,
           dueDate:   (nextPayment.dueDate as Date).toISOString(),
-          cycleMonth: nextPayment.cycleMonth,
-          cycleYear:  nextPayment.cycleYear,
-          label:     subjectLabel,
+          month:     monthLabel(nextPayment),
         }
       : null,
     history: payments.map((p) => ({
-      _id:           p._id,
-      amount:        p.amount,
-      currency:      p.currency,
-      status:        p.status,
-      paymentMethod: p.paymentMethod ?? null,
-      paymentDate:   p.paymentDate ? (p.paymentDate as Date).toISOString() : null,
-      dueDate:       (p.dueDate as Date).toISOString(),
-      cycleMonth:    p.cycleMonth,
-      cycleYear:     p.cycleYear,
-      label:         subjectLabel,
+      _id:          p._id,
+      paymentId:    (p as any).paymentId ?? null,
+      amount:       p.amount,
+      status:       p.status,
+      paymentDate:  p.paymentDate ? (p.paymentDate as Date).toISOString() : null,
+      dueDate:      (p.dueDate as Date).toISOString(),
+      month:        monthLabel(p),
     })),
   };
 };
@@ -583,4 +590,109 @@ export const raiseParentConcern = async (
   );
 
   return { raised: true };
+};
+
+// ─── Parent Progress ───────────────────────────────────────────────────────────
+
+export const getParentProgressData = async (userId: string) => {
+  const activeClass = await FinalClass.findOne({ parent: userId, status: 'ACTIVE' })
+    .populate('subject', 'label value')
+    .select('studentName subject completedSessions');
+
+  if (!activeClass) {
+    return {
+      studentName: '',
+      overallTrend: 'STEADY' as const,
+      trendSummary: 'No active class found.',
+      subjects: [],
+      allTests: [],
+    };
+  }
+
+  const subjectLabel = (activeClass.subject as any[])
+    .map((s: any) => s?.label ?? s?.value ?? String(s))
+    .filter(Boolean)
+    .join(', ');
+
+  // All completed tests sorted newest-first
+  const tests = await Test.find({
+    finalClass: activeClass._id,
+    status: 'COMPLETED',
+    obtainedMarks: { $ne: null },
+  })
+    .sort({ testDate: -1 })
+    .limit(20)
+    .select('testDate topicName totalMarks obtainedMarks topics tutorRemark');
+
+  const allTests = tests.map((t: any) => ({
+    _id:        String(t._id),
+    subject:    subjectLabel,
+    score:      t.obtainedMarks ?? 0,
+    totalMarks: t.totalMarks ?? 100,
+    date:       (t.testDate as Date).toISOString(),
+    type:       'TUTOR_SET' as const,
+    topics:     t.topics ?? [],
+    tutorRemark: t.tutorRemark ?? undefined,
+  }));
+
+  // Trend from last 3 tests
+  const lastThree = allTests.slice(0, 3);
+  let overallTrend: 'IMPROVING' | 'STEADY' | 'NEEDS_ATTENTION' = 'STEADY';
+  let trendSummary = `${activeClass.studentName} is progressing steadily.`;
+  if (lastThree.length >= 2) {
+    const pctArr = lastThree.map((t) => (t.totalMarks > 0 ? t.score / t.totalMarks : 0));
+    const delta = pctArr[0] - pctArr[pctArr.length - 1];
+    if (delta > 0.05) {
+      overallTrend = 'IMPROVING';
+      trendSummary = `${activeClass.studentName} has improved ${Math.round(delta * 100)}% across recent tests.`;
+    } else if (delta < -0.05) {
+      overallTrend = 'NEEDS_ATTENTION';
+      trendSummary = `${activeClass.studentName}'s scores have dipped recently. Your coordinator is keeping an eye on this.`;
+    }
+  } else if (!allTests.length) {
+    trendSummary = 'No test data yet — results will appear here once your tutor starts recording scores.';
+  }
+
+  // Attendance rate
+  const allAttendance = await Attendance.find({ finalClass: activeClass._id }).select('studentAttendanceStatus');
+  const presentCount = allAttendance.filter((a: any) => a.studentAttendanceStatus === 'PRESENT' || a.studentAttendanceStatus === 'LATE').length;
+  const attendanceRate = allAttendance.length > 0 ? Math.round((presentCount / allAttendance.length) * 100) : null;
+
+  // Build subject data (single subject for now — one active class)
+  const lastPct = allTests.length > 0 ? allTests[0].score / allTests[0].totalMarks : 0;
+  const prevPct = allTests.length > 1 ? allTests[1].score / allTests[1].totalMarks : null;
+  const subjTrend: 'UP' | 'DOWN' | 'STEADY' =
+    prevPct === null ? 'STEADY' : lastPct > prevPct + 0.03 ? 'UP' : lastPct < prevPct - 0.03 ? 'DOWN' : 'STEADY';
+
+  // Aggregate weak/strong topics from recent tests
+  const topicScores: Record<string, number[]> = {};
+  allTests.slice(0, 5).forEach((t) => {
+    (t.topics ?? []).forEach((topic: string) => {
+      if (!topicScores[topic]) topicScores[topic] = [];
+      topicScores[topic].push(t.score / t.totalMarks);
+    });
+  });
+  const strongTopics = Object.entries(topicScores).filter(([, v]) => v.reduce((a, b) => a + b, 0) / v.length >= 0.7).map(([k]) => k);
+  const weakTopics = Object.entries(topicScores).filter(([, v]) => v.reduce((a, b) => a + b, 0) / v.length < 0.5).map(([k]) => k);
+
+  const subjects = [{
+    subject:         subjectLabel,
+    lastScore:       allTests[0]?.score ?? 0,
+    lastTotalMarks:  allTests[0]?.totalMarks ?? 100,
+    trend:           subjTrend,
+    strongTopics:    strongTopics.slice(0, 3),
+    weakTopics:      weakTopics.slice(0, 3),
+    lastRemark:      allTests[0]?.tutorRemark ?? undefined,
+    tests:           allTests,
+  }];
+
+  return {
+    studentName:       activeClass.studentName,
+    overallTrend,
+    trendSummary,
+    subjects,
+    allTests,
+    attendanceRate:    attendanceRate ?? undefined,
+    completedSessions: (activeClass as any).completedSessions ?? undefined,
+  };
 };

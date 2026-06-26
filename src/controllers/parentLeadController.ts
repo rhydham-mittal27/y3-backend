@@ -13,6 +13,7 @@ import {
   verifyParentAttendanceRecord,
   requestParentReschedule,
   getParentPaymentsData,
+  getParentProgressData,
 } from "../services/parentService";
 import { AuthRequest } from "../types";
 
@@ -212,6 +213,13 @@ export const getParentPayments = asyncHandler(async (req: AuthRequest, res) => {
   if (!userId) throw new ErrorResponse("Not authenticated", 401);
   const data = await getParentPaymentsData(userId);
   return res.status(200).json(successResponse(data, "Payments loaded."));
+});
+
+export const getParentProgress = asyncHandler(async (req: AuthRequest, res) => {
+  const userId = req.user?.id;
+  if (!userId) throw new ErrorResponse("Not authenticated", 401);
+  const data = await getParentProgressData(userId);
+  return res.status(200).json(successResponse(data, "Progress loaded."));
 });
 
 export default {

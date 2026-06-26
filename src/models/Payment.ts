@@ -3,6 +3,7 @@ import { PAYMENT_STATUS, PAYMENT_METHOD, PAYMENT_TYPE } from '../config/constant
 
 export interface IPaymentDocument extends Document {
   _id: mongoose.Types.ObjectId;
+  paymentId: string;
   finalClass?: mongoose.Types.ObjectId;
   groupClass?: mongoose.Types.ObjectId; // Added for Group support
   student?: mongoose.Types.ObjectId; // Added for individual student payments
@@ -49,6 +50,7 @@ const PaymentSchema: Schema<IPaymentDocument> = new Schema<IPaymentDocument>(
     paymentProof: { type: String },
     notes: { type: String, maxlength: 500 },
     createdBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+    paymentId: { type: String, unique: true, sparse: true },
   },
   { 
     timestamps: true,
@@ -56,6 +58,21 @@ const PaymentSchema: Schema<IPaymentDocument> = new Schema<IPaymentDocument>(
     toObject: { virtuals: true }
   }
 );
+
+// Auto-generate paymentId like PAY-2024-0001
+PaymentSchema.pre('save', async function (next) {
+  if (this.paymentId) return next();
+  const year = new Date().getFullYear();
+  const prefix = `PAY-${year}-`;
+  const last = await (this.constructor as Model<IPaymentDocument>)
+    .findOne({ paymentId: { $regex: `^${prefix}` } })
+    .sort({ paymentId: -1 })
+    .select('paymentId')
+    .lean();
+  const lastNum = last?.paymentId ? parseInt(last.paymentId.split('-')[2] ?? '0', 10) : 0;
+  this.paymentId = `${prefix}${String(lastNum + 1).padStart(4, '0')}`;
+  next();
+});
 
 // Indexes
 PaymentSchema.index({ attendance: 1 });
