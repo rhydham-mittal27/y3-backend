@@ -10,6 +10,7 @@ import {
   verifyAttendance,
   requestReschedule,
   getParentPayments,
+  getParentProgress,
 } from '../controllers/parentLeadController';
 import { registerParentValidation } from '../validators/parentValidator';
 import protect from '../middlewares/auth';
@@ -86,5 +87,8 @@ router.post(
 
 // GET /api/v1/parents/payments
 router.get('/payments', ...parentOnly, getParentPayments);
+
+// GET /api/v1/parents/progress
+router.get('/progress', ...parentOnly, getParentProgress);
 
 export default router;
