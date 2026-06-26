@@ -1,6 +1,10 @@
 import { validationResult } from 'express-validator';
 
 import asyncHandler from '../utils/asyncHandler';
+import FinalClass from '../models/FinalClass';
+import ClassSession from '../models/ClassSession';
+import Notification from '../models/Notification';
+import { rescheduleSession } from '../services/classSessionService';
 
 import { successResponse, paginatedResponse } from '../utils/responseFormatter';
 
@@ -546,5 +550,110 @@ export default {
 
   getCoordinatorActivityLogController,
 
+  getPendingRescheduleRequestsController,
+
+  approveRescheduleRequestController,
+
+  rejectRescheduleRequestController,
+
 };
+
+// ─── Reschedule Requests ──────────────────────────────────────────────────────
+
+export const getPendingRescheduleRequestsController = asyncHandler(async (req: AuthRequest, res) => {
+  const coordinatorUserId = req.user!._id;
+
+  const classes = await FinalClass.find({ coordinator: coordinatorUserId })
+    .select('studentName className subject schedule oneTimeReschedules')
+    .populate('subject', 'label')
+    .lean();
+
+  const requests: any[] = [];
+  for (const cls of classes) {
+    for (const r of (cls.oneTimeReschedules ?? [])) {
+      if (r.status === 'PENDING') {
+        requests.push({
+          requestId:   r._id,
+          classId:     cls._id,
+          studentName: cls.studentName,
+          className:   cls.className,
+          subject:     cls.subject,
+          schedule:    cls.schedule,
+          sessionId:   r.sessionId,
+          fromDate:    r.fromDate,
+          toDate:      r.toDate,
+          timeSlot:    r.timeSlot,
+          requestedBy: r.requestedBy,
+          requestedAt: r.requestedAt,
+        });
+      }
+    }
+  }
+
+  return res.json({ success: true, data: requests, count: requests.length });
+});
+
+export const approveRescheduleRequestController = asyncHandler(async (req: AuthRequest, res) => {
+  const { classId, requestId } = req.params;
+  const coordinatorUserId = req.user!._id;
+
+  const cls = await FinalClass.findOne({ _id: classId, coordinator: coordinatorUserId });
+  if (!cls) throw new ErrorResponse('Class not found or not assigned to you', 404);
+
+  const entry = (cls.oneTimeReschedules ?? []).find((r: any) => String(r._id) === requestId);
+  if (!entry) throw new ErrorResponse('Reschedule request not found', 404);
+  if (entry.status !== 'PENDING') throw new ErrorResponse('Request already processed', 400);
+
+  await rescheduleSession({
+    sessionId:   String(entry.sessionId),
+    newDate:     entry.toDate,
+    actorUserId: String(coordinatorUserId),
+    isAdmin:     true,
+  });
+
+  await FinalClass.updateOne(
+    { _id: classId, 'oneTimeReschedules._id': requestId },
+    { $set: { 'oneTimeReschedules.$.status': 'APPROVED' } },
+  );
+
+  if (entry.requestedBy) {
+    await Notification.create({
+      recipient: entry.requestedBy,
+      type:      'GENERAL',
+      title:     'Reschedule Approved',
+      message:   `Your reschedule request for ${cls.studentName}'s session has been approved. New date: ${entry.toDate.toDateString()}.`,
+    });
+  }
+
+  return res.json({ success: true, message: 'Reschedule approved and session updated.' });
+});
+
+export const rejectRescheduleRequestController = asyncHandler(async (req: AuthRequest, res) => {
+  const { classId, requestId } = req.params;
+  const coordinatorUserId = req.user!._id;
+  const { reason } = req.body;
+
+  const cls = await FinalClass.findOne({ _id: classId, coordinator: coordinatorUserId });
+  if (!cls) throw new ErrorResponse('Class not found or not assigned to you', 404);
+
+  const entry = (cls.oneTimeReschedules ?? []).find((r: any) => String(r._id) === requestId);
+  if (!entry) throw new ErrorResponse('Reschedule request not found', 404);
+  if (entry.status !== 'PENDING') throw new ErrorResponse('Request already processed', 400);
+
+  await FinalClass.updateOne(
+    { _id: classId, 'oneTimeReschedules._id': requestId },
+    { $set: { 'oneTimeReschedules.$.status': 'REJECTED', 'oneTimeReschedules.$.rejectionReason': reason ?? '' } },
+  );
+
+  if (entry.requestedBy) {
+    await Notification.create({
+      recipient: entry.requestedBy,
+      type:      'GENERAL',
+      title:     'Reschedule Rejected',
+      message:   `Your reschedule request for ${cls.studentName}'s session was declined.${reason ? ` Reason: ${reason}` : ''}`,
+    });
+  }
+
+  return res.json({ success: true, message: 'Reschedule request rejected.' });
+});
 

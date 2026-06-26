@@ -46,7 +46,17 @@ export interface IFinalClassDocument extends SoftDeleteDocument {
   createdAt: Date;
   updatedAt: Date;
   progressPercentage?: number;
-  oneTimeReschedules?: { fromDate: Date; toDate: Date; timeSlot: string }[];
+  oneTimeReschedules?: {
+    _id?: mongoose.Types.ObjectId;
+    sessionId: mongoose.Types.ObjectId;
+    fromDate: Date;
+    toDate: Date;
+    timeSlot: string;
+    status: 'PENDING' | 'APPROVED' | 'REJECTED';
+    requestedBy: mongoose.Types.ObjectId;
+    requestedAt: Date;
+    rejectionReason?: string;
+  }[];
   testPerMonth?: number;
   attendanceSubmissionWindow?: number;
   monthlyFees?: number;
@@ -94,9 +104,14 @@ const FinalClassSchema: Schema<IFinalClassDocument> = new Schema<IFinalClassDocu
     tutorMonthlyFees: { type: Number, min: 0 },
     oneTimeReschedules: [
       {
-        fromDate: { type: Date, required: true },
-        toDate: { type: Date, required: true },
-        timeSlot: { type: String, required: true },
+        sessionId:       { type: Schema.Types.ObjectId, ref: 'ClassSession', required: true },
+        fromDate:        { type: Date, required: true },
+        toDate:          { type: Date, required: true },
+        timeSlot:        { type: String, required: true },
+        status:          { type: String, enum: ['PENDING', 'APPROVED', 'REJECTED'], default: 'PENDING' },
+        requestedBy:     { type: Schema.Types.ObjectId, ref: 'User', required: true },
+        requestedAt:     { type: Date, default: Date.now },
+        rejectionReason: { type: String },
       },
     ],
     cycleStartPending: { type: Boolean, default: false },
@@ -138,7 +153,7 @@ FinalClassSchema.pre('validate', function (next) {
   const doc = this as IFinalClassDocument & { oneTimeReschedules?: any[] };
   if (Array.isArray(doc.oneTimeReschedules)) {
     doc.oneTimeReschedules = doc.oneTimeReschedules.filter(
-      (r: any) => r && r.fromDate && r.toDate && r.timeSlot
+      (r: any) => r && r.sessionId && r.fromDate && r.toDate && r.timeSlot
     );
   }
   next();
