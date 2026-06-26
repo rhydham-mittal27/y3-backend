@@ -474,29 +474,32 @@ export const requestParentReschedule = async (
   const cls = await FinalClass.findOne({ _id: session.finalClass, parent: userId });
   if (!cls) throw new ErrorResponse('Not authorised', 403);
 
-  // Store as a oneTimeReschedule on the FinalClass (coordinator processes it)
+  const parentUser = await User.findById(userId).select('name');
+
   const entry = {
-    fromDate:  session.sessionDate as Date,
-    toDate:    new Date(payload.requestedDate),
-    timeSlot:  payload.requestedTime,
+    sessionId:   session._id,
+    fromDate:    session.sessionDate as Date,
+    toDate:      new Date(payload.requestedDate),
+    timeSlot:    session.timeSlot ?? payload.requestedTime,
+    status:      'PENDING' as const,
+    requestedBy: userId,
+    requestedAt: new Date(),
   };
 
   await FinalClass.findByIdAndUpdate(cls._id, {
     $push: { oneTimeReschedules: entry },
   });
 
-  // Notify coordinator if exists
   if (cls.coordinator) {
-    const parentUser = await User.findById(userId).select('name');
     await Notification.create({
       recipient: cls.coordinator,
       type:      'GENERAL',
       title:     `Reschedule Request — ${cls.studentName}`,
-      message:   `${parentUser?.name ?? 'Parent'} requested to reschedule session on ${entry.fromDate.toDateString()} to ${entry.toDate.toDateString()} at ${entry.timeSlot}. ${payload.reason ?? ''}`.trim(),
+      message:   `${parentUser?.name ?? 'Parent'} requested to reschedule session on ${entry.fromDate.toDateString()} to ${entry.toDate.toDateString()}. ${payload.reason ?? ''}`.trim(),
     });
   }
 
-  return { requested: true, fromDate: entry.fromDate, toDate: entry.toDate, timeSlot: entry.timeSlot };
+  return { requested: true, fromDate: entry.fromDate, toDate: entry.toDate };
 };
 
 // ─── Parent Payments ──────────────────────────────────────────────────────────

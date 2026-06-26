@@ -21,6 +21,9 @@ import {
   deleteCoordinatorDocumentController,
   getMyActivityLogController,
   getCoordinatorActivityLogController,
+  getPendingRescheduleRequestsController,
+  approveRescheduleRequestController,
+  rejectRescheduleRequestController,
 } from '../controllers/coordinatorController';
 import {
   createCoordinatorValidation,
@@ -91,5 +94,10 @@ router.delete(
 );
 router.patch('/:coordinatorId/settings', authorize(USER_ROLES.COORDINATOR, USER_ROLES.MANAGER, USER_ROLES.ADMIN), updateCoordinatorSettingsController);
 router.delete('/:id', authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN), coordinatorIdValidation, deleteCoordinatorProfile);
+
+// Reschedule requests
+router.get('/reschedule-requests', authorize(USER_ROLES.COORDINATOR), getPendingRescheduleRequestsController);
+router.post('/reschedule-requests/:classId/:requestId/approve', authorize(USER_ROLES.COORDINATOR), approveRescheduleRequestController);
+router.post('/reschedule-requests/:classId/:requestId/reject', authorize(USER_ROLES.COORDINATOR), rejectRescheduleRequestController);
 
 export default router;
