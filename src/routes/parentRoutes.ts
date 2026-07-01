@@ -9,8 +9,17 @@ import {
   getParentSessions,
   verifyAttendance,
   requestReschedule,
+  getRescheduleHistory,
+  getParentTutorProfile,
   getParentPayments,
   getParentProgress,
+  getStudyTipsController,
+  askAIController,
+  getChildProfile,
+  updateChildProfile,
+  createShiftRequest,
+  getShiftRequests,
+  requestTutorChangeController,
 } from '../controllers/parentLeadController';
 import { registerParentValidation } from '../validators/parentValidator';
 import protect from '../middlewares/auth';
@@ -85,10 +94,73 @@ router.post(
   requestReschedule,
 );
 
+// GET /api/v1/parents/reschedule-history
+router.get('/reschedule-history', ...parentOnly, getRescheduleHistory);
+
+// GET /api/v1/parents/tutor-profile
+router.get('/tutor-profile', ...parentOnly, getParentTutorProfile);
+
 // GET /api/v1/parents/payments
 router.get('/payments', ...parentOnly, getParentPayments);
 
 // GET /api/v1/parents/progress
 router.get('/progress', ...parentOnly, getParentProgress);
+
+// POST /api/v1/parents/ai/study-tips
+router.post(
+  '/ai/study-tips',
+  ...parentOnly,
+  [
+    body('topic').notEmpty().trim().withMessage('topic is required'),
+    body('subject').notEmpty().trim().withMessage('subject is required'),
+    body('studentName').optional().trim(),
+  ],
+  getStudyTipsController,
+);
+
+// POST /api/v1/parents/ai/ask
+router.post(
+  '/ai/ask',
+  ...parentOnly,
+  [body('question').notEmpty().trim().isLength({ max: 500 }).withMessage('question is required (max 500 chars)')],
+  askAIController,
+);
+
+// POST /api/v1/parents/shift-request
+router.post(
+  '/shift-request',
+  ...parentOnly,
+  [
+    body('effectiveDate').notEmpty().withMessage('effectiveDate is required'),
+    body('shiftDays').isInt({ min: 1 }).withMessage('shiftDays must be a positive integer'),
+    body('reason').notEmpty().trim().isLength({ max: 500 }).withMessage('Reason required (max 500 chars)'),
+  ],
+  createShiftRequest,
+);
+
+// GET /api/v1/parents/shift-requests
+router.get('/shift-requests', ...parentOnly, getShiftRequests);
+
+// POST /api/v1/parents/request-tutor-change
+router.post(
+  '/request-tutor-change',
+  ...parentOnly,
+  [body('reason').notEmpty().trim().isLength({ max: 1000 }).withMessage('Reason is required (max 1000 chars)')],
+  requestTutorChangeController,
+);
+
+// GET  /api/v1/parents/child-profile
+router.get('/child-profile', ...parentOnly, getChildProfile);
+
+// PATCH /api/v1/parents/child-profile
+router.patch(
+  '/child-profile',
+  ...parentOnly,
+  [
+    body('primaryStudentName').optional().trim().isLength({ max: 100 }).withMessage('Name too long'),
+    body('notes').optional().trim().isLength({ max: 500 }).withMessage('Notes max 500 chars'),
+  ],
+  updateChildProfile,
+);
 
 export default router;

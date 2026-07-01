@@ -21,9 +21,9 @@ import {
   deleteCoordinatorDocumentController,
   getMyActivityLogController,
   getCoordinatorActivityLogController,
-  getPendingRescheduleRequestsController,
-  approveRescheduleRequestController,
-  rejectRescheduleRequestController,
+  getPendingRescheduleRequestsControllerFn as getPendingRescheduleRequestsController,
+  approveRescheduleRequestControllerFn as approveRescheduleRequestController,
+  rejectRescheduleRequestControllerFn as rejectRescheduleRequestController,
 } from '../controllers/coordinatorController';
 import {
   createCoordinatorValidation,

@@ -3,7 +3,7 @@ import Test from '../models/Test';
 import FinalClass from '../models/FinalClass';
 import { createNotificationWithPreferences } from './notificationService';
 import ErrorResponse from '../utils/errorResponse';
-import { TEST_STATUS, FINAL_CLASS_STATUS, USER_ROLES } from '../config/constants';
+import { TEST_STATUS, TEST_TYPE, FINAL_CLASS_STATUS, USER_ROLES } from '../config/constants';
 import { uploadFileToS3Structured } from '../services/s3Service';
 import { S3_CONFIG } from '../config/s3';
 
@@ -13,8 +13,14 @@ export const scheduleTest = async (params: {
   testTime: string;
   notes?: string;
   scheduledBy: string;
+  testType?: TEST_TYPE | string;
+  coveredChapters?: string[];
+  topicName?: string;
+  testSyllabus?: string;
+  totalMarks?: number;
+  durationMinutes?: number;
 }) => {
-  const { finalClassId, testDate, testTime, notes, scheduledBy } = params;
+  const { finalClassId, testDate, testTime, notes, scheduledBy, testType, coveredChapters, topicName, testSyllabus, totalMarks, durationMinutes } = params;
 
   const cls = await FinalClass.findById(finalClassId);
   if (!cls) throw new ErrorResponse('Final class not found', 404);
@@ -29,6 +35,8 @@ export const scheduleTest = async (params: {
   });
   if (existing) throw new ErrorResponse('Test already scheduled for this date', 409);
 
+  const cycleNumber: number = (cls as any).currentCycleNumber ?? 1;
+
   const test = await Test.create({
     finalClass: cls._id,
     testDate: new Date(testDate),
@@ -38,6 +46,13 @@ export const scheduleTest = async (params: {
     scheduledBy: new mongoose.Types.ObjectId(scheduledBy),
     notes,
     status: TEST_STATUS.SCHEDULED,
+    cycleNumber,
+    ...(testType && { testType }),
+    ...(coveredChapters?.length && { coveredChapters: coveredChapters.map((id) => new mongoose.Types.ObjectId(id)) }),
+    ...(topicName && { topicName }),
+    ...(testSyllabus && { testSyllabus }),
+    ...(totalMarks != null && { totalMarks }),
+    ...(durationMinutes != null && { durationMinutes }),
   });
 
   await test.populate([
@@ -332,7 +347,13 @@ export const updateTestStatus = async (testId: string, status: TEST_STATUS, _use
 export const submitTestReport = async (
   testId: string,
   report: { feedback: string; strengths: string; areasOfImprovement: string; studentPerformance: string; recommendations: string },
-  tutorUserId: string
+  tutorUserId: string,
+  extras?: {
+    totalMarks?: number;
+    obtainedMarks?: number;
+    coveredChapters?: string[];
+    questionAnalysis?: Array<{ topic: string; totalQuestions: number; correctedQuestions: number }>;
+  }
 ) => {
   const test = await Test.findById(testId);
   if (!test) throw new ErrorResponse('Test not found', 404);
@@ -341,10 +362,19 @@ export const submitTestReport = async (
     throw new ErrorResponse('Test must be SCHEDULED or COMPLETED to submit report', 400);
   }
 
+  if (extras?.totalMarks != null && extras.totalMarks <= 0) throw new ErrorResponse('Total marks must be > 0', 400);
+  if (extras?.obtainedMarks != null && extras.totalMarks != null && (extras.obtainedMarks < 0 || extras.obtainedMarks > extras.totalMarks)) {
+    throw new ErrorResponse('Obtained marks must be between 0 and total marks', 400);
+  }
+
   test.report = report as any;
   test.status = TEST_STATUS.REPORT_SUBMITTED as any;
   test.reportSubmittedBy = new mongoose.Types.ObjectId(tutorUserId) as any;
   test.reportSubmittedAt = new Date();
+  if (extras?.totalMarks != null) (test as any).totalMarks = extras.totalMarks;
+  if (extras?.obtainedMarks != null) (test as any).obtainedMarks = extras.obtainedMarks;
+  if (extras?.coveredChapters?.length) (test as any).coveredChapters = extras.coveredChapters.map((id) => new mongoose.Types.ObjectId(id));
+  if (extras?.questionAnalysis?.length) (test as any).questionAnalysis = extras.questionAnalysis;
   await test.save();
 
   await test.populate([
@@ -456,6 +486,121 @@ export const getTestsForCoordinator = async (coordinatorUserId: string, status?:
   return tests;
 };
 
+/**
+ * Returns syllabus coverage for a class:
+ * - All chapters linked to the class's subjects (from Option hierarchy)
+ * - Which chapters have been covered in COMPLETED or REPORT_SUBMITTED tests
+ * - Per-cycle breakdown
+ */
+export const getSyllabusCoverage = async (finalClassId: string) => {
+  const cls: any = await FinalClass.findById(finalClassId).populate('subject', 'label value _id');
+  if (!cls) throw new ErrorResponse('Class not found', 404);
+
+  const Option = (await import('../models/Option')).default;
+
+  // Fetch all chapters that belong to the class's subjects
+  const subjectIds = (cls.subject as any[]).map((s: any) => s._id);
+  const allChapters = await Option.find({
+    type: 'CHAPTER',
+    parent: { $in: subjectIds },
+    isActive: true,
+  }).sort({ sortOrder: 1 }).lean();
+
+  // Fetch all non-cancelled tests for this class
+  const tests = await Test.find({
+    finalClass: new mongoose.Types.ObjectId(finalClassId),
+    status: { $nin: [TEST_STATUS.CANCELLED] },
+  }).select('coveredChapters cycleNumber testDate testType status').lean();
+
+  // Build set of covered chapter IDs
+  const coveredChapterIds = new Set<string>();
+  const chapterToCycles: Record<string, number[]> = {};
+
+  for (const test of tests) {
+    const chapters = (test as any).coveredChapters ?? [];
+    for (const chId of chapters) {
+      const key = String(chId);
+      coveredChapterIds.add(key);
+      if (!chapterToCycles[key]) chapterToCycles[key] = [];
+      if (!(test as any).cycleNumber) continue;
+      if (!chapterToCycles[key].includes((test as any).cycleNumber)) {
+        chapterToCycles[key].push((test as any).cycleNumber);
+      }
+    }
+  }
+
+  const chapters = allChapters.map((ch: any) => ({
+    _id: ch._id,
+    label: ch.label,
+    value: ch.value,
+    sortOrder: ch.sortOrder,
+    subjectId: ch.parent,
+    covered: coveredChapterIds.has(String(ch._id)),
+    coveredInCycles: chapterToCycles[String(ch._id)] ?? [],
+  }));
+
+  // Per-subject summary
+  const subjectMap: Record<string, { subjectId: string; label: string; total: number; covered: number }> = {};
+  for (const ch of chapters) {
+    const sid = String(ch.subjectId);
+    if (!subjectMap[sid]) {
+      const sub = (cls.subject as any[]).find((s: any) => String(s._id) === sid);
+      subjectMap[sid] = { subjectId: sid, label: sub?.label ?? sid, total: 0, covered: 0 };
+    }
+    subjectMap[sid].total += 1;
+    if (ch.covered) subjectMap[sid].covered += 1;
+  }
+
+  // Per-cycle test counts (compliance)
+  const cycleTestCounts: Record<number, number> = {};
+  for (const test of tests) {
+    const cn = (test as any).cycleNumber ?? 1;
+    cycleTestCounts[cn] = (cycleTestCounts[cn] ?? 0) + 1;
+  }
+
+  return {
+    classId: finalClassId,
+    testsPerCycleRequired: (cls as any).testPerMonth ?? 1,
+    currentCycle: (cls as any).currentCycleNumber ?? 1,
+    totalChapters: chapters.length,
+    coveredChapters: chapters.filter((c) => c.covered).length,
+    subjects: Object.values(subjectMap),
+    chapters,
+    cycleTestCounts,
+  };
+};
+
+export const getComplianceForTutor = async (tutorId: string) => {
+  const classes = await FinalClass.find({ tutor: tutorId, status: FINAL_CLASS_STATUS.ACTIVE })
+    .select('_id className studentName currentCycleNumber testPerMonth subject grade board')
+    .lean();
+
+  const results = await Promise.all(
+    classes.map(async (cls: any) => {
+      const currentCycle = cls.currentCycleNumber ?? 1;
+      const required = cls.testPerMonth ?? 1;
+      const scheduled = await Test.countDocuments({
+        finalClass: cls._id,
+        cycleNumber: currentCycle,
+        status: { $nin: [TEST_STATUS.CANCELLED] },
+      });
+      return {
+        classId: cls._id,
+        className: cls.className,
+        studentName: cls.studentName,
+        grade: cls.grade,
+        board: cls.board,
+        currentCycle,
+        required,
+        scheduled,
+        compliant: scheduled >= required,
+      };
+    })
+  );
+
+  return results;
+};
+
 export default {
   scheduleTest,
   getAllTests,
@@ -470,4 +615,6 @@ export default {
   getTestsByParent,
   uploadTestPaper,
   uploadTestAnswerSheet,
+  getSyllabusCoverage,
+  getComplianceForTutor,
 };
