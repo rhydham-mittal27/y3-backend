@@ -14,6 +14,13 @@ import {
   requestParentReschedule,
   getParentPaymentsData,
   getParentProgressData,
+  getParentRescheduleHistory as getParentRescheduleHistoryData,
+  getParentTutorProfileData,
+  getChildProfileData,
+  updateChildProfileData,
+  createParentShiftRequest,
+  getParentShiftRequests,
+  requestTutorChange,
 } from "../services/parentService";
 import { AuthRequest } from "../types";
 
@@ -207,6 +214,14 @@ export const requestReschedule = asyncHandler(async (req: AuthRequest, res) => {
   return res.status(201).json(successResponse(result, "Reschedule request submitted."));
 });
 
+/** GET /api/v1/parents/reschedule-history */
+export const getRescheduleHistory = asyncHandler(async (req: AuthRequest, res) => {
+  const userId = req.user?.id;
+  if (!userId) throw new ErrorResponse("Not authenticated", 401);
+  const data = await getParentRescheduleHistoryData(userId);
+  return res.status(200).json(successResponse(data, "Reschedule history loaded."));
+});
+
 /** GET /api/v1/parents/payments */
 export const getParentPayments = asyncHandler(async (req: AuthRequest, res) => {
   const userId = req.user?.id;
@@ -222,6 +237,90 @@ export const getParentProgress = asyncHandler(async (req: AuthRequest, res) => {
   return res.status(200).json(successResponse(data, "Progress loaded."));
 });
 
+/** GET /api/v1/parents/tutor-profile */
+export const getParentTutorProfile = asyncHandler(async (req: AuthRequest, res) => {
+  const userId = req.user?.id;
+  if (!userId) throw new ErrorResponse("Not authenticated", 401);
+  const data = await getParentTutorProfileData(userId);
+  return res.json(successResponse(data, "Tutor profile loaded."));
+});
+
+/** POST /api/v1/parents/ai/study-tips */
+export const getStudyTipsController = asyncHandler(async (req: AuthRequest, res) => {
+  const userId = req.user?.id;
+  if (!userId) throw new ErrorResponse("Not authenticated", 401);
+  const { topic, subject, studentName } = req.body as { topic: string; subject: string; studentName?: string };
+  if (!topic || !subject) throw new ErrorResponse("topic and subject are required", 400);
+  const { generateStudyTips } = await import('../services/aiService');
+  const tips = await generateStudyTips({ studentName: studentName ?? '', subject, topic });
+  return res.json(successResponse({ tips }, "Study tips generated."));
+});
+
+/** POST /api/v1/parents/ai/ask */
+export const askAIController = asyncHandler(async (req: AuthRequest, res) => {
+  const userId = req.user?.id;
+  if (!userId) throw new ErrorResponse("Not authenticated", 401);
+  const { question, context } = req.body as { question: string; context: any };
+  if (!question?.trim()) throw new ErrorResponse("question is required", 400);
+  const { answerParentQuestion } = await import('../services/aiService');
+  const answer = await answerParentQuestion({
+    studentName:      context?.studentName ?? 'the student',
+    subjects:         context?.subjects ?? 'Not available',
+    trend:            context?.trend ?? 'STEADY',
+    attendanceRate:   context?.attendanceRate ?? 'Not available',
+    currentCycle:     context?.currentCycle ?? 'Not available',
+    testHistory:      context?.testHistory ?? 'No tests recorded yet',
+    syllabusCoverage: context?.syllabusCoverage ?? 'Not available',
+    weakTopics:       context?.weakTopics ?? 'None identified yet',
+    strongTopics:     context?.strongTopics ?? 'None identified yet',
+    tutorRemarks:     context?.tutorRemarks ?? 'No remarks yet',
+    question,
+  });
+  return res.json(successResponse({ answer }, "Answer generated."));
+});
+
+export const getChildProfile = asyncHandler(async (req: AuthRequest, res) => {
+  const userId = req.user?.id;
+  if (!userId) throw new ErrorResponse("Not authenticated", 401);
+  const data = await getChildProfileData(userId);
+  return res.status(200).json(successResponse(data, "Child profile fetched."));
+});
+
+export const createShiftRequest = asyncHandler(async (req: AuthRequest, res) => {
+  const userId = req.user?.id;
+  if (!userId) throw new ErrorResponse("Not authenticated", 401);
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) throw new ErrorResponse(errors.array()[0].msg, 400);
+  const { effectiveDate, shiftDays, reason } = req.body;
+  const result = await createParentShiftRequest(userId, { effectiveDate, shiftDays: Number(shiftDays), reason });
+  return res.status(201).json(successResponse(result, "Shift request submitted."));
+});
+
+export const requestTutorChangeController = asyncHandler(async (req: AuthRequest, res) => {
+  const userId = req.user?.id;
+  if (!userId) throw new ErrorResponse("Not authenticated", 401);
+  const { reason } = req.body;
+  const result = await requestTutorChange(userId, { reason });
+  return res.status(200).json(successResponse(result, "Tutor change request submitted."));
+});
+
+export const getShiftRequests = asyncHandler(async (req: AuthRequest, res) => {
+  const userId = req.user?.id;
+  if (!userId) throw new ErrorResponse("Not authenticated", 401);
+  const data = await getParentShiftRequests(userId);
+  return res.status(200).json(successResponse(data, "Shift requests loaded."));
+});
+
+export const updateChildProfile = asyncHandler(async (req: AuthRequest, res) => {
+  const userId = req.user?.id;
+  if (!userId) throw new ErrorResponse("Not authenticated", 401);
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) throw new ErrorResponse(errors.array()[0].msg, 400);
+  const { primaryStudentName, notes } = req.body;
+  const result = await updateChildProfileData(userId, { primaryStudentName, notes });
+  return res.status(200).json(successResponse(result, "Child profile updated."));
+});
+
 export default {
   registerParentLead,
   registerParent,
@@ -232,5 +331,6 @@ export default {
   getParentSessions,
   verifyAttendance,
   requestReschedule,
+  getRescheduleHistory,
   getParentPayments,
 };

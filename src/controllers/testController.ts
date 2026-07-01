@@ -19,6 +19,8 @@ import {
   getTestsByParent,
   uploadTestPaper,
   uploadTestAnswerSheet,
+  getSyllabusCoverage,
+  getComplianceForTutor,
 } from '../services/testService';
 import { logCoordinatorActivity } from '../services/coordinatorService';
 
@@ -27,9 +29,9 @@ export const scheduleTestController = asyncHandler(async (req: AuthRequest, res)
   if (!errors.isEmpty()) {
     throw new ErrorResponse(errors.array()[0].msg, 400);
   }
-  const { finalClassId, testDate, testTime, notes } = req.body as any;
+  const { finalClassId, testDate, testTime, notes, testType, coveredChapters, topicName, testSyllabus, totalMarks, durationMinutes } = req.body as any;
   const scheduledBy = req.user!.id;
-  const test = await scheduleTest({ finalClassId, testDate, testTime, notes, scheduledBy });
+  const test = await scheduleTest({ finalClassId, testDate, testTime, notes, scheduledBy, testType, coveredChapters, topicName, testSyllabus, totalMarks, durationMinutes });
 
   if (req.user?.role === USER_ROLES.COORDINATOR) {
     try {
@@ -107,9 +109,9 @@ export const submitTestReportController = asyncHandler(async (req: AuthRequest, 
     throw new ErrorResponse(errors.array()[0].msg, 400);
   }
   const { id } = req.params as any;
-  const { report } = req.body as any;
+  const { report, totalMarks, obtainedMarks, coveredChapters, questionAnalysis } = req.body as any;
   const tutorUserId = req.user!.id;
-  const test = await submitTestReport(id, report, tutorUserId);
+  const test = await submitTestReport(id, report, tutorUserId, { totalMarks, obtainedMarks, coveredChapters, questionAnalysis });
   return res.json(successResponse(test, 'Test report submitted successfully'));
 });
 
@@ -319,6 +321,18 @@ export const uploadTestAnswerSheetController = asyncHandler(async (req: AuthRequ
   });
 
   return res.status(200).json(successResponse(test, 'Test report uploaded successfully'));
+});
+
+export const getSyllabusCoverageController = asyncHandler(async (req: AuthRequest, res) => {
+  const { classId } = req.params as any;
+  const data = await getSyllabusCoverage(classId);
+  return res.json(successResponse(data, 'Syllabus coverage loaded.'));
+});
+
+export const getTutorComplianceController = asyncHandler(async (req: AuthRequest, res) => {
+  const tutorId = req.user!.id;
+  const data = await getComplianceForTutor(tutorId);
+  return res.json(successResponse(data, 'Compliance status loaded.'));
 });
 
 export default {

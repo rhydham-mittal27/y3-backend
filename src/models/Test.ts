@@ -1,5 +1,5 @@
 import mongoose, { Schema, Document, Model } from 'mongoose';
-import { TEST_STATUS } from '../config/constants';
+import { TEST_STATUS, TEST_TYPE } from '../config/constants';
 import { getS3PublicUrlForKey } from '../config/s3';
 
 export interface ITestDocument extends Document {
@@ -10,6 +10,9 @@ export interface ITestDocument extends Document {
   testDate: Date;
   testTime: string;
   status: TEST_STATUS | string;
+  cycleNumber: number;
+  testType?: TEST_TYPE | string;
+  coveredChapters?: mongoose.Types.ObjectId[];
   scheduledBy: mongoose.Types.ObjectId;
   scheduledAt: Date;
   completedAt?: Date;
@@ -56,6 +59,9 @@ const TestSchema: Schema<ITestDocument> = new Schema<ITestDocument>(
     testDate: { type: Date, required: true },
     testTime: { type: String, required: true },
     status: { type: String, enum: Object.values(TEST_STATUS), default: TEST_STATUS.SCHEDULED },
+    cycleNumber: { type: Number, required: true, default: 1, min: 1 },
+    testType: { type: String, enum: Object.values(TEST_TYPE) },
+    coveredChapters: [{ type: Schema.Types.ObjectId, ref: 'Option' }],
     scheduledBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     scheduledAt: { type: Date, default: Date.now },
     completedAt: { type: Date },

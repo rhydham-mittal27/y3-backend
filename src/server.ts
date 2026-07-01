@@ -51,6 +51,7 @@ import shiftRequestRoutes from './routes/shiftRequestRoutes';
 import changeRoutes from './routes/changeRoutes';
 import parentRoutes from './routes/parentRoutes';
 import parentLeadRoutes from './routes/parentLeadRoutes';
+import ticketRoutes from './routes/ticketRoutes';
 import teacherRequestRoutes from './routes/teacherRequestRoutes';
 import bannerRoutes from './routes/bannerRoutes';
 
@@ -209,6 +210,7 @@ registerRoute('/api/tests', testRoutes, writeLimiter);
 registerRoute('/api/v1/tutor-leads', tutorLeadRoutes, writeLimiter);
 registerRoute('/api/v1/parents', parentRoutes, writeLimiter);
 registerRoute('/api/v1/parent-leads', parentLeadRoutes, writeLimiter);
+registerRoute('/api/v1/tickets', ticketRoutes, writeLimiter);
 registerRoute('/api/v1/teacher-requests', teacherRequestRoutes, writeLimiter);
 registerRoute('/api/v1/banners', bannerRoutes, writeLimiter);
 registerRoute('/api/students', studentRoutes, writeLimiter);

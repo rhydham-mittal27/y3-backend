@@ -89,6 +89,7 @@ export const getParentProfile = async (userId: string) => {
 // ─── Parent Dashboard ─────────────────────────────────────────────────────────
 
 import FinalClass from '../models/FinalClass';
+import ShiftRequest from '../models/ShiftRequest';
 import ClassSession from '../models/ClassSession';
 import Attendance from '../models/Attendance';
 import Test from '../models/Test';
@@ -502,6 +503,35 @@ export const requestParentReschedule = async (
   return { requested: true, fromDate: entry.fromDate, toDate: entry.toDate };
 };
 
+export const getParentRescheduleHistory = async (userId: string) => {
+  const classes = await FinalClass.find({ parent: userId })
+    .select('studentName className subject oneTimeReschedules')
+    .populate('subject', 'label')
+    .lean();
+
+  const history: any[] = [];
+  for (const cls of classes) {
+    for (const r of (cls.oneTimeReschedules ?? [])) {
+      history.push({
+        requestId:   r._id,
+        classId:     cls._id,
+        studentName: cls.studentName,
+        className:   cls.className,
+        subject:     (cls.subject as any)?.label ?? cls.subject,
+        fromDate:    r.fromDate,
+        toDate:      r.toDate,
+        timeSlot:    r.timeSlot,
+        status:      r.status,
+        requestedAt: r.requestedAt,
+        rejectionReason: r.rejectionReason,
+      });
+    }
+  }
+
+  history.sort((a, b) => new Date(b.requestedAt).getTime() - new Date(a.requestedAt).getTime());
+  return history;
+};
+
 // ─── Parent Payments ──────────────────────────────────────────────────────────
 
 export const getParentPaymentsData = async (userId: string) => {
@@ -571,36 +601,27 @@ export const raiseParentConcern = async (
   const cls = await FinalClass.findOne({ _id: finalClassId, parent: userId });
   if (!cls) throw new ErrorResponse('Class not found or not authorized', 404);
 
-  const user = await User.findById(userId).select('name');
-  const title = `Parent Concern — ${cls.studentName}`;
-  const body  = `From: ${user?.name ?? 'Parent'} | Class: ${cls.className} | ${message}`;
+  // Delegate to the ticket system
+  const { createTicket } = await import('./ticketService');
+  const ticket = await createTicket(userId, {
+    type:         'CONCERN',
+    subject:      `Concern regarding ${cls.studentName}'s class`,
+    description:  message,
+    finalClassId: String(finalClassId),
+  });
 
-  const recipients: any[] = [];
-  if (cls.coordinator) recipients.push(cls.coordinator);
-
-  // Also notify the class tutor
-  if (cls.tutor) recipients.push(cls.tutor);
-
-  await Promise.all(
-    recipients.map((recipientId) =>
-      Notification.create({
-        recipient: recipientId,
-        type:      'GENERAL',
-        title,
-        message:   body,
-      }),
-    ),
-  );
-
-  return { raised: true };
+  return { raised: true, ticketNumber: ticket.ticketNumber };
 };
 
 // ─── Parent Progress ───────────────────────────────────────────────────────────
 
+import { generateProgressInsight } from './aiService';
+import { getPublicTutorProfile } from './tutorService';
+
 export const getParentProgressData = async (userId: string) => {
   const activeClass = await FinalClass.findOne({ parent: userId, status: 'ACTIVE' })
     .populate('subject', 'label value')
-    .select('studentName subject completedSessions');
+    .select('studentName subject completedSessions currentCycleNumber');
 
   if (!activeClass) {
     return {
@@ -617,25 +638,34 @@ export const getParentProgressData = async (userId: string) => {
     .filter(Boolean)
     .join(', ');
 
-  // All completed tests sorted newest-first
+  // All tests with results, sorted newest-first
   const tests = await Test.find({
     finalClass: activeClass._id,
-    status: 'COMPLETED',
-    obtainedMarks: { $ne: null },
+    status: { $in: ['COMPLETED', 'REPORT_SUBMITTED'] },
+    obtainedMarks: { $exists: true, $ne: null },
   })
     .sort({ testDate: -1 })
     .limit(20)
-    .select('testDate topicName totalMarks obtainedMarks topics tutorRemark');
+    .populate('coveredChapters', 'label')
+    .select('testDate topicName totalMarks obtainedMarks topics tutorRemark testType cycleNumber status report coveredChapters');
 
   const allTests = tests.map((t: any) => ({
-    _id:        String(t._id),
-    subject:    subjectLabel,
-    score:      t.obtainedMarks ?? 0,
-    totalMarks: t.totalMarks ?? 100,
-    date:       (t.testDate as Date).toISOString(),
-    type:       'TUTOR_SET' as const,
-    topics:     t.topics ?? [],
-    tutorRemark: t.tutorRemark ?? undefined,
+    _id:          String(t._id),
+    subject:      subjectLabel,
+    score:        t.obtainedMarks ?? 0,
+    totalMarks:   t.totalMarks ?? 100,
+    date:         (t.testDate as Date).toISOString(),
+    type:         'TUTOR_SET' as const,
+    topics:       t.topics ?? [],
+    tutorRemark:  t.tutorRemark ?? undefined,
+    testType:     t.testType ?? undefined,
+    cycleNumber:  t.cycleNumber ?? undefined,
+    topicName:    t.topicName ?? undefined,
+    status:       t.status,
+    coveredChapterLabels: ((t.coveredChapters ?? []) as any[]).map((c: any) => c.label ?? c).filter(Boolean),
+    reportStrengths:          t.report?.strengths ?? undefined,
+    reportAreasOfImprovement: t.report?.areasOfImprovement ?? undefined,
+    reportRecommendations:    t.report?.recommendations ?? undefined,
   }));
 
   // Trend from last 3 tests
@@ -678,6 +708,20 @@ export const getParentProgressData = async (userId: string) => {
   const strongTopics = Object.entries(topicScores).filter(([, v]) => v.reduce((a, b) => a + b, 0) / v.length >= 0.7).map(([k]) => k);
   const weakTopics = Object.entries(topicScores).filter(([, v]) => v.reduce((a, b) => a + b, 0) / v.length < 0.5).map(([k]) => k);
 
+  // Syllabus coverage
+  let syllabusData: { totalChapters: number; coveredChapters: number; chapterCoverage: Array<{ label: string; covered: boolean }> } = {
+    totalChapters: 0, coveredChapters: 0, chapterCoverage: [],
+  };
+  try {
+    const { getSyllabusCoverage } = await import('./testService');
+    const coverage = await getSyllabusCoverage(String(activeClass._id));
+    syllabusData = {
+      totalChapters:   coverage.totalChapters,
+      coveredChapters: coverage.coveredChapters,
+      chapterCoverage: coverage.chapters.slice(0, 30).map((c) => ({ label: c.label, covered: c.covered })),
+    };
+  } catch (_) { /* non-fatal */ }
+
   const subjects = [{
     subject:         subjectLabel,
     lastScore:       allTests[0]?.score ?? 0,
@@ -687,7 +731,20 @@ export const getParentProgressData = async (userId: string) => {
     weakTopics:      weakTopics.slice(0, 3),
     lastRemark:      allTests[0]?.tutorRemark ?? undefined,
     tests:           allTests,
+    ...syllabusData,
   }];
+
+  // Generate AI insight (non-blocking — returns '' on failure or missing key)
+  const aiInsight = await generateProgressInsight({
+    studentName:  activeClass.studentName,
+    subject:      subjectLabel,
+    trend:        overallTrend,
+    scores:       allTests.slice(0, 5).map((t) => ({ score: t.score, totalMarks: t.totalMarks, date: t.date })),
+    attendanceRate: attendanceRate ?? undefined,
+    strongTopics: strongTopics.slice(0, 3),
+    weakTopics:   weakTopics.slice(0, 3),
+    tutorRemark:  allTests[0]?.tutorRemark,
+  });
 
   return {
     studentName:       activeClass.studentName,
@@ -696,6 +753,218 @@ export const getParentProgressData = async (userId: string) => {
     subjects,
     allTests,
     attendanceRate:    attendanceRate ?? undefined,
-    completedSessions: (activeClass as any).completedSessions ?? undefined,
+    completedSessions:  (activeClass as any).completedSessions ?? undefined,
+    totalTestsTaken:    allTests.length,
+    currentCycle:      (activeClass as any).currentCycleNumber ?? undefined,
+    aiInsight:          aiInsight || undefined,
   };
+};
+
+// ─── Parent: View Their Tutor's Public Profile ────────────────────────────────
+
+export const getParentTutorProfileData = async (userId: string) => {
+  const activeClass = await FinalClass.findOne({ parent: userId, status: 'ACTIVE' })
+    .populate('tutor', 'name')
+    .select('tutor');
+
+  if (!activeClass) throw new ErrorResponse('No active class found', 404);
+
+  const tutorUser = activeClass.tutor as any;
+  if (!tutorUser?._id) throw new ErrorResponse('No tutor assigned to your class yet', 404);
+
+  const tutorProfile = await Tutor.findOne({ user: tutorUser._id }).select('teacherId');
+  if (!tutorProfile?.teacherId) throw new ErrorResponse('Tutor profile not found', 404);
+
+  return getPublicTutorProfile(tutorProfile.teacherId);
+};
+
+// ─── Child Profile ─────────────────────────────────────────────────────────────
+
+export const getChildProfileData = async (userId: string) => {
+  const [parent, user, activeClass] = await Promise.all([
+    Parent.findOne({ user: userId }),
+    User.findById(userId).select('name email phone city'),
+    FinalClass.findOne({ parent: userId, status: 'ACTIVE' })
+      .select('studentName grade board mode schedule notes')
+      .populate('subject', 'label'),
+  ]);
+
+  if (!parent) throw new ErrorResponse('Parent profile not found', 404);
+
+  return {
+    // editable by parent
+    primaryStudentName: parent.primaryStudentName ?? activeClass?.studentName ?? '',
+    notes: parent.notes ?? '',
+    // parent contact (editable)
+    parentName: user?.name ?? '',
+    parentEmail: user?.email ?? '',
+    parentPhone: (user as any)?.phone ?? '',
+    parentCity: (user as any)?.city ?? '',
+    // locked — set by coordinator
+    activeClass: activeClass
+      ? {
+          studentName: activeClass.studentName,
+          grade: activeClass.grade,
+          board: activeClass.board,
+          mode: activeClass.mode,
+          schedule: activeClass.schedule,
+        }
+      : null,
+  };
+};
+
+export const updateChildProfileData = async (
+  userId: string,
+  payload: { primaryStudentName?: string; notes?: string }
+) => {
+  const parent = await Parent.findOne({ user: userId });
+  if (!parent) throw new ErrorResponse('Parent profile not found', 404);
+
+  if (payload.primaryStudentName !== undefined) parent.primaryStudentName = payload.primaryStudentName.trim();
+  if (payload.notes !== undefined) parent.notes = payload.notes.trim();
+
+  await parent.save();
+  return { updated: true };
+};
+
+
+export const createParentShiftRequest = async (
+  userId: string,
+  payload: { effectiveDate: string; shiftDays: number; reason: string }
+) => {
+  const { effectiveDate, shiftDays, reason } = payload;
+
+  if (!shiftDays || shiftDays < 1) throw new ErrorResponse('shiftDays must be at least 1', 400);
+
+  if (!effectiveDate) throw new ErrorResponse('Effective date is required', 400);
+  if (!reason?.trim()) throw new ErrorResponse('Reason is required', 400);
+
+  const effDate = new Date(effectiveDate);
+  if (isNaN(effDate.getTime())) throw new ErrorResponse('Invalid effective date', 400);
+  if (effDate <= new Date()) throw new ErrorResponse('Effective date must be in the future', 400);
+
+  const activeClass = await FinalClass.findOne({ parent: userId, status: 'ACTIVE' });
+  if (!activeClass) throw new ErrorResponse('No active class found', 404);
+
+  const cycleNumber = (activeClass as any).currentCycleNumber ?? 1;
+
+  const existing = await ShiftRequest.findOne({ finalClass: activeClass._id, cycleNumber, status: 'PENDING' });
+  if (existing) throw new ErrorResponse('A pending shift request already exists for the current cycle', 409);
+
+  const request = await ShiftRequest.create({
+    finalClass:    activeClass._id,
+    cycleNumber,
+    requestedBy:   userId,
+    effectiveDate: effDate,
+    shiftDays,
+    reason:        reason.trim(),
+    status:        'PENDING',
+  });
+
+  if ((activeClass as any).coordinator) {
+    const { createNotificationWithPreferences } = await import('./notificationService');
+    try {
+      await createNotificationWithPreferences({
+        recipient: String((activeClass as any).coordinator),
+        type: 'GENERAL',
+        title: 'Parent Shift Request',
+        message: `Parent has requested to shift cycle ${cycleNumber} sessions by ${shiftDays} day(s) starting from ${effDate.toDateString()}. Reason: ${reason.trim()}`,
+      });
+    } catch (_) { /* non-fatal */ }
+  }
+
+  return request;
+};
+
+export const requestTutorChange = async (userId: string, payload: { reason: string }) => {
+  const { reason } = payload;
+  if (!reason?.trim()) throw new ErrorResponse('Reason is required', 400);
+
+  const parentUser = await User.findById(userId).select('name email phone');
+  if (!parentUser) throw new ErrorResponse('User not found', 404);
+
+  const activeClass = await FinalClass.findOne({ parent: userId, status: 'ACTIVE' })
+    .populate('coordinator', 'name email')
+    .populate('subject', 'label')
+    .select('studentName subject coordinator currentCycleNumber');
+  if (!activeClass) throw new ErrorResponse('No active class found', 404);
+
+  const coordinator = (activeClass as any).coordinator as { _id: any; name: string; email: string } | null;
+  const subjectLabel = Array.isArray((activeClass as any).subject)
+    ? (activeClass as any).subject.map((s: any) => s.label ?? s.value ?? s).join(', ')
+    : ((activeClass as any).subject?.label ?? 'N/A');
+
+  const emailHtml = `
+    <div style="font-family:sans-serif;max-width:520px;margin:auto;padding:24px">
+      <h2 style="color:#1e293b;margin-bottom:4px">Tutor Change Request</h2>
+      <p style="color:#64748b;font-size:13px;margin-top:0">Submitted by parent via the app</p>
+      <table style="width:100%;border-collapse:collapse;margin:20px 0;font-size:14px">
+        <tr><td style="padding:8px 0;color:#64748b;width:140px">Parent</td><td style="color:#1e293b;font-weight:600">${parentUser.name}</td></tr>
+        <tr><td style="padding:8px 0;color:#64748b">Email</td><td style="color:#1e293b">${parentUser.email}</td></tr>
+        <tr><td style="padding:8px 0;color:#64748b">Phone</td><td style="color:#1e293b">${parentUser.phone ?? 'N/A'}</td></tr>
+        <tr><td style="padding:8px 0;color:#64748b">Student</td><td style="color:#1e293b;font-weight:600">${activeClass.studentName}</td></tr>
+        <tr><td style="padding:8px 0;color:#64748b">Subject</td><td style="color:#1e293b">${subjectLabel}</td></tr>
+        <tr><td style="padding:8px 0;color:#64748b">Cycle</td><td style="color:#1e293b">${(activeClass as any).currentCycleNumber ?? 1}</td></tr>
+        <tr><td style="padding:8px 0;color:#64748b">Coordinator</td><td style="color:#1e293b">${coordinator?.name ?? 'Unassigned'}</td></tr>
+      </table>
+      <div style="background:#f8fafc;border-radius:8px;padding:16px;border-left:4px solid #6366f1">
+        <p style="margin:0;font-size:13px;color:#64748b;font-weight:600;margin-bottom:6px">REASON</p>
+        <p style="margin:0;color:#1e293b;font-size:14px;line-height:1.6">${reason.trim()}</p>
+      </div>
+      <p style="color:#94a3b8;font-size:12px;margin-top:24px">Please review and assign a new tutor at your earliest convenience.</p>
+    </div>
+  `;
+
+  const { sendEmail } = await import('../utils/emailService');
+  const { createNotificationWithPreferences } = await import('./notificationService');
+
+  const notifMessage = `${parentUser.name} has requested a tutor change for ${activeClass.studentName} (${subjectLabel}). Reason: ${reason.trim()}`;
+
+  const tasks: Promise<any>[] = [];
+
+  // Notify + email coordinator
+  if (coordinator) {
+    tasks.push(
+      createNotificationWithPreferences({
+        recipient: String(coordinator._id),
+        type: 'GENERAL',
+        title: 'Tutor Change Request',
+        message: notifMessage,
+      }).catch(() => {}),
+    );
+    if (coordinator.email) {
+      tasks.push(
+        sendEmail(coordinator.email, `Tutor Change Request — ${activeClass.studentName}`, emailHtml).catch(() => {}),
+      );
+    }
+  }
+
+  // Notify + email all admins
+  const admins = await User.find({ role: USER_ROLES.ADMIN }).select('_id email name');
+  for (const admin of admins) {
+    tasks.push(
+      createNotificationWithPreferences({
+        recipient: String(admin._id),
+        type: 'GENERAL',
+        title: 'Tutor Change Request',
+        message: notifMessage,
+      }).catch(() => {}),
+    );
+    if (admin.email) {
+      tasks.push(
+        sendEmail(admin.email, `Tutor Change Request — ${activeClass.studentName}`, emailHtml).catch(() => {}),
+      );
+    }
+  }
+
+  await Promise.allSettled(tasks);
+  return { requested: true };
+};
+
+export const getParentShiftRequests = async (userId: string) => {
+  const activeClass = await FinalClass.findOne({ parent: userId, status: 'ACTIVE' });
+  if (!activeClass) return [];
+  return ShiftRequest.find({ finalClass: activeClass._id, requestedBy: userId })
+    .sort({ createdAt: -1 })
+    .lean();
 };
