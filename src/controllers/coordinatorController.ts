@@ -509,9 +509,10 @@ export const getCoordinatorActivityLogController = asyncHandler(async (req: Auth
 // ─── Reschedule Requests ──────────────────────────────────────────────────────
 
 export const getPendingRescheduleRequestsControllerFn = asyncHandler(async (req: AuthRequest, res) => {
-  const coordinatorUserId = req.user!.id;
+  const isAdmin = req.user!.role === 'ADMIN' || req.user!.role === 'MANAGER';
+  const query = isAdmin ? {} : { coordinator: req.user!.id };
 
-  const classes = await FinalClass.find({ coordinator: coordinatorUserId })
+  const classes = await FinalClass.find(query)
     .select('studentName className subject schedule oneTimeReschedules')
     .populate('subject', 'label')
     .lean();
@@ -544,9 +545,10 @@ export const getPendingRescheduleRequestsControllerFn = asyncHandler(async (req:
 
 export const approveRescheduleRequestControllerFn = asyncHandler(async (req: AuthRequest, res) => {
   const { classId, requestId } = req.params;
-  const coordinatorUserId = req.user!.id;
+  const isAdmin = req.user!.role === 'ADMIN' || req.user!.role === 'MANAGER';
+  const classQuery = isAdmin ? { _id: classId } : { _id: classId, coordinator: req.user!.id };
 
-  const cls = await FinalClass.findOne({ _id: classId, coordinator: coordinatorUserId });
+  const cls = await FinalClass.findOne(classQuery);
   if (!cls) throw new ErrorResponse('Class not found or not assigned to you', 404);
 
   const entry = (cls.oneTimeReschedules ?? []).find((r: any) => String(r._id) === requestId);
@@ -579,10 +581,11 @@ export const approveRescheduleRequestControllerFn = asyncHandler(async (req: Aut
 
 export const rejectRescheduleRequestControllerFn = asyncHandler(async (req: AuthRequest, res) => {
   const { classId, requestId } = req.params;
-  const coordinatorUserId = req.user!.id;
+  const isAdmin = req.user!.role === 'ADMIN' || req.user!.role === 'MANAGER';
   const { reason } = req.body;
+  const classQuery = isAdmin ? { _id: classId } : { _id: classId, coordinator: req.user!.id };
 
-  const cls = await FinalClass.findOne({ _id: classId, coordinator: coordinatorUserId });
+  const cls = await FinalClass.findOne(classQuery);
   if (!cls) throw new ErrorResponse('Class not found or not assigned to you', 404);
 
   const entry = (cls.oneTimeReschedules ?? []).find((r: any) => String(r._id) === requestId);

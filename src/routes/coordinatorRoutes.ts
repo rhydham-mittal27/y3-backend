@@ -96,8 +96,8 @@ router.patch('/:coordinatorId/settings', authorize(USER_ROLES.COORDINATOR, USER_
 router.delete('/:id', authorize(USER_ROLES.MANAGER, USER_ROLES.ADMIN), coordinatorIdValidation, deleteCoordinatorProfile);
 
 // Reschedule requests
-router.get('/reschedule-requests', authorize(USER_ROLES.COORDINATOR), getPendingRescheduleRequestsController);
-router.post('/reschedule-requests/:classId/:requestId/approve', authorize(USER_ROLES.COORDINATOR), approveRescheduleRequestController);
-router.post('/reschedule-requests/:classId/:requestId/reject', authorize(USER_ROLES.COORDINATOR), rejectRescheduleRequestController);
+router.get('/reschedule-requests', authorize(USER_ROLES.COORDINATOR, USER_ROLES.MANAGER, USER_ROLES.ADMIN), getPendingRescheduleRequestsController);
+router.post('/reschedule-requests/:classId/:requestId/approve', authorize(USER_ROLES.COORDINATOR, USER_ROLES.MANAGER, USER_ROLES.ADMIN), approveRescheduleRequestController);
+router.post('/reschedule-requests/:classId/:requestId/reject', authorize(USER_ROLES.COORDINATOR, USER_ROLES.MANAGER, USER_ROLES.ADMIN), rejectRescheduleRequestController);
 
 export default router;
