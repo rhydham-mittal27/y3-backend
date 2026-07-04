@@ -157,7 +157,7 @@ export const requestSessionRescheduleController = asyncHandler(async (req: AuthR
     toDate:      new Date(newDate),
     timeSlot:    session.timeSlot ?? '',
     status:      'PENDING' as const,
-    requestedBy: req.user!._id,
+    requestedBy: req.user!.id,
     requestedAt: new Date(),
     requestType: 'TUTOR' as const,
   };
