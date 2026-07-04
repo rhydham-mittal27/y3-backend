@@ -3,6 +3,8 @@ import asyncHandler from '../utils/asyncHandler';
 import { successResponse } from '../utils/responseFormatter';
 import ErrorResponse from '../utils/errorResponse';
 import FinalClass from '../models/FinalClass';
+import ClassSession from '../models/ClassSession';
+import Notification from '../models/Notification';
 import { USER_ROLES } from '../config/constants';
 import { generateClassSessionsForCycle, getTutorSessionsForCycle, getCoordinatorSessionsForCycle, rescheduleSession } from '../services/classSessionService';
 import { AuthRequest } from '../types';
@@ -129,4 +131,47 @@ export const rescheduleSessionController = asyncHandler(async (req: AuthRequest,
   });
 
   return res.json(successResponse(session, 'Session rescheduled'));
+});
+
+// ─── Tutor Reschedule Request (pending coordinator approval) ──────────────────
+
+export const requestSessionRescheduleController = asyncHandler(async (req: AuthRequest, res) => {
+  const { sessionId } = req.params;
+  const { newDate } = req.body as { newDate: string };
+
+  if (!newDate) throw new ErrorResponse('newDate is required', 400);
+
+  const session = await ClassSession.findById(sessionId);
+  if (!session) throw new ErrorResponse('Session not found', 404);
+  if (String(session.tutor) !== String(req.user!.id))
+    throw new ErrorResponse('Not authorised', 403);
+  if (session.status !== 'PLANNED')
+    throw new ErrorResponse(`Cannot reschedule a session that is ${session.status.toLowerCase()}`, 400);
+
+  const cls = await FinalClass.findById(session.finalClass);
+  if (!cls) throw new ErrorResponse('Class not found', 404);
+
+  const entry = {
+    sessionId:   session._id,
+    fromDate:    session.sessionDate as Date,
+    toDate:      new Date(newDate),
+    timeSlot:    session.timeSlot ?? '',
+    status:      'PENDING' as const,
+    requestedBy: req.user!._id,
+    requestedAt: new Date(),
+    requestType: 'TUTOR' as const,
+  };
+
+  await FinalClass.findByIdAndUpdate(cls._id, { $push: { oneTimeReschedules: entry } });
+
+  if (cls.coordinator) {
+    await Notification.create({
+      recipient: cls.coordinator,
+      type:      'GENERAL',
+      title:     `Reschedule Request — ${cls.studentName}`,
+      message:   `Tutor requested to reschedule session #${session.sessionNumber} from ${entry.fromDate.toDateString()} to ${entry.toDate.toDateString()}.`,
+    });
+  }
+
+  return res.status(201).json(successResponse(null, 'Reschedule request submitted for coordinator approval.'));
 });

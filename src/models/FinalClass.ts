@@ -55,6 +55,7 @@ export interface IFinalClassDocument extends SoftDeleteDocument {
     status: 'PENDING' | 'APPROVED' | 'REJECTED';
     requestedBy: mongoose.Types.ObjectId;
     requestedAt: Date;
+    requestType: 'PARENT' | 'TUTOR';
     rejectionReason?: string;
   }[];
   testPerMonth?: number;
@@ -111,6 +112,7 @@ const FinalClassSchema: Schema<IFinalClassDocument> = new Schema<IFinalClassDocu
         status:          { type: String, enum: ['PENDING', 'APPROVED', 'REJECTED'], default: 'PENDING' },
         requestedBy:     { type: Schema.Types.ObjectId, ref: 'User', required: true },
         requestedAt:     { type: Date, default: Date.now },
+        requestType:     { type: String, enum: ['PARENT', 'TUTOR'], default: 'PARENT' },
         rejectionReason: { type: String },
       },
     ],

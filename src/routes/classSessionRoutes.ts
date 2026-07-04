@@ -9,6 +9,7 @@ import {
   getMyCoordinatorSessionsForCycleController,
   getClassSessionsController,
   rescheduleSessionController,
+  requestSessionRescheduleController,
 } from '../controllers/classSessionController';
 
 const router = Router();
@@ -41,6 +42,14 @@ router.patch(
   body('newDate').isISO8601().withMessage('newDate must be a valid ISO date'),
   body('newTimeSlot').optional().isString().withMessage('newTimeSlot must be a string'),
   rescheduleSessionController
+);
+
+router.post(
+  '/:sessionId/reschedule-request',
+  authorize(USER_ROLES.TUTOR),
+  param('sessionId').isMongoId().withMessage('Invalid session ID'),
+  body('newDate').isISO8601().withMessage('newDate must be a valid ISO date'),
+  requestSessionRescheduleController
 );
 
 export default router;

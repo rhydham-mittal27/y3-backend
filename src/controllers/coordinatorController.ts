@@ -533,6 +533,7 @@ export const getPendingRescheduleRequestsControllerFn = asyncHandler(async (req:
           timeSlot:    r.timeSlot,
           requestedBy: r.requestedBy,
           requestedAt: r.requestedAt,
+          requestType: r.requestType ?? 'PARENT',
         });
       }
     }
