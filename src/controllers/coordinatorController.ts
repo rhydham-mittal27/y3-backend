@@ -558,7 +558,7 @@ export const approveRescheduleRequestControllerFn = asyncHandler(async (req: Aut
   await rescheduleSession({
     sessionId:   String(entry.sessionId),
     newDate:     entry.toDate,
-    actorUserId: String(coordinatorUserId),
+    actorUserId: String(req.user!.id),
     isAdmin:     true,
   });
 
