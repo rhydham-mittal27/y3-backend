@@ -1,7 +1,6 @@
 import mongoose from 'mongoose';
 import ErrorResponse from '../utils/errorResponse';
 import FinalClass from '../models/FinalClass';
-import Groupleads from '../models/GroupClass';
 import ClassSession, { IClassSessionDocument } from '../models/ClassSession';
 import Attendance from '../models/Attendance';
 
@@ -126,73 +125,6 @@ export const generateClassSessionsForCycle = async (params: {
       }
     })
   );
-
-  return sessionDocs;
-};
-
-export const generateGroupClassSessionsForCycle = async (params: {
-  groupClassId: string;
-  cycleMonth: number;
-  cycleYear: number;
-  /** When provided, sessions start from this exact date instead of the first-of-month anchor. */
-  anchorDate?: Date;
-}) => {
-  const { groupClassId, cycleMonth, cycleYear, anchorDate } = params;
-  if (!cycleMonth || !cycleYear) throw new ErrorResponse('cycleMonth and cycleYear are required', 400);
-  if (cycleMonth < 1 || cycleMonth > 12) throw new ErrorResponse('Invalid cycleMonth', 400);
-
-  const cls: any = await Groupleads.findById(groupClassId);
-  if (!cls) throw new ErrorResponse('Group class not found', 404);
-
-  const schedule: any = cls.schedule || {};
-  const daysOfWeek: string[] = Array.isArray(schedule.daysOfWeek) ? schedule.daysOfWeek.map(normalizeDayName) : [];
-  const timeSlot: string = String(schedule.timeSlot || '').trim();
-
-  if (!daysOfWeek.length) throw new ErrorResponse('Schedule daysOfWeek is required to generate sessions', 400);
-  if (!timeSlot) throw new ErrorResponse('Schedule timeSlot is required to generate sessions', 400);
-
-  const n = Number(cls.sessionsPerMonth || 0);
-  if (!Number.isFinite(n) || n <= 0) throw new ErrorResponse('sessionsPerMonth must be set to generate sessions', 400);
-
-  const anchorStart = anchorDate
-    ? startOfDay(new Date(anchorDate))
-    : computeCycleAnchorStart({ cycleMonth, cycleYear });
-
-  const pickedDates: Date[] = [];
-  for (let d = new Date(anchorStart); pickedDates.length < n; d.setDate(d.getDate() + 1)) {
-    const dayName = dayIndexToName(d);
-    if (!daysOfWeek.includes(dayName)) continue;
-    const dt = new Date(d);
-    dt.setHours(0, 0, 0, 0);
-    pickedDates.push(new Date(dt));
-
-    if (pickedDates.length > n + 1000) break;
-  }
-
-  const sessionDocs: IClassSessionDocument[] = [] as any;
-
-  for (let i = 0; i < pickedDates.length; i += 1) {
-    const sessionNumber = i + 1;
-    const sessionDate = pickedDates[i];
-
-    const doc = await ClassSession.findOneAndUpdate(
-      { groupClass: cls._id, cycleYear, cycleMonth, sessionNumber },
-      {
-        $setOnInsert: {
-          groupClass: cls._id,
-          status: 'PLANNED',
-        },
-        $set: {
-          sessionDate,
-          timeSlot,
-          tutor: cls.tutor,
-        },
-      },
-      { new: true, upsert: true }
-    );
-
-    sessionDocs.push(doc as any);
-  }
 
   return sessionDocs;
 };

@@ -28,9 +28,6 @@ export interface IGroupleadsDocument extends Document {
   status: 'ACTIVE' | 'PAUSED' | 'COMPLETED';
   classLead?: mongoose.Types.ObjectId;
   createdBy: mongoose.Types.ObjectId;
-  completedSessions?: number;
-  cycleStartPending?: boolean;
-  currentCycleNumber?: number;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -70,9 +67,6 @@ const GroupleadsSchema: Schema<IGroupleadsDocument> = new Schema<IGroupleadsDocu
     },
     classLead: { type: Schema.Types.ObjectId, ref: 'ClassLead' },
     createdBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
-    completedSessions: { type: Number, default: 0 },
-    cycleStartPending: { type: Boolean, default: false },
-    currentCycleNumber: { type: Number, default: 1, min: 1 },
   },
   { timestamps: true }
 );

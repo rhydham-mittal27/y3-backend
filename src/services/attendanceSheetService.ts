@@ -8,7 +8,7 @@ import ErrorResponse from '../utils/errorResponse';
 import { ATTENDANCE_STATUS, STUDENT_ATTENDANCE_STATUS, FINAL_CLASS_STATUS, PAYMENT_TYPE, PAYMENT_STATUS, USER_ROLES } from '../config/constants';
 import { createPaymentForSheet, createCyclePayments } from './paymentService';
 import { updateTutorExperienceAndTier } from './tutorService';
-import { generateClassSessionsForCycle, generateGroupClassSessionsForCycle } from './classSessionService';
+import { generateClassSessionsForCycle } from './classSessionService';
 import ClassSession from '../models/ClassSession';
 import User from '../models/User';
 import admin from 'firebase-admin';
@@ -174,24 +174,6 @@ export const addDailyAttendance = async (params: {
         logger.warn(`[timetable] auto-generate failed for class ${finalClassId} cycle ${nextCycle}: ${sessionErr}`);
       }
     }
-
-    // Auto-generate ClassSession timetable for this cycle — group classes.
-    if (isGroup && groupClassId) {
-      try {
-        const groupForCheck: any = await Groupleads.findById(groupClassId).select('currentCycleNumber cycleStartPending');
-        const usesNewFlow = groupForCheck && typeof groupForCheck.currentCycleNumber === 'number';
-        if (!usesNewFlow) {
-          await generateGroupClassSessionsForCycle({
-            groupClassId,
-            cycleMonth: date.getMonth() + 1,
-            cycleYear: date.getFullYear(),
-            anchorDate: date,
-          });
-        }
-      } catch (sessionErr) {
-        logger.warn(`[timetable] auto-generate failed for group class ${groupClassId} cycle ${nextCycle}: ${sessionErr}`);
-      }
-    }
   }
 
   // --- Auto-Pause Check (Single Class Only as per earlier task) ---
@@ -343,63 +325,6 @@ export const addDailyAttendance = async (params: {
       }
     } catch (e) {
       logger.error('[AttendanceSheet] cycle completion check failed:', e);
-    }
-  }
-
-  // Keep GroupClass session progress in sync with attendance submissions (Group Class only)
-  if (isGroup && groupClassId) {
-    const updatedGroup: any = await Groupleads.findOneAndUpdate(
-      { _id: new mongoose.Types.ObjectId(groupClassId), completedSessions: { $lt: sessionLimit } },
-      { $inc: { completedSessions: 1 } },
-      { new: true },
-    );
-
-    // Mark matching ClassSession as COMPLETED
-    try {
-      await ClassSession.findOneAndUpdate(
-        { groupClass: new mongoose.Types.ObjectId(groupClassId), sessionDate: date, status: 'PLANNED' },
-        { $set: { status: 'COMPLETED' } },
-      );
-    } catch { /* non-fatal */ }
-
-    // Cycle completion: when all sessionsPerMonth sessions have attendance records
-    try {
-      if (updatedGroup && sheet.totalSessionsTaken >= sessionLimit) {
-        const cycleNum = updatedGroup.currentCycleNumber || sheet.cycleNumber || 1;
-        const nextCycle = cycleNum + 1;
-        await Groupleads.findByIdAndUpdate(groupClassId, {
-          cycleStartPending: true,
-          currentCycleNumber: nextCycle,
-          completedSessions: 0,
-        });
-
-        // Notify tutor
-        const tutorUser: any = await User.findById(updatedGroup.tutor).select('expoPushToken name');
-        const notifTitle = `📅 Cycle ${cycleNum} Complete!`;
-        const notifBody = `Great work on ${updatedGroup.name || 'your group class'}! Set your start date for Cycle ${nextCycle} to keep the momentum going.`;
-
-        await createNotificationWithPreferences({
-          recipient: String(updatedGroup.tutor),
-          type: 'GENERAL',
-          title: notifTitle,
-          message: notifBody,
-        });
-
-        const fcmToken: string | undefined = tutorUser?.expoPushToken;
-        if (fcmToken && fcmToken.length > 10) {
-          if (!admin.apps.length) {
-            admin.initializeApp({ credential: admin.credential.cert(require('../../firebase-service-account.json')) });
-          }
-          admin.messaging().send({
-            token: fcmToken,
-            notification: { title: notifTitle, body: notifBody },
-            android: { priority: 'high', notification: { channelId: 'announcements', sound: 'default' } },
-            data: { type: 'CYCLE_COMPLETE', groupClassId, cycleNumber: String(nextCycle) },
-          }).catch((e: any) => logger.error('[Push] group cycle complete:', e));
-        }
-      }
-    } catch (e) {
-      logger.error('[AttendanceSheet] group cycle completion check failed:', e);
     }
   }
 
