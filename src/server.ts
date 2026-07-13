@@ -29,6 +29,7 @@ import notificationRoutes from './routes/notificationRoutes';
 import demoRoutes from './routes/demoRoutes';
 import coordinatorRoutes from './routes/coordinatorRoutes';
 import finalClassRoutes from './routes/finalClassRoutes';
+import groupClassRoutes from './routes/groupClassRoutes';
 import attendanceRoutes from './routes/attendanceRoutes';
 import attendanceSheetRoutes from './routes/attendanceSheetRoutes';
 import paymentRoutes from './routes/paymentRoutes';
@@ -55,8 +56,8 @@ import ticketRoutes from './routes/ticketRoutes';
 import teacherRequestRoutes from './routes/teacherRequestRoutes';
 import bannerRoutes from './routes/bannerRoutes';
 
-// Load environment variables
-dotenv.config();
+// Load environment variables (supports DOTENV_CONFIG_PATH for staging)
+dotenv.config({ path: process.env.DOTENV_CONFIG_PATH || '.env' });
 
 // Validate environment variables before starting
 try {
@@ -200,6 +201,7 @@ registerRoute('/api/notifications', notificationRoutes, writeLimiter);
 registerRoute('/api/demos', demoRoutes, writeLimiter);
 registerRoute('/api/coordinators', coordinatorRoutes, writeLimiter);
 registerRoute('/api/final-classes', finalClassRoutes, writeLimiter);
+registerRoute('/api/group-classes', groupClassRoutes, writeLimiter);
 registerRoute('/api/attendance', attendanceRoutes, writeLimiter);
 registerRoute('/api/attendance-sheets', attendanceSheetRoutes, writeLimiter);
 registerRoute('/api/payments', paymentRoutes, writeLimiter);
