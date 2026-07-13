@@ -7,6 +7,7 @@ import Coordinator from '../models/Coordinator';
 import User from '../models/User';
 import Notification from '../models/Notification';
 import Student from '../models/Student';
+import Parent from '../models/Parent';
 import ErrorResponse from '../utils/errorResponse';
 import { CLASS_LEAD_STATUS, FINAL_CLASS_STATUS, MANAGER_ACTION_TYPE, ATTENDANCE_STATUS, USER_ROLES, CHANGE_ACTION } from '../config/constants';
 import { logManagerActivity } from './managerService';
@@ -198,6 +199,7 @@ export const convertLeadToFinalClass = async (params: {
             parentUser = new User({
               name: (lead as any).parentName || `Parent of ${lead.studentName}`,
               email: normalizedEmail,
+              phone: (lead as any).parentPhone,
               role: USER_ROLES.PARENT,
               password: studentId,
             } as any);
@@ -205,6 +207,7 @@ export const convertLeadToFinalClass = async (params: {
           }
           parentUserObjectId = parentUser._id;
         }
+        // Parent profile is upserted later once student IDs are known
       }
     } else if (lead.studentType === 'GROUP' && (lead.groupClass || lead.studentDetails) && lead.grade) {
       // Create individual student profiles for group classes
@@ -329,16 +332,77 @@ export const convertLeadToFinalClass = async (params: {
 
     await created.save({ session });
 
-    // Save student profiles for group classes
+    // Save student profiles and fix finalClass reference
     if (createdStudents.length > 0) {
-      // Update finalClass reference for each student
       for (const student of createdStudents) {
         student.finalClass = created._id;
       }
-      
-      // Save all student profiles
       await Student.insertMany(createdStudents, { session });
     }
+
+    // ── Auto-create Parent profile documents ───────────────────────────────────
+    // For single-student leads: one Parent profile linked to the one student
+    if (lead.studentType === 'SINGLE' && parentUserObjectId && createdStudents.length > 0) {
+      const savedStudent = createdStudents[0];
+      try {
+        await Parent.findOneAndUpdate(
+          { user: parentUserObjectId },
+          {
+            $setOnInsert: {
+              user: parentUserObjectId,
+              primaryStudentName: lead.studentName,
+              primaryStudentGrade: lead.grade,
+              source: 'CLASS_CONVERSION',
+            },
+            $addToSet: { children: savedStudent._id },
+          },
+          { upsert: true, new: true, session } as any,
+        );
+      } catch (e) {
+        // Non-fatal — parent profile can be created manually
+        console.error('[convertLeadToFinalClass] Failed to upsert single Parent profile:', e);
+      }
+    }
+
+    // For group leads: one Parent profile per unique parent email, linked to their child
+    if (lead.studentType === 'GROUP' && Object.keys(parentUsersByEmail).length > 0) {
+      // Build a quick map: normalizedEmail → studentId ObjectIds
+      const emailToStudentIds: Record<string, mongoose.Types.ObjectId[]> = {};
+      const studentDetailsToUse = (lead.groupClass as any)?.students || lead.studentDetails || [];
+      for (let i = 0; i < createdStudents.length; i++) {
+        const detail = studentDetailsToUse[i];
+        const email = ((detail?.parentEmail || lead.parentEmail || '') as string).toLowerCase().trim();
+        if (email && parentUsersByEmail[email]) {
+          if (!emailToStudentIds[email]) emailToStudentIds[email] = [];
+          emailToStudentIds[email].push(createdStudents[i]._id);
+        }
+      }
+      for (const [email, studentIds] of Object.entries(emailToStudentIds)) {
+        const parentUserId = parentUsersByEmail[email];
+        if (!parentUserId) continue;
+        const detail = studentDetailsToUse.find((d: any) =>
+          ((d?.parentEmail || '') as string).toLowerCase().trim() === email,
+        );
+        try {
+          await Parent.findOneAndUpdate(
+            { user: parentUserId },
+            {
+              $setOnInsert: {
+                user: parentUserId,
+                primaryStudentName: detail?.name || lead.studentName,
+                primaryStudentGrade: lead.grade,
+                source: 'CLASS_CONVERSION',
+              },
+              $addToSet: { children: { $each: studentIds } },
+            },
+            { upsert: true, new: true, session } as any,
+          );
+        } catch (e) {
+          console.error('[convertLeadToFinalClass] Failed to upsert group Parent profile:', e);
+        }
+      }
+    }
+    // ──────────────────────────────────────────────────────────────────────────
 
     // Attempt to create an advance payment for this class using the lead's paymentAmount as fixed advance fee
     let advancePaymentCreated = false;

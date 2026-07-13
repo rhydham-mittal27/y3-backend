@@ -946,16 +946,39 @@ export const createPaymentForSheet = async (sheetId: string, createdBy: string) 
   return payment;
 };
 
+const createCyclePaymentsForGroupClass = async (sheet: any, createdBy: string, dueDate: Date) => {
+  const StudentEnrollment = require('../models/StudentEnrollment').default;
+  const Groupleads = require('../models/GroupClass').default;
+  const [enrollments, group] = await Promise.all([
+    StudentEnrollment.find({ groupClass: sheet.groupClass, status: 'ACTIVE' }),
+    Groupleads.findById(sheet.groupClass).select('tutor'),
+  ]);
+
+  for (const enrollment of enrollments) {
+    const amount = enrollment.monthlyFee || 0;
+    if (amount <= 0) continue;
+
+    await Payment.create({
+      groupClass: sheet.groupClass,
+      attendanceSheet: sheet._id,
+      student: enrollment.student,
+      tutor: group?.tutor,
+      amount,
+      currency: 'INR',
+      status: PAYMENT_STATUS.PENDING,
+      paymentType: PAYMENT_TYPE.FEES_COLLECTED,
+      dueDate,
+      createdBy: new mongoose.Types.ObjectId(createdBy),
+      notes: `Monthly fees for ${sheet.periodLabel} (Group)`,
+    });
+  }
+};
+
 export const createCyclePayments = async (sheetId: string, createdBy: string) => {
   const AttendanceSheet = require('../models/AttendanceSheet').default;
-  const sheet = await AttendanceSheet.findById(sheetId).populate({
-    path: 'finalClass',
-    populate: { path: 'classLead' }
-  });
+  const sheet = await AttendanceSheet.findById(sheetId);
 
   if (!sheet) throw new ErrorResponse('Attendance sheet not found', 404);
-  const cls = sheet.finalClass as any;
-  if (!cls) throw new ErrorResponse('Final class not found for sheet', 404);
 
   const numSessions = sheet.totalSessionsPlanned || 0;
   if (numSessions <= 0) return;
@@ -968,6 +991,15 @@ export const createCyclePayments = async (sheetId: string, createdBy: string) =>
 
   const dueDate = new Date();
   dueDate.setDate(dueDate.getDate() + 7);
+
+  if (sheet.sheetType === 'GROUP' || sheet.groupClass) {
+    await createCyclePaymentsForGroupClass(sheet, createdBy, dueDate);
+    return;
+  }
+
+  await sheet.populate({ path: 'finalClass', populate: { path: 'classLead' } });
+  const cls = sheet.finalClass as any;
+  if (!cls) throw new ErrorResponse('Final class not found for sheet', 404);
 
   const parentRate = cls.ratePerSession || 0;
 
