@@ -185,23 +185,20 @@ export const addDailyAttendance = async (params: {
       //    sets `attendanceSheet: sheet._id`.
       //  - createAdvancePaymentForFinalClass (fires at conversion/renewal,
       //    before the next cycle's sheet even exists yet) has no sheet to
-      //    link to, so it's keyed by `finalClass` + `cycleMonth`/`cycleYear`
-      //    instead — and this is the path actually used for renewals today.
-      // Querying by `attendanceSheet` alone can never match a payment
-      // created via the second path, so a coordinator marking that payment
-      // PAID had no way to actually clear this check — it would re-pause
-      // the class on the very next attendance submission regardless.
+      //    link to, so it guesses `cycleMonth`/`cycleYear` as "next calendar
+      //    month from renewal date" instead.
+      // That guess drifts from the sheet's actual `month`/`year` whenever the
+      // tutor/coordinator doesn't submit the first session of the new cycle
+      // in exactly that guessed month (e.g. renewing mid-cycle, or renewing
+      // and then submitting attendance in the same calendar month rather
+      // than the next one) — so matching on cycleMonth/cycleYear equality is
+      // unreliable and can leave a coordinator-approved payment permanently
+      // unmatched. Instead, treat the most recently created FEES_COLLECTED
+      // payment for this class as the one covering the current cycle.
       const payment = await Payment.findOne({
         paymentType: PAYMENT_TYPE.FEES_COLLECTED,
-        $or: [
-          { attendanceSheet: sheet._id },
-          {
-            finalClass: new mongoose.Types.ObjectId(finalClassId),
-            cycleMonth: sheet.month,
-            cycleYear: sheet.year,
-          },
-        ],
-      });
+        finalClass: new mongoose.Types.ObjectId(finalClassId),
+      }).sort({ createdAt: -1 });
 
       if (!payment || String(payment.status) !== PAYMENT_STATUS.PAID) {
         if (!isGroup) {
