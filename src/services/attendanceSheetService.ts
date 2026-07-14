@@ -179,9 +179,28 @@ export const addDailyAttendance = async (params: {
   // --- Auto-Pause Check (Single Class Only as per earlier task) ---
   if (!isSpecialUser && !isGroup && (sheet.cycleNumber || 1) >= 2) {
     if (sheet.records.length === 2) {
+      // FEES_COLLECTED payments for a cycle come from two different code
+      // paths that key them differently:
+      //  - createCyclePayments (fires when a new AttendanceSheet is created)
+      //    sets `attendanceSheet: sheet._id`.
+      //  - createAdvancePaymentForFinalClass (fires at conversion/renewal,
+      //    before the next cycle's sheet even exists yet) has no sheet to
+      //    link to, so it's keyed by `finalClass` + `cycleMonth`/`cycleYear`
+      //    instead — and this is the path actually used for renewals today.
+      // Querying by `attendanceSheet` alone can never match a payment
+      // created via the second path, so a coordinator marking that payment
+      // PAID had no way to actually clear this check — it would re-pause
+      // the class on the very next attendance submission regardless.
       const payment = await Payment.findOne({
-        attendanceSheet: sheet._id,
         paymentType: PAYMENT_TYPE.FEES_COLLECTED,
+        $or: [
+          { attendanceSheet: sheet._id },
+          {
+            finalClass: new mongoose.Types.ObjectId(finalClassId),
+            cycleMonth: sheet.month,
+            cycleYear: sheet.year,
+          },
+        ],
       });
 
       if (!payment || String(payment.status) !== PAYMENT_STATUS.PAID) {
