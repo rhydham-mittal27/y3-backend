@@ -1002,24 +1002,46 @@ export const createCyclePayments = async (sheetId: string, createdBy: string) =>
   } else {
     // --- SINGLE CLASS LOGIC ---
     // Prefer monthlyFees if available, otherwise calculate from rate * sessions
-    const parentAmount = (cls.monthlyFees && cls.monthlyFees > 0) 
-      ? cls.monthlyFees 
+    const parentAmount = (cls.monthlyFees && cls.monthlyFees > 0)
+      ? cls.monthlyFees
       : (parentRate * numSessions);
 
     // 1. Fee Collected (Parent -> Coordinator/Office)
     if (parentAmount > 0) {
-      await Payment.create({
+      // A coordinator renewal (createAdvancePaymentForFinalClass) may have
+      // already created a FEES_COLLECTED payment for this same cycle before
+      // this sheet existed to link to. Without this check, that payment and
+      // this one both exist for the same cycle — double-billing the parent,
+      // and leaving a fresh unpaid duplicate that immediately re-triggers
+      // auto-pause even after the coordinator marks the original one paid.
+      // Scoped to `cycleMonth` being set, since that's only written by the
+      // renewal path — older orphaned/legacy unlinked payments (pre-dating
+      // this dedup guard) don't set it and shouldn't be mistaken for the
+      // current cycle's advance payment.
+      const unlinkedAdvancePayment = await Payment.findOne({
         finalClass: cls._id,
-        attendanceSheet: sheet._id,
-        tutor: cls.tutor,
-        amount: parentAmount,
-        currency: 'INR',
-        status: PAYMENT_STATUS.PENDING,
         paymentType: PAYMENT_TYPE.FEES_COLLECTED,
-        dueDate,
-        createdBy: new mongoose.Types.ObjectId(createdBy),
-        notes: `Monthly fees for ${sheet.periodLabel}`,
-      });
+        attendanceSheet: { $exists: false },
+        cycleMonth: { $exists: true },
+      }).sort({ createdAt: -1 });
+
+      if (unlinkedAdvancePayment) {
+        unlinkedAdvancePayment.attendanceSheet = sheet._id;
+        await unlinkedAdvancePayment.save();
+      } else {
+        await Payment.create({
+          finalClass: cls._id,
+          attendanceSheet: sheet._id,
+          tutor: cls.tutor,
+          amount: parentAmount,
+          currency: 'INR',
+          status: PAYMENT_STATUS.PENDING,
+          paymentType: PAYMENT_TYPE.FEES_COLLECTED,
+          dueDate,
+          createdBy: new mongoose.Types.ObjectId(createdBy),
+          notes: `Monthly fees for ${sheet.periodLabel}`,
+        });
+      }
     }
   }
 
