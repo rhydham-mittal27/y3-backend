@@ -450,11 +450,19 @@ export const getMyProfileForEdit = async (userId: string) => {
     }
   }
 
-  // Convert experienceHours to dropdown-compatible format
+  // Convert years of experience to dropdown-compatible format.
+  // NOTE: this must read from `yearsOfExperience`, not `experienceHours` --
+  // parseExperience() below always writes experienceHours=0 on every save
+  // (teaching hours are meant to accrue from actual completed sessions, not
+  // self-reported experience), so experienceHours can never be used to
+  // reconstruct the selected bucket after the tutor's first save. Reading
+  // from it here caused this field to always come back blank on every
+  // subsequent edit, which verified tutors can't correct (it's read-only
+  // for them) -- the blank value would then get resubmitted and trip the
+  // "locked fields" check in updateMyProfileController on every save.
   let experience = '';
-  if (tutor?.experienceHours) {
-    const totalMonths = Math.floor(tutor.experienceHours / 30);
-    const years = Math.floor(totalMonths / 12);
+  if (tutor?.yearsOfExperience) {
+    const years = tutor.yearsOfExperience;
 
     if (years >= 10) {
       experience = '10+ Years';
