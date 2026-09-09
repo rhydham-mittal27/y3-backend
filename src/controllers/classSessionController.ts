@@ -110,6 +110,40 @@ export const getClassSessionsController = asyncHandler(async (req: AuthRequest, 
   return res.json(successResponse(sessions));
 });
 
+// GET /api/class-sessions/class/:classId/cycle/:cycleNumber
+// Cycle-scoped fetch — unlike getClassSessionsController (single calendar
+// month), this returns every session belonging to one cycle regardless of
+// how many calendar months it spans, PLANNED and MISSED included. This is
+// what the coordinator attendance sheet page needs to reliably show
+// upcoming and missed sessions for the currently selected cycle.
+export const getClassSessionsByCycleController = asyncHandler(async (req: AuthRequest, res) => {
+  const classId = req.params.classId;
+  const cycleNumber = Number(req.params.cycleNumber);
+
+  if (!classId || !cycleNumber) {
+    throw new ErrorResponse('classId and cycleNumber are required', 400);
+  }
+
+  const cls = await FinalClass.findById(classId).select('tutor coordinator status');
+  if (!cls) throw new ErrorResponse('Class not found', 404);
+
+  const isAdmin = req.user?.role === USER_ROLES.ADMIN;
+  const isManager = req.user?.role === USER_ROLES.MANAGER;
+  const isTutor = req.user?.role === USER_ROLES.TUTOR && String(cls.tutor) === String(req.user!.id);
+  const isCoord = req.user?.role === USER_ROLES.COORDINATOR && String(cls.coordinator) === String(req.user!.id);
+
+  if (!isAdmin && !isManager && !isTutor && !isCoord) {
+    throw new ErrorResponse('Not authorized to view sessions for this class', 403);
+  }
+
+  const sessions = await import('../services/classSessionService').then(s => s.getSessionsByCycleNumber({
+    classId,
+    cycleNumber,
+  }));
+
+  return res.json(successResponse(sessions));
+});
+
 export const rescheduleSessionController = asyncHandler(async (req: AuthRequest, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) throw new ErrorResponse(errors.array()[0].msg, 400);

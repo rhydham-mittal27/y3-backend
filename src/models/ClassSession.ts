@@ -1,7 +1,7 @@
 import mongoose, { Schema, Model } from 'mongoose';
 import { softDeletePlugin, SoftDeleteDocument } from '../utils/softDelete.plugin';
 
-export type CLASS_SESSION_STATUS = 'PLANNED' | 'COMPLETED' | 'CANCELLED';
+export type CLASS_SESSION_STATUS = 'PLANNED' | 'COMPLETED' | 'CANCELLED' | 'MISSED';
 
 export interface IClassSessionDocument extends SoftDeleteDocument {
   _id: mongoose.Types.ObjectId;
@@ -35,7 +35,10 @@ const ClassSessionSchema: Schema<IClassSessionDocument> = new Schema<IClassSessi
 
     sessionNumber: { type: Number, required: true, min: 1 },
 
-    status: { type: String, enum: ['PLANNED', 'COMPLETED', 'CANCELLED'], default: 'PLANNED' },
+    // MISSED: the cycle it belonged to closed without attendance ever being
+    // logged for it. Kept (not deleted) so coordinators can still see and
+    // retroactively mark it — see setCycleStartController.
+    status: { type: String, enum: ['PLANNED', 'COMPLETED', 'CANCELLED', 'MISSED'], default: 'PLANNED' },
   },
   { timestamps: true }
 );
@@ -56,7 +59,13 @@ ClassSessionSchema.pre('validate', function (next) {
 // unrelated sessions.
 ClassSessionSchema.index({ finalClass: 1, cycleNumber: 1, cycleYear: 1, cycleMonth: 1, sessionNumber: 1 }, { unique: true, sparse: true });
 ClassSessionSchema.index({ finalClass: 1, cycleNumber: 1, sessionNumber: 1 }, { unique: true, sparse: true });
-ClassSessionSchema.index({ finalClass: 1, sessionDate: 1 }, { unique: true, sparse: true });
+// Partial: only PLANNED sessions need a unique date. A MISSED session kept
+// around from a closed cycle must not block a later cycle's PLANNED session
+// from legitimately landing on the same calendar date.
+ClassSessionSchema.index(
+  { finalClass: 1, sessionDate: 1 },
+  { unique: true, partialFilterExpression: { status: 'PLANNED' } }
+);
 
 ClassSessionSchema.plugin(softDeletePlugin);
 

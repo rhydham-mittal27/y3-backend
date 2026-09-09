@@ -215,7 +215,12 @@ export const getSessionsByCycleNumber = async (params: {
   return ClassSession.find({
     finalClass: new mongoose.Types.ObjectId(classId),
     cycleNumber,
-  }).sort({ sessionDate: 1 });
+  })
+    .populate({
+      path: 'finalClass',
+      populate: { path: 'classLead', select: 'classDurationHours studentName grade board' },
+    })
+    .sort({ sessionDate: 1 });
 };
 
 /**

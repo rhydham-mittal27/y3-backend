@@ -8,6 +8,7 @@ import {
   generateSessionsForClassCycleController,
   getMyCoordinatorSessionsForCycleController,
   getClassSessionsController,
+  getClassSessionsByCycleController,
   rescheduleSessionController,
   requestSessionRescheduleController,
 } from '../controllers/classSessionController';
@@ -33,6 +34,14 @@ router.get(
   authorize(USER_ROLES.TUTOR, USER_ROLES.COORDINATOR, USER_ROLES.MANAGER, USER_ROLES.ADMIN),
   param('classId').isMongoId().withMessage('Invalid class ID'),
   getClassSessionsController
+);
+
+router.get(
+  '/class/:classId/cycle/:cycleNumber',
+  authorize(USER_ROLES.TUTOR, USER_ROLES.COORDINATOR, USER_ROLES.MANAGER, USER_ROLES.ADMIN),
+  param('classId').isMongoId().withMessage('Invalid class ID'),
+  param('cycleNumber').isInt({ min: 1 }).withMessage('Invalid cycle number'),
+  getClassSessionsByCycleController
 );
 
 router.patch(
