@@ -457,19 +457,31 @@ export const setCycleStartController = asyncHandler(async (req: AuthRequest, res
 
   // Remove stale PLANNED sessions left behind by prior cycles: legacy sessions
   // auto-generated before the tutor-chosen-start-date flow existed (no
-  // cycleNumber at all), and PLANNED sessions from earlier cycles that never
+  // cycleNumber at all — genuinely disposable, generated before a real start
+  // date existed) and PLANNED sessions from earlier, real cycles that never
   // got flagged COMPLETED (e.g. attendance was logged on a different date
   // than the precomputed schedule). Both are guaranteed stale here because
   // reaching this handler means the class's *current* cycle already ended
   // (cycleStartPending was true), so nothing before `cycleNumber` is still a
-  // real future session — and left in place they collide with the new
+  // real future session — and left as PLANNED they'd collide with the new
   // cycle's dates on the (finalClass, sessionDate) unique index.
+  //
+  // The legacy ones are deleted outright (they never represented a real
+  // scheduled class). The real-cycle ones are flipped to MISSED rather than
+  // deleted — coordinators need to still see and retroactively mark these as
+  // attended/absent; deleting them erases that ability permanently. The
+  // (finalClass, sessionDate) unique index is partial (PLANNED-only), so a
+  // MISSED session doesn't block the new cycle from reusing that date.
   const ClassSession = (await import('../models/ClassSession')).default;
   await ClassSession.deleteMany({
     finalClass: cls._id,
     status: 'PLANNED',
-    $or: [{ cycleNumber: { $exists: false } }, { cycleNumber: { $lt: cycleNumber } }],
+    cycleNumber: { $exists: false },
   });
+  await ClassSession.updateMany(
+    { finalClass: cls._id, status: 'PLANNED', cycleNumber: { $lt: cycleNumber } },
+    { $set: { status: 'MISSED' } },
+  );
 
   const { generateSessionsFromStartDate } = await import('../services/classSessionService');
   const sessions = await generateSessionsFromStartDate({
