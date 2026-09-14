@@ -21,8 +21,9 @@ import { logChange } from './changeService';
 import { CHANGE_ACTION } from '../config/constants';
 import FinalClass from '../models/FinalClass';
 import Payment from '../models/Payment';
-import Announcement from '../models/Announcement';
+import Announcement from '../models/TutorLeadAnnouncement';
 import User from '../models/User';
+import TeacherRequest from '../models/TeacherRequest';
 
 export const generateLeadId = (
   studentName: string,
@@ -59,6 +60,27 @@ export const generateLeadId = (
 
   return `L${initials}${typeChar}${modeChar}${randomChars}${randomNums}`;
 }
+
+/**
+ * Assigns a tutor to a lead's linked Groupleads (group class) document.
+ * No code path ever set `Groupleads.tutor` before this fix — it was always
+ * undefined, so any downstream code reading it (e.g.
+ * attendanceSheetService.ts's group-attendance flow) silently got a missing
+ * tutor. Called wherever a tutor is assigned/reassigned to a GROUP-type
+ * ClassLead (demoService.ts's assignDemo/reassignDemo). A no-op for
+ * single-student leads or leads with no linked group. See
+ * audit/BROKEN_BUSINESS_LOGIC.md.
+ */
+export const syncGroupleadsTutor = async (
+  lead: { studentType: string; groupClass?: mongoose.Types.ObjectId },
+  tutorUserId: string
+): Promise<void> => {
+  if (lead.studentType !== 'GROUP' || !lead.groupClass) return;
+  const Groupleads = mongoose.model('Groupleads');
+  await Groupleads.findByIdAndUpdate(lead.groupClass, {
+    tutor: new mongoose.Types.ObjectId(tutorUserId),
+  });
+};
 
 export const resolveSubjectIds = async (subjects: string | string[], boardStr?: string, gradeStr?: string): Promise<string[]> => {
   if (!subjects) return [];
@@ -205,6 +227,16 @@ export const createClassLead = async (params: {
       throw new ErrorResponse('Failed to generate unique Lead ID', 500);
   }
 
+  // For GROUP leads the frontend's own fee-total calculation is unreliable
+  // (it can submit paymentAmount/tutorFees as 0 even though every student
+  // has real per-student fees), so recompute the top-level aggregate here
+  // from studentDetails rather than trusting whatever the client sent —
+  // mirrors the aggregation already done in updateClassLead.
+  if (params.studentType === 'GROUP' && params.studentDetails?.length) {
+    rest.paymentAmount = params.studentDetails.reduce((sum, s: any) => sum + (Number(s.fees) || 0), 0);
+    rest.tutorFees = params.studentDetails.reduce((sum, s: any) => sum + (Number(s.tutorFees) || 0), 0);
+  }
+
   const lead = new ClassLead({
     ...rest,
     leadId,
@@ -247,6 +279,29 @@ export const createClassLead = async (params: {
   }
 
   await lead.save();
+
+  // A parent-submitted TeacherRequest never has its status advanced once a
+  // manager turns it into a ClassLead (no code path called
+  // updateTeacherRequestStatus from here on), so the parent dashboard's
+  // priority-1 TeacherRequest lookup kept showing "Request Received"
+  // forever regardless of how far this ClassLead actually progressed. Mark
+  // any open TeacherRequest for this parent CONVERTED now so the dashboard
+  // falls through to the priority-2 ClassLead lookup, which does track
+  // real status.
+  if (rest.parentEmail) {
+    try {
+      const parentUser = await User.findOne({ email: rest.parentEmail, role: USER_ROLES.PARENT });
+      if (parentUser) {
+        await TeacherRequest.updateMany(
+          { parent: parentUser._id, status: { $nin: ['CONVERTED', 'CLOSED'] } },
+          { status: 'CONVERTED' }
+        );
+      }
+    } catch (e) {
+      console.error('Error syncing TeacherRequest status on lead creation:', e);
+    }
+  }
+
   const leadWithInternalNotes = await ClassLead.findById(lead._id)
     .select('+internalNotes')
     .populate([
@@ -425,7 +480,8 @@ export const updateClassLead = async (
     studentDetails?: any[];
     numberOfStudents?: number;
     weekdays?: string[];
-  }>
+  }>,
+  actorUserId?: string
 ) => {
   if (Object.prototype.hasOwnProperty.call(updateData, 'status')) {
     throw new ErrorResponse('Status cannot be updated via this endpoint', 400);
@@ -459,16 +515,21 @@ export const updateClassLead = async (
   if (lead.studentType === 'GROUP' && updateData.studentDetails) {
     const Groupleads = mongoose.model('Groupleads');
     if (lead.groupClass) {
+      // Note: `numberOfStudents` is intentionally not written here — it's a
+      // ClassLead field (see Object.assign(lead, updateData) below), not a
+      // Groupleads field; the Groupleads schema has no such property.
       await Groupleads.findByIdAndUpdate(lead.groupClass, {
         students: updateData.studentDetails,
-        numberOfStudents: updateData.numberOfStudents || updateData.studentDetails.length
       });
     } else {
-      // If for some reason groupClass is missing but it's a GROUP lead, create it
+      // If for some reason groupClass is missing but it's a GROUP lead, create it.
+      // `createdBy` is required on the Groupleads schema — fall back to the
+      // lead's own creator if no acting user was passed in, so this never
+      // throws a validation error (previously it always would have).
       const newGroup = await Groupleads.create({
         classLead: lead._id,
         students: updateData.studentDetails,
-        numberOfStudents: updateData.numberOfStudents || updateData.studentDetails.length,
+        createdBy: actorUserId || lead.createdBy,
         schedule: {
           daysOfWeek: updateData.weekdays || lead.weekdays,
           timeSlot: updateData.timing || lead.timing
@@ -955,7 +1016,7 @@ export const getCRMLeadsGrouped = async (createdByIds?: string | string[]) => {
       }
     } else if (status === CLASS_LEAD_STATUS.DEMO_SCHEDULED) {
       groups.demoScheduled.push(lead);
-    } else if (status === CLASS_LEAD_STATUS.DEMO_COMPLETED || status === CLASS_LEAD_STATUS.DEMO_APPROVED_BY_PARENT) {
+    } else if (status === CLASS_LEAD_STATUS.DEMO_COMPLETED) {
       groups.demoPending.push(lead);
     } else if (status === CLASS_LEAD_STATUS.CONVERTED || status === CLASS_LEAD_STATUS.PAYMENT_RECEIVED) {
       groups.won.push(lead);

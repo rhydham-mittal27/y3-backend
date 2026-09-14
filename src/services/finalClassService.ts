@@ -1,7 +1,7 @@
 import mongoose from 'mongoose';
 import FinalClass, { ITutorHistory } from '../models/FinalClass';
-import Attendance from '../models/Attendance';
 import ClassLead from '../models/ClassLead';
+import Groupleads from '../models/GroupClass';
 import Tutor from '../models/Tutor';
 import Coordinator from '../models/Coordinator';
 import User from '../models/User';
@@ -15,12 +15,28 @@ import Manager from '../models/Manager';
 import { createAdvancePaymentForFinalClass } from './paymentService';
 import { generateStudentId } from '../utils/generateStudentId';
 import { sendStudentCredentialsEmail } from './studentEmailService';
-import bcrypt from 'bcryptjs';
+import bcrypt from 'bcrypt';
 import ClassPlan from '../models/ClassPlan';
 import AttendanceSheet from '../models/AttendanceSheet';
+import { recalculateStudentFeesForNewTotal } from '../utils/feeRescaling';
 import { generateClassSessionsForCycle } from './classSessionService';
 
 const DAYS_ORDER = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY'];
+
+// Pre-primary grades (Nursery/LKG/UKG) have no digits, so
+// `parseInt(grade.replace(/\D/g, ''))` used below silently produces NaN for
+// them. That NaN fails the `gradeNumber > 0` guard, which was meant only to
+// validate real numeric grades — as a side effect it skipped Student-profile
+// creation AND parent-account linking entirely for every pre-primary class,
+// so those parents' FinalClass.parent was never set and their dashboard
+// could never show the class as active. Map them to a valid ordinal ahead
+// of CLASS_1 instead of falling through to NaN.
+const PRE_PRIMARY_GRADE_NUMBER: Record<string, number> = { NURSERY: 1, LKG: 2, UKG: 3 };
+const parseGradeNumber = (grade: string): number => {
+  const key = grade.trim().toUpperCase().replace(/\s+/g, '');
+  if (PRE_PRIMARY_GRADE_NUMBER[key] !== undefined) return PRE_PRIMARY_GRADE_NUMBER[key];
+  return parseInt(grade.replace(/\D/g, ''));
+};
 
 const computeMonthlyTotalSessions = (startDate: Date, schedule?: { daysOfWeek?: string[] }): number => {
   if (!schedule) return 0;
@@ -147,8 +163,8 @@ export const convertLeadToFinalClass = async (params: {
     const parentUsersByEmail: Record<string, mongoose.Types.ObjectId> = {};
     
     if (lead.studentType === 'SINGLE' && lead.studentGender && lead.grade) {
-      // Extract numeric grade from string (e.g., "Grade 10" -> 10)
-      const gradeNumber = parseInt(lead.grade.replace(/\D/g, ''));
+      // Extract numeric grade from string (e.g., "Grade 10" -> 10, "Nursery" -> 1)
+      const gradeNumber = parseGradeNumber(lead.grade);
       if (!isNaN(gradeNumber) && gradeNumber > 0) {
         studentGender = lead.studentGender;
         studentId = generateStudentId({
@@ -209,7 +225,7 @@ export const convertLeadToFinalClass = async (params: {
     } else if (lead.studentType === 'GROUP' && (lead.groupClass || lead.studentDetails) && lead.grade) {
       // Create individual student profiles for group classes
       const studentDetailsToUse = (lead.groupClass as any)?.students || lead.studentDetails;
-      const gradeNumber = parseInt(lead.grade.replace(/\D/g, ''));
+      const gradeNumber = parseGradeNumber(lead.grade);
       if (!isNaN(gradeNumber) && gradeNumber > 0 && studentDetailsToUse) {
         for (const studentDetail of studentDetailsToUse) {
           // Validate student detail has required gender
@@ -328,6 +344,18 @@ export const convertLeadToFinalClass = async (params: {
     });
 
     await created.save({ session });
+
+    // The linked Groupleads record is created PAUSED at lead-submission time
+    // (see GroupClass.ts) since no tutor/demo/approval has happened yet.
+    // Conversion is the actual point this becomes a live class, so flip it
+    // ACTIVE and assign the tutor here.
+    if (lead.studentType === 'GROUP' && lead.groupClass) {
+      await Groupleads.findByIdAndUpdate(
+        (lead.groupClass as any)._id || lead.groupClass,
+        { status: 'ACTIVE', tutor: lead.assignedTutor },
+        { session }
+      );
+    }
 
     // Save student profiles for group classes
     if (createdStudents.length > 0) {
@@ -563,6 +591,22 @@ export const renewFinalClassForCoordinator = async (params: {
     (cls as any).ratePerSession = plan.monthlyFee / plan.sessionsPerMonth;
     (cls as any).classesPerMonth = plan.sessionsPerMonth;
     cls.totalSessions = plan.sessionsPerMonth;
+
+    // createAdvancePaymentForFinalClass (called below) generates the new
+    // cycle's bills from the linked ClassLead's paymentAmount/studentDetails,
+    // not from the FinalClass fields just updated above — so without this,
+    // the coordinator's new fee would silently never reach actual billing.
+    // See audit/BROKEN_BUSINESS_LOGIC.md.
+    if (cls.classLead) {
+      const lead = await ClassLead.findById(cls.classLead);
+      if (lead) {
+        lead.paymentAmount = plan.monthlyFee;
+        if (lead.studentType === 'GROUP' && Array.isArray(lead.studentDetails) && lead.studentDetails.length > 0) {
+          lead.studentDetails = recalculateStudentFeesForNewTotal(lead.studentDetails, plan.monthlyFee);
+        }
+        await lead.save();
+      }
+    }
   }
 
   cls.completedSessions = 0;
@@ -863,11 +907,21 @@ export const computeTutorMonthlyStats = async (tutorUserId: string) => {
   const monthNowEnd = new Date(now);
   monthNowEnd.setHours(23, 59, 59, 999);
 
-  const completedSessions = await Attendance.countDocuments({
-    tutor: new mongoose.Types.ObjectId(tutorUserId),
-    sessionDate: { $gte: monthStart, $lte: monthNowEnd },
-    status: { $in: [ATTENDANCE_STATUS.COORDINATOR_APPROVED, ATTENDANCE_STATUS.PARENT_APPROVED] },
-  });
+  // Read from AttendanceSheet (the live system, unwinding the embedded
+  // per-day records[]) rather than the legacy per-session Attendance model,
+  // which is no longer written to. See audit/BROKEN_BUSINESS_LOGIC.md.
+  const completedSessionsAgg = await AttendanceSheet.aggregate([
+    { $unwind: '$records' },
+    {
+      $match: {
+        'records.tutor': new mongoose.Types.ObjectId(tutorUserId),
+        'records.sessionDate': { $gte: monthStart, $lte: monthNowEnd },
+        'records.status': { $in: [ATTENDANCE_STATUS.COORDINATOR_APPROVED, ATTENDANCE_STATUS.PARENT_APPROVED] },
+      },
+    },
+    { $count: 'count' },
+  ]);
+  const completedSessions = completedSessionsAgg[0]?.count || 0;
 
     return {
       month: `${year}-${String(month + 1).padStart(2, '0')}`,

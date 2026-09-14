@@ -865,6 +865,12 @@ export const isEmailVerifiedForRegistration = (email: string) =>
 export const consumeVerifiedEmail = (email: string) =>
   verifiedEmailStore.delete(normalizeEmail(email));
 
+// Dev/seed-script helper only — bypasses the actual OTP round-trip so
+// scripts that create accounts directly (not through the app's OTP screen)
+// still work now that registration requires a verified email.
+export const markEmailVerifiedForSeeding = (email: string) =>
+  verifiedEmailStore.add(normalizeEmail(email));
+
 export const restoreAndLoginUser = async (email: string, password: string) => {
   const normalizedEmail = normalizeEmail(email);
 

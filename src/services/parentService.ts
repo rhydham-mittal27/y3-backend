@@ -3,6 +3,7 @@ import Parent from '../models/Parent';
 import ParentLead from '../models/ParentLead';
 import ErrorResponse from '../utils/errorResponse';
 import { USER_ROLES } from '../config/constants';
+import { isEmailVerifiedForRegistration, consumeVerifiedEmail } from './authService';
 
 interface RegisterParentInput {
   name: string;
@@ -25,6 +26,10 @@ export const registerParentUser = async (input: RegisterParentInput) => {
     throw new ErrorResponse('An account with this email already exists', 409);
   }
 
+  if (!isEmailVerifiedForRegistration(email)) {
+    throw new ErrorResponse('Email must be verified before registering', 400);
+  }
+
   const user = await User.create({
     name,
     email,
@@ -36,6 +41,8 @@ export const registerParentUser = async (input: RegisterParentInput) => {
     isActive: true,
     acceptedTerms: true,
   });
+
+  consumeVerifiedEmail(email);
 
   const parent = await Parent.create({
     user: user._id,
@@ -92,11 +99,14 @@ import FinalClass from '../models/FinalClass';
 import ShiftRequest from '../models/ShiftRequest';
 import ClassSession from '../models/ClassSession';
 import Attendance from '../models/Attendance';
+import AttendanceSheet from '../models/AttendanceSheet';
+import { getFlattenedAttendanceRecords } from '../utils/attendanceSheetRecords';
 import Test from '../models/Test';
 import Tutor from '../models/Tutor';
 import Notification from '../models/Notification';
 import ClassLead from '../models/ClassLead';
 import TeacherRequest from '../models/TeacherRequest';
+import DemoHistory from '../models/DemoHistory';
 import { CLASS_LEAD_STATUS } from '../config/constants';
 
 /** Maps a TeacherRequest status → parent-facing stage */
@@ -119,7 +129,6 @@ const classLeadStage = (status: string): string | null => {
     ANNOUNCED:                 'LEAD_CREATED',
     DEMO_SCHEDULED:            'DEMO_SCHEDULED',
     DEMO_COMPLETED:            'AWAITING_APPROVAL',
-    DEMO_APPROVED_BY_PARENT:   'AWAITING_APPROVAL',
     PAYMENT_RECEIVED:          'AWAITING_APPROVAL',
     TEACHER_ASSIGNED_FOR_DEMO: 'TEACHER_ASSIGNED_FOR_DEMO',
   };
@@ -170,26 +179,81 @@ export const getParentDashboardData = async (userId: string) => {
         status: { $nin: [CLASS_LEAD_STATUS.CONVERTED, CLASS_LEAD_STATUS.REJECTED] },
       })
         .sort({ createdAt: -1 })
-        .select('status subject grade createdAt');
+        .select('status subject grade createdAt mode location city address assignedTutor demoDetails')
+        .populate('subject', 'label')
+        .populate('assignedTutor', 'name');
 
       if (classLead) {
         const stage = classLeadStage(classLead.status as string);
         if (stage) {
+          const demoDetails = classLead.demoDetails as any;
+          const assignedTutorUser = classLead.assignedTutor as any;
+
+          let demo: any = undefined;
+          if (assignedTutorUser?._id && demoDetails?.demoDate && demoDetails?.demoTime) {
+            const tutorProfile = await Tutor.findOne({ user: assignedTutorUser._id })
+              .select('teacherId ratings totalRatings yearsOfExperience subjects')
+              .populate('subjects', 'label');
+            demo = {
+              date:     (demoDetails.demoDate as Date).toISOString(),
+              time:     demoDetails.demoTime,
+              status:   demoDetails.demoStatus ?? null,
+              mode:     classLead.mode,
+              location: classLead.location ?? null,
+              city:     classLead.city ?? null,
+              address:  classLead.address ?? null,
+              tutor: {
+                _id:        assignedTutorUser._id,
+                name:       assignedTutorUser.name,
+                teacherId:  tutorProfile?.teacherId ?? null,
+                rating:     tutorProfile?.ratings ?? null,
+                totalRatings: tutorProfile?.totalRatings ?? null,
+                experience: tutorProfile?.yearsOfExperience ?? null,
+                subjects:   Array.from(new Set((tutorProfile?.subjects as any[])?.map((s) => s.label).filter(Boolean) ?? [])),
+              },
+            };
+          }
+
           pendingRequest = {
             _id:       classLead._id,
             stage,
             subject:   (classLead.subject as any[])?.[0]?.label ?? undefined,
             grade:     classLead.grade,
             createdAt: classLead.createdAt,
+            demo,
           };
         }
       }
     }
 
+    // Demo history — every demo ever scheduled for this parent's classLead(s),
+    // regardless of current stage (reassignments, rejections, past classes).
+    const historyLeadIds = (
+      await ClassLead.find({ parentEmail: user.email }).select('_id')
+    ).map((l) => l._id);
+
+    const demoHistoryDocs = historyLeadIds.length
+      ? await DemoHistory.find({ classLead: { $in: historyLeadIds } })
+          .sort({ createdAt: -1 })
+          .limit(10)
+          .populate('tutor', 'name')
+      : [];
+
+    const demoHistory = demoHistoryDocs.map((d: any) => ({
+      _id:              d._id,
+      tutorName:        d.tutor?.name ?? 'Tutor',
+      demoDate:         (d.demoDate as Date).toISOString(),
+      demoTime:         d.demoTime,
+      status:           d.status,
+      feedback:         d.feedback ?? null,
+      rejectionReason:  d.rejectionReason ?? null,
+    }));
+
     return {
       hasActiveClass: false,
       parentName: user.name,
       pendingRequest,
+      demoHistory,
     };
   }
 
@@ -207,11 +271,14 @@ export const getParentDashboardData = async (userId: string) => {
   const nextSession = upcomingSessions[0] ?? null;
 
   // ── 3. Attendance this month ───────────────────────────────────────────────
+  // Read from AttendanceSheet (the live system), not the legacy per-session
+  // Attendance model, which is no longer written to. See
+  // audit/BROKEN_BUSINESS_LOGIC.md.
   const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
-  const attendanceRecords = await Attendance.find({
+  const attendanceRecords = await getFlattenedAttendanceRecords(AttendanceSheet, {
     finalClass: activeClass._id,
-    sessionDate: { $gte: monthStart },
-  }).select('status studentAttendanceStatus');
+    start: monthStart,
+  });
 
   const totalSessionsThisMonth = attendanceRecords.length;
   const presentCount = attendanceRecords.filter(
@@ -260,6 +327,24 @@ export const getParentDashboardData = async (userId: string) => {
     .filter(Boolean)
     .join(', ');
 
+  // ── 8. Demo history (kept visible after conversion, not just pre-conversion) ──
+  const activeClassLeadId = (activeClass as any).classLead;
+  const demoHistoryDocs = activeClassLeadId
+    ? await DemoHistory.find({ classLead: activeClassLeadId })
+        .sort({ createdAt: -1 })
+        .limit(10)
+        .populate('tutor', 'name')
+    : [];
+  const demoHistory = demoHistoryDocs.map((d: any) => ({
+    _id:             d._id,
+    tutorName:       d.tutor?.name ?? 'Tutor',
+    demoDate:        (d.demoDate as Date).toISOString(),
+    demoTime:        d.demoTime,
+    status:          d.status,
+    feedback:        d.feedback ?? null,
+    rejectionReason: d.rejectionReason ?? null,
+  }));
+
   return {
     hasActiveClass: true,
     parentName: user.name,
@@ -306,6 +391,7 @@ export const getParentDashboardData = async (userId: string) => {
         }
       : null,
     recentActivity,
+    demoHistory,
   };
 };
 
@@ -377,16 +463,25 @@ export const getParentSessionsData = async (userId: string, month?: string) => {
   const monthStart = new Date(year, mon - 1, 1);
   const monthEnd   = new Date(year, mon, 1);
 
+  // Attendance is read from AttendanceSheet (the live system — each document
+  // covers a cycle and holds an embedded, per-day `records[]` array) rather
+  // than the legacy per-session Attendance model, which is no longer written
+  // to. See audit/BROKEN_BUSINESS_LOGIC.md. A few fields the old per-session
+  // record had (parentApprovedAt, swotAnalysis, resources, a per-day
+  // attendanceId) have no equivalent on AttendanceSheet's embedded records —
+  // approval there is tracked once per whole cycle, not per day — so those
+  // are reported as unavailable (null/empty) rather than guessed.
   const [sessions, attendanceRecords] = await Promise.all([
     ClassSession.find({
       finalClass: activeClass._id,
       sessionDate: { $gte: monthStart, $lt: monthEnd },
     }).sort({ sessionDate: 1 }).select('sessionDate timeSlot sessionNumber status'),
 
-    Attendance.find({
+    getFlattenedAttendanceRecords(AttendanceSheet, {
       finalClass: activeClass._id,
-      sessionDate: { $gte: monthStart, $lt: monthEnd },
-    }).select('sessionDate status studentAttendanceStatus topicCovered notes parentApprovedBy parentApprovedAt swotAnalysis resources'),
+      start: monthStart,
+      end: monthEnd,
+    }),
   ]);
 
   // Index attendance by date string for O(1) lookup
@@ -403,7 +498,9 @@ export const getParentSessionsData = async (userId: string, month?: string) => {
   const mappedSessions = sessions.map((s) => {
     const dateKey = toLocalDateString(s.sessionDate as Date);
     const att = attByDate.get(dateKey);
-    const parentVerified = att ? !!(att.parentApprovedBy) : false;
+    // A cycle's whole sheet is approved at once (no per-day parent approval
+    // in the live system), so "verified" here reflects the sheet's status.
+    const parentVerified = att ? att.sheetStatus === 'APPROVED' : false;
     const attStatus: 'PENDING' | 'VERIFIED' | 'ABSENT' | 'PLANNED' = att
       ? (parentVerified ? 'VERIFIED' : att.studentAttendanceStatus === 'ABSENT' ? 'ABSENT' : 'PENDING')
       : (s.status === 'PLANNED' ? 'PLANNED' : 'PENDING');
@@ -415,13 +512,16 @@ export const getParentSessionsData = async (userId: string, month?: string) => {
       sessionNumber:   s.sessionNumber,
       status:          s.status === 'PLANNED' ? 'SCHEDULED' : s.status,
       attendanceStatus: attStatus,
-      attendanceId:    att?._id ?? null,
+      // No per-day verification action exists against AttendanceSheet (see
+      // note above) — null rather than exposing an id that can't actually be
+      // verified through the (legacy, per-session) verify endpoint.
+      attendanceId:    null,
       topicsCovered:   att?.topicCovered ? [att.topicCovered] : [],
       tutorNote:       att?.notes ?? null,
-      resources:       att?.resources ?? [],
-      swot:            att?.swotAnalysis ?? null,
+      resources:       [] as string[],
+      swot:            null,
       parentVerified,
-      parentVerifiedAt: att?.parentApprovedAt?.toISOString() ?? null,
+      parentVerifiedAt: null,
     };
   });
 
@@ -686,9 +786,10 @@ export const getParentProgressData = async (userId: string) => {
     trendSummary = 'No test data yet — results will appear here once your tutor starts recording scores.';
   }
 
-  // Attendance rate
-  const allAttendance = await Attendance.find({ finalClass: activeClass._id }).select('studentAttendanceStatus');
-  const presentCount = allAttendance.filter((a: any) => a.studentAttendanceStatus === 'PRESENT' || a.studentAttendanceStatus === 'LATE').length;
+  // Attendance rate — read from AttendanceSheet (the live system), not the
+  // legacy per-session Attendance model. See audit/BROKEN_BUSINESS_LOGIC.md.
+  const allAttendance = await getFlattenedAttendanceRecords(AttendanceSheet, { finalClass: activeClass._id });
+  const presentCount = allAttendance.filter((a) => a.studentAttendanceStatus === 'PRESENT' || a.studentAttendanceStatus === 'LATE').length;
   const attendanceRate = allAttendance.length > 0 ? Math.round((presentCount / allAttendance.length) * 100) : null;
 
   // Build subject data (single subject for now — one active class)
@@ -767,12 +868,26 @@ export const getParentTutorProfileData = async (userId: string) => {
     .populate('tutor', 'name')
     .select('tutor');
 
-  if (!activeClass) throw new ErrorResponse('No active class found', 404);
+  let tutorUserId: any = (activeClass?.tutor as any)?._id;
 
-  const tutorUser = activeClass.tutor as any;
-  if (!tutorUser?._id) throw new ErrorResponse('No tutor assigned to your class yet', 404);
+  // No active class yet — fall back to a tutor assigned for a demo on this
+  // parent's open ClassLead, so "View Full Profile" also works while the
+  // demo is still scheduled, not just after the class is finalized.
+  if (!tutorUserId) {
+    const user = await User.findById(userId).select('email');
+    const classLead = await ClassLead.findOne({
+      parentEmail: user?.email,
+      status: { $nin: [CLASS_LEAD_STATUS.CONVERTED, CLASS_LEAD_STATUS.REJECTED] },
+      assignedTutor: { $ne: null },
+    })
+      .sort({ createdAt: -1 })
+      .select('assignedTutor');
+    tutorUserId = classLead?.assignedTutor;
+  }
 
-  const tutorProfile = await Tutor.findOne({ user: tutorUser._id }).select('teacherId');
+  if (!tutorUserId) throw new ErrorResponse('No tutor assigned yet', 404);
+
+  const tutorProfile = await Tutor.findOne({ user: tutorUserId }).select('teacherId');
   if (!tutorProfile?.teacherId) throw new ErrorResponse('Tutor profile not found', 404);
 
   return getPublicTutorProfile(tutorProfile.teacherId);
